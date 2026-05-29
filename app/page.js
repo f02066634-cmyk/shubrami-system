@@ -15,7 +15,8 @@ const initialShops = Array.from({ length: 166 }, (_, i) => ({
 
 export default function ShubramiSystem() {
   // ==================== إدارة حالة النظام (State) ====================
-  const [activeMainTab, setActiveMainTab] = useState("entry"); // entry, dashboard
+  // 🔴 التعديل هنا: خلينا الـ dashboard هي الافتراضية بدل entry
+  const [activeMainTab, setActiveMainTab] = useState("dashboard"); // entry, dashboard
   const [activeSubTab, setActiveSubTab] = useState("contracts"); // contracts, payments, debts, expenses
   const [contractSubTab, setContractSubTab] = useState("new"); // new, edit
   const [paymentSubTab, setPaymentSubTab] = useState("new"); // new, update
@@ -533,48 +534,27 @@ export default function ShubramiSystem() {
                <p className="text-3xl font-extrabold text-green-600">{netIncome.toLocaleString()} ريال</p>
             </div>
             <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-red-100 text-center">
-               <h4 className="text-slate-500 font-bold mb-2">الديون المعلقة</h4>
-               <p className="text-3xl font-extrabold text-red-500">{totalDebts.toLocaleString()} ريال</p>
+               <h4 className="text-slate-500 font-bold mb-2">إجمالي الديون السابقة</h4>
+               <p className="text-3xl font-extrabold text-red-600">{totalDebts.toLocaleString()} ريال</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* إحصائيات المحلات */}
-            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-slate-100">
-              <h3 className="text-xl font-bold text-blue-900 mb-6 text-center">📊 حالة الـ 166 محل</h3>
-              <div className="space-y-4">
-                {Object.entries(statusCounts).map(([status, count]) => {
-                   let color = status === "مؤجر" ? "bg-green-500" : status === "شاغر" ? "bg-red-500" : "bg-yellow-500";
-                   let percentage = Math.round((count / 166) * 100);
-                   return (
-                     <div key={status}>
-                        <div className="flex justify-between mb-1 font-bold"><span>{status}</span><span>{count} محل ({percentage}%)</span></div>
-                        <div className="w-full bg-slate-200 rounded-full h-4">
-                           <div className={`${color} h-4 rounded-full`} style={{ width: `${percentage}%` }}></div>
-                        </div>
-                     </div>
-                   )
-                })}
+          {/* إحصائيات حالة المحلات الـ 166 */}
+          <div className="bg-white/80 p-6 rounded-3xl shadow-lg mt-6 border border-slate-100">
+            <h3 className="text-xl font-bold text-blue-900 mb-4">📊 حالة المحلات (الإجمالي: 166 محل)</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-slate-500 mb-1 font-semibold">مؤجر</p>
+                <p className="text-2xl font-bold text-blue-600">{statusCounts["مؤجر"] || 0}</p>
               </div>
-            </div>
-
-            {/* الإيرادات مقابل المصروفات */}
-            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-slate-100 flex flex-col justify-center">
-               <h3 className="text-xl font-bold text-blue-900 mb-6 text-center">⚖️ الإيرادات مقابل المصروفات</h3>
-               
-               <div className="mb-6">
-                  <div className="flex justify-between mb-1 font-bold text-blue-600"><span>الإيرادات المحصلة</span><span>{totalCollected.toLocaleString()}</span></div>
-                  <div className="w-full bg-slate-200 rounded-full h-6 relative overflow-hidden">
-                     <div className="bg-blue-500 h-6" style={{ width: totalCollected === 0 ? '0%' : '100%' }}></div>
-                  </div>
-               </div>
-
-               <div>
-                  <div className="flex justify-between mb-1 font-bold text-orange-500"><span>المصروفات التشغيلية</span><span>{totalExpenses.toLocaleString()}</span></div>
-                  <div className="w-full bg-slate-200 rounded-full h-6 relative overflow-hidden">
-                     <div className="bg-orange-500 h-6" style={{ width: totalCollected === 0 ? '0%' : `${Math.min((totalExpenses / totalCollected) * 100, 100)}%` }}></div>
-                  </div>
-               </div>
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-slate-500 mb-1 font-semibold">شاغر</p>
+                <p className="text-2xl font-bold text-slate-500">{statusCounts["شاغر"] || 0}</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-slate-500 mb-1 font-semibold">تحت الصيانة</p>
+                <p className="text-2xl font-bold text-orange-500">{statusCounts["تحت الصيانة"] || 0}</p>
+              </div>
             </div>
           </div>
         </div>
