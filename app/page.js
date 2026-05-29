@@ -1,286 +1,432 @@
-// app/page.js
 "use client";
-import React, { useState } from 'react';
-import { 
-  Building2, Wallet, ArrowDownRight, ArrowUpRight, Percent, 
-  FileText, Search, Filter, PlusCircle, RefreshCw, Printer, 
-  FileSpreadsheet, Trash2, DollarSign
-} from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import React, { useState, useEffect } from 'react';
 
-export default function SmartMarketSystem() {
-  // القائمة البرمجية للتنقل بين الأقسام
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('الكل');
+// ==================== تهيئة البيانات الأولية للـ 166 محل ====================
+const initialShops = Array.from({ length: 166 }, (_, i) => ({
+  shopNumber: `محل ${i + 1}`,
+  area: 60,
+  status: "شاغر",
+  tenant: "-",
+  annualRent: 15000,
+  startDate: "-",
+  endDate: "-",
+  collected: 0
+}));
 
-  // 1. قاعدة بيانات تجريبية حية ومترابطة (ستربط بـ Supabase لاحقاً)
-  const [shops, setShops] = useState(
-    Array.from({ length: 166 }, (_, i) => ({
-      id: i + 1,
-      shop_number: `محل ${i + 1}`,
-      status: i < 10 ? 'شاغر' : 'مؤجر',
-      tenant: i < 10 ? '-' : `مستأجر المحل ${i + 1}`,
-      annual_rent: 15000,
-      start_date: i < 10 ? '-' : '2026-01-01',
-      end_date: i < 10 ? '-' : '2027-01-01',
-      collected: i < 10 ? 0 : 5000
-    }))
-  );
+export default function ShubramiSystem() {
+  // ==================== إدارة حالة النظام (State) ====================
+  const [activeMainTab, setActiveMainTab] = useState("entry"); // entry, dashboard
+  const [activeSubTab, setActiveSubTab] = useState("contracts"); // contracts, payments, debts, expenses
+  const [contractSubTab, setContractSubTab] = useState("new"); // new, edit
+  const [paymentSubTab, setPaymentSubTab] = useState("new"); // new, update
 
-  const [transactions, setTransactions] = useState([
-    { id: 'SH-2026-0001', date_start: '2026-05-01', date_updated: '2026-05-15', shop_number: 'محل 11', tenant: 'مستأجر المحل 11', total: 10000, paid: 6000, remaining: 4000, method: 'إيداع بنكي', status: 'مفتوح (قيد التحصيل)' },
-    { id: 'SH-2026-0002', date_start: '2026-05-10', date_updated: '2026-05-10', shop_number: 'محل 12', tenant: 'مستأجر المحل 12', total: 5000, paid: 5000, remaining: 0, method: 'نقد', status: 'مغلق (مكتمل)' },
-  ]);
+  // قواعد البيانات المؤقتة
+  const [shopsDB, setShopsDB] = useState(initialShops);
+  const [transactionsDB, setTransactionsDB] = useState([]);
+  const [debtsDB, setDebtsDB] = useState([]);
+  const [expensesDB, setExpensesDB] = useState([]);
 
-  const [debts, setDebts] = useState([
-    { id: 1, year: '2024', tenant: 'أبو فهد القحطاني', details: 'متبقي عقد مخرطة قديم وتم الإخلاء', amount: 8500 }
-  ]);
+  // المتغيرات للنماذج (Forms)
+  // 1. عقد جديد
+  const [newContractShop, setNewContractShop] = useState("");
+  const [newContractTenant, setNewContractTenant] = useState("");
+  const [newContractRent, setNewContractRent] = useState(15000);
+  const [newContractStart, setNewContractStart] = useState("");
+  const [newContractEnd, setNewContractEnd] = useState("");
 
-  const [expenses, setExpenses] = useState([
-    { id: 1, date: '2026-05-20', title: 'صيانة إنارة الممرات العامة', amount: 1200, notes: 'فاتورة شركة الكهرباء الوطنية' }
-  ]);
+  // 2. تعديل عقد
+  const [editContractShop, setEditContractShop] = useState("");
+  const [editContractStatus, setEditContractStatus] = useState("مؤجر");
+  const [editContractTenant, setEditContractTenant] = useState("");
+  const [editContractRent, setEditContractRent] = useState(0);
+  const [editContractStart, setEditContractStart] = useState("");
+  const [editContractEnd, setEditContractEnd] = useState("");
 
-  // الحسابات المالية الحية للوحة التحكم
-  const totalCollected = transactions.reduce((acc, curr) => acc + curr.paid, 0);
-  const totalExpenses = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+  // 3. دفعة جديدة
+  const [newPayShop, setNewPayShop] = useState("");
+  const [newPayMethod, setNewPayMethod] = useState("نقد");
+  const [newPayTarget, setNewPayTarget] = useState(1000);
+  const [newPayAmount, setNewPayAmount] = useState(500);
+
+  // 4. تحديث دفعة
+  const [updatePayReceipt, setUpdatePayReceipt] = useState("");
+  const [updatePayMethod, setUpdatePayMethod] = useState("نقد");
+  const [updatePayAmount, setUpdatePayAmount] = useState(0);
+
+  // 5. الديون
+  const [debtYear, setDebtYear] = useState("");
+  const [debtTenant, setDebtTenant] = useState("");
+  const [debtDetails, setDebtDetails] = useState("");
+  const [debtAmount, setDebtAmount] = useState("");
+
+  // 6. المصروفات
+  const [expDate, setExpDate] = useState("");
+  const [expCat, setExpCat] = useState("");
+  const [expAmount, setExpAmount] = useState("");
+  const [expNotes, setExpNotes] = useState("");
+
+  // ==================== دوال الطباعة والتصدير ====================
+  const exportToCSV = (data, filename) => {
+    if (data.length === 0) return;
+    const headers = Object.keys(data[0]).join(",");
+    const rows = data.map(row => Object.values(row).map(val => `"${val}"`).join(",")).join("\n");
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers + "\n" + rows;
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const printReceipt = (receipt) => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl">
+      <head>
+          <title>سند قبض - ${receipt.id}</title>
+          <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: right; padding: 40px; }
+              .card { border: 2px dashed #4CAF50; padding: 30px; border-radius: 10px; max-width: 550px; margin: auto; background-color: #f9f9f9; }
+              h2 { text-align: center; color: #2E86C1; }
+              h4 { text-align: center; color: #555; }
+              hr { border: 1px solid #ddd; }
+              p { font-size: 16px; line-height: 1.8; }
+              .btn { display: block; padding: 14px; background-color: #2E86C1; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; margin-top: 20px;}
+              @media print { .btn { display: none !important; } }
+          </style>
+      </head>
+      <body>
+          <div class="card">
+              <h2>🧾 سند قبض مالي رسمي - أسواق الشبرمي</h2>
+              <h4>رقم السند الموحد: ${receipt.id}</h4>
+              <hr>
+              <p><strong>تاريخ الإغلاق والاعتماد:</strong> ${receipt.updateDate} م</p>
+              <p><strong>وصلنا من السيد/ة:</strong> ${receipt.tenant} ( المستأجر لـ ${receipt.shop} )</p>
+              <p><strong>إجمالي مبلغ الدفعة المكتملة:</strong> <b style='color:#2E86C1; font-size:18px;'>${receipt.targetAmount.toLocaleString()} ريال سعودي</b></p>
+              <p><strong>طريقة الدفع والاستلام:</strong> ${receipt.method}</p>
+              <br><br>
+              <p style='text-align: left; font-weight:bold;'>توقيع المسؤول المالي والمحصل: .....................</p>
+              <button class="btn" onclick="window.print()">🖨️ اضغط هنا لطباعة السند فوراً</button>
+          </div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // ==================== معالجة النماذج ====================
+  const handleNewContract = (e) => {
+    e.preventDefault();
+    if (!newContractShop || newContractTenant.trim() === "") return alert("الرجاء تعبئة البيانات بشكل صحيح");
+    setShopsDB(shopsDB.map(s => 
+      s.shopNumber === newContractShop 
+      ? { ...s, status: "مؤجر", tenant: newContractTenant, annualRent: Number(newContractRent), startDate: newContractStart, endDate: newContractEnd }
+      : s
+    ));
+    setNewContractTenant("");
+    alert(`تم حفظ العقد للمحل ${newContractShop} بنجاح!`);
+  };
+
+  const handleEditContract = (e) => {
+    e.preventDefault();
+    if (!editContractShop) return;
+    setShopsDB(shopsDB.map(s => 
+      s.shopNumber === editContractShop 
+      ? { ...s, status: editContractStatus, tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", annualRent: Number(editContractRent), startDate: editContractStart, endDate: editContractEnd }
+      : s
+    ));
+    alert("تم تحديث بيانات العقد بنجاح!");
+  };
+
+  const handleNewPayment = (e) => {
+    e.preventDefault();
+    if (!newPayShop) return;
+    if (newPayAmount > newPayTarget) return alert("خطأ: المدفوع أكبر من المتفق عليه!");
+    
+    const shopData = shopsDB.find(s => s.shopNumber === newPayShop);
+    const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
+    if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً من تبويب التحديث.`);
+
+    const remaining = newPayTarget - newPayAmount;
+    const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
+    const newTx = {
+      id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
+      startDate: new Date().toISOString().split('T')[0],
+      updateDate: new Date().toISOString().split('T')[0],
+      shop: newPayShop,
+      tenant: shopData.tenant,
+      targetAmount: Number(newPayTarget),
+      paidAmount: Number(newPayAmount),
+      remainingAmount: remaining,
+      method: newPayMethod,
+      status: status
+    };
+
+    setTransactionsDB([...transactionsDB, newTx]);
+    setShopsDB(shopsDB.map(s => s.shopNumber === newPayShop ? { ...s, collected: s.collected + Number(newPayAmount) } : s));
+    alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند!" : "تم حفظ الدفعة وفتح سند معلق.");
+  };
+
+  const handleUpdatePayment = (e) => {
+    e.preventDefault();
+    if (!updatePayReceipt) return;
+    const tx = transactionsDB.find(t => t.id === updatePayReceipt);
+    if (!tx) return;
+    if (Number(updatePayAmount) > tx.remainingAmount) return alert("خطأ: المدفوع أكبر من المتبقي!");
+
+    const updatedPaid = tx.paidAmount + Number(updatePayAmount);
+    const updatedRemaining = tx.targetAmount - updatedPaid;
+    const updatedStatus = updatedRemaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
+    const newMethod = tx.method.includes(updatePayMethod) ? tx.method : `${tx.method} و ${updatePayMethod}`;
+
+    setTransactionsDB(transactionsDB.map(t => 
+      t.id === updatePayReceipt 
+      ? { ...t, paidAmount: updatedPaid, remainingAmount: updatedRemaining, status: updatedStatus, method: newMethod, updateDate: new Date().toISOString().split('T')[0] }
+      : t
+    ));
+    setShopsDB(shopsDB.map(s => s.shopNumber === tx.shop ? { ...s, collected: s.collected + Number(updatePayAmount) } : s));
+    alert("تم تحديث السند بنجاح!");
+  };
+
+  const handleDebt = (e) => {
+    e.preventDefault();
+    setDebtsDB([...debtsDB, { year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) }]);
+    setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
+    alert("تم إدراج المديونية السابقة بنجاح.");
+  };
+
+  const handleExpense = (e) => {
+    e.preventDefault();
+    setExpensesDB([...expensesDB, { date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes }]);
+    setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
+    alert("تم تسجيل المصروف بنجاح.");
+  };
+
+  // ==================== الحسابات للوحة المؤشرات ====================
+  const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0);
+  const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
+  const totalDebts = debtsDB.reduce((sum, debt) => sum + debt.amount, 0);
   const netIncome = totalCollected - totalExpenses;
-  const totalDebts = debts.reduce((acc, curr) => acc + curr.amount, 0);
-  const occupancyRate = Math.round((shops.filter(s => s.status === 'مؤجر').length / 166) * 100);
 
-  const financialData = [{ name: 'الإيرادات المحصلة', مبلغ: totalCollected }, { name: 'المصروفات', مبلغ: totalExpenses }];
-  const pieData = [
-    { name: 'مؤجر', value: shops.filter(s => s.status === 'مؤجر').length, color: '#10b981' },
-    { name: 'شاغر', value: shops.filter(s => s.status === 'شاغر').length, color: '#f59e0b' }
-  ];
+  const statusCounts = shopsDB.reduce((acc, shop) => {
+    acc[shop.status] = (acc[shop.status] || 0) + 1;
+    return acc;
+  }, {});
 
+  // ==================== واجهة المستخدم (UI) ====================
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans antialiased flex flex-col" dir="rtl">
+    <div dir="rtl" className="min-h-screen bg-gradient-to-br from-sky-100 to-slate-50 p-4 md:p-8 font-sans text-slate-800">
       
-      {/* 🔝 الهيدر الرئيسي الفخم */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 text-white p-2.5 rounded-xl shadow-md">
-              <Building2 className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">أسواق الشبرمي التجارية</h1>
-              <p className="text-xs text-slate-500 font-medium">النسخة السحابية الفائقة الذكاء لإدارة 166 وحدة</p>
-            </div>
-          </div>
-          <div className="text-sm font-semibold bg-slate-100 text-slate-700 px-4 py-2 rounded-xl border border-slate-200">
-            🗓️ اليوم: {new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </div>
-        </div>
-      </header>
-
-      {/* 🧭 شريط التنقل العلوي المودرن (Tabs) */}
-      <div className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-2 overflow-x-auto py-2">
-          {[
-            { id: 'dashboard', label: '📊 لوحة المؤشرات والتحليلات', color: 'border-blue-600 text-blue-600 bg-blue-50/50' },
-            { id: 'shops', label: '📝 إدارة العقود والمحلات', color: 'border-emerald-600 text-emerald-600 bg-emerald-50/50' },
-            { id: 'collections', label: '💰 التحصيل وسندات القبض', color: 'border-amber-600 text-amber-600 bg-amber-50/50' },
-            { id: 'debts', label: '📂 أرشيف ديون المغادرين', color: 'border-purple-600 text-purple-600 bg-purple-50/50' },
-            { id: 'expenses', label: '🛠️ إدارة وعرض المصروفات', color: 'border-rose-600 text-rose-600 bg-rose-50/50' },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-all border-2 ${
-                activeTab === tab.id ? `${tab.color} shadow-sm` : 'border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+      {/* رأس النظام */}
+      <div className="mb-8 text-center">
+        <h1 className="text-4xl font-extrabold text-blue-900 mb-2">🏢 نظام إدارة وتحصيل أسواق الشبرمي</h1>
+        <div className="h-1 w-32 bg-blue-500 mx-auto rounded-full"></div>
       </div>
 
-      {/* 💎 محتوى لوحة التحكم والصفحات */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        
-        {/* ==================== 1. لوحة المؤشرات ==================== */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-8 animate-fadeIn">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                { title: 'صافي دخل أسواق الشبرمي', value: `${netIncome.toLocaleString()} ريال`, icon: Wallet, color: 'text-emerald-600 bg-emerald-50' },
-                { title: 'إجمالي المقبوضات والتحصيل', value: `${totalCollected.toLocaleString()} ريال`, icon: ArrowUpRight, color: 'text-blue-600 bg-blue-50' },
-                { title: 'المصروفات التشغيلية العامة', value: `${totalExpenses.toLocaleString()} ريال`, icon: ArrowDownRight, color: 'text-rose-600 bg-rose-50' },
-                { title: 'نسبة إشغال الـ 166 محل', value: `${occupancyRate}%`, icon: Percent, color: 'text-amber-600 bg-amber-50' },
-              ].map((stat, i) => (
-                <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+      {/* القائمة الرئيسية */}
+      <div className="flex justify-center gap-4 mb-8">
+        <button onClick={() => setActiveMainTab("entry")} className={`px-6 py-3 rounded-2xl font-bold transition-all shadow-md ${activeMainTab === "entry" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-blue-50"}`}>
+          📥 عمليات التحصيل والبيانات
+        </button>
+        <button onClick={() => setActiveMainTab("dashboard")} className={`px-6 py-3 rounded-2xl font-bold transition-all shadow-md ${activeMainTab === "dashboard" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-blue-50"}`}>
+          📊 لوحة المؤشرات
+        </button>
+      </div>
+
+      {/* ==================== تبويب عمليات الإدخال ==================== */}
+      {activeMainTab === "entry" && (
+        <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-xl border border-white/60">
+          
+          {/* القائمة الفرعية */}
+          <div className="flex flex-wrap gap-2 mb-6 bg-slate-100/80 p-2 rounded-2xl">
+            {[
+              { id: "contracts", label: "📝 إدارة العقود" },
+              { id: "payments", label: "💰 التحصيل والسندات" },
+              { id: "debts", label: "📂 ديون المغادرين" },
+              { id: "expenses", label: "🛠️ المصروفات" }
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setActiveSubTab(tab.id)} className={`flex-1 py-2 px-4 rounded-xl font-semibold transition-all ${activeSubTab === tab.id ? "bg-blue-600 text-white shadow-lg" : "text-slate-600 hover:bg-white"}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 1. إدارة العقود */}
+          {activeSubTab === "contracts" && (
+            <div>
+              <div className="flex gap-4 mb-6">
+                <button onClick={() => setContractSubTab("new")} className={`px-4 py-2 border-b-2 font-bold ${contractSubTab === "new" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500"}`}>✍️ عقد جديد</button>
+                <button onClick={() => setContractSubTab("edit")} className={`px-4 py-2 border-b-2 font-bold ${contractSubTab === "edit" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500"}`}>🔄 تعديل عقد</button>
+              </div>
+
+              {contractSubTab === "new" && (
+                <form onSubmit={handleNewContract} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{stat.title}</p>
-                    <h3 className="text-2xl font-black text-slate-800 mt-2">{stat.value}</h3>
+                    <label className="block mb-2 font-semibold">اختر المحل الشاغر:</label>
+                    <select className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newContractShop} onChange={(e) => setNewContractShop(e.target.value)} required>
+                      <option value="">-- اختر المحل --</option>
+                      {shopsDB.filter(s => s.status !== "مؤجر").map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber}</option>)}
+                    </select>
                   </div>
-                  <div className={`p-4 rounded-xl ${stat.color}`}>
-                    <stat.icon className="w-6 h-6" />
+                  <div>
+                    <label className="block mb-2 font-semibold">اسم المستأجر:</label>
+                    <input type="text" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newContractTenant} onChange={(e) => setNewContractTenant(e.target.value)} required />
                   </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm lg:col-span-2">
-                <h3 className="text-base font-black text-slate-900 mb-4">الميزانية الحالية (المقارنة المباشرة)</h3>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={financialData} barSize={55}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="name" tick={{ fill: '#64748b', fontWeight: 'bold' }} />
-                      <YAxis tick={{ fill: '#64748b' }} />
-                      <Tooltip />
-                      <Bar dataKey="مبلغ" fill="#2563eb" radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-                <h3 className="text-base font-black text-slate-900 mb-2">توزيع العقارات ونسبة الإشغال</h3>
-                <div className="h-48 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                        {pieData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex justify-center gap-6 text-xs font-bold border-t border-slate-100 pt-4">
-                  {pieData.map((item, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></span>
-                      <span className="text-slate-600">{item.name} ({item.value} محل)</span>
+                  <div>
+                    <label className="block mb-2 font-semibold">الإيجار السنوي:</label>
+                    <input type="number" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newContractRent} onChange={(e) => setNewContractRent(e.target.value)} required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block mb-2 font-semibold">بداية العقد:</label>
+                      <input type="date" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newContractStart} onChange={(e) => setNewContractStart(e.target.value)} required />
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ==================== 2. إدارة العقود والمحلات ==================== */}
-        {activeTab === 'shops' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
-                <h3 className="text-lg font-black text-slate-900">البحث التفاعلي وتصفية الـ 166 محل</h3>
-                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:flex-initial">
-                    <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
-                    <input 
-                      type="text" 
-                      placeholder="ابحث برقم المحل أو اسم المستأجر..." 
-                      className="w-full sm:w-64 bg-white border border-slate-200 rounded-xl pr-9 pl-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+                    <div>
+                      <label className="block mb-2 font-semibold">نهاية العقد:</label>
+                      <input type="date" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newContractEnd} onChange={(e) => setNewContractEnd(e.target.value)} required />
+                    </div>
                   </div>
-                  <select 
-                    className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 cursor-pointer focus:outline-none"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                  >
-                    <option value="الكل">جميع الحالات</option>
-                    <option value="مؤجر">مؤجر</option>
-                    <option value="شاغر">شاغر</option>
-                  </select>
-                </div>
-              </div>
+                  <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-blue-600 to-blue-800 text-white font-bold py-3 rounded-xl hover:-translate-y-1 transition-all shadow-lg">💾 حفظ العقد</button>
+                </form>
+              )}
 
-              <div className="overflow-x-auto rounded-xl border border-slate-100">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/70 text-slate-600 text-xs font-bold border-b border-slate-200">
-                      <th className="p-4">رقم المحل</th>
-                      <th className="p-4">حالة الوحدة</th>
-                      <th className="p-4">المستأجر الحالي</th>
-                      <th className="p-4">العقد السنوي</th>
-                      <th className="p-4">تاريخ نهاية العقد</th>
-                      <th className="p-4 text-emerald-600">المحصل الإجمالي</th>
-                    </tr>
+              {contractSubTab === "edit" && (
+                <form onSubmit={handleEditContract} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-2 font-semibold">اختر المحل للتعديل:</label>
+                    <select className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={editContractShop} onChange={(e) => {
+                      const shop = shopsDB.find(s => s.shopNumber === e.target.value);
+                      if(shop) {
+                        setEditContractShop(shop.shopNumber); setEditContractStatus(shop.status); setEditContractTenant(shop.tenant); setEditContractRent(shop.annualRent); setEditContractStart(shop.startDate); setEditContractEnd(shop.endDate);
+                      }
+                    }} required>
+                      <option value="">-- اختر المحل المؤجر --</option>
+                      {shopsDB.filter(s => s.status === "مؤجر").map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">الحالة:</label>
+                    <select className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={editContractStatus} onChange={(e) => setEditContractStatus(e.target.value)}>
+                      <option value="مؤجر">مؤجر</option>
+                      <option value="شاغر">شاغر (إخلاء)</option>
+                      <option value="تحت الصيانة">تحت الصيانة</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">المستأجر:</label>
+                    <input type="text" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                  </div>
+                  <div>
+                     <label className="block mb-2 font-semibold">الإيجار السنوي:</label>
+                     <input type="number" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} />
+                  </div>
+                  <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-blue-600 to-blue-800 text-white font-bold py-3 rounded-xl hover:-translate-y-1 transition-all shadow-lg">🔄 تحديث العقد</button>
+                </form>
+              )}
+
+              <hr className="my-8 border-slate-200" />
+              <h3 className="text-xl font-bold text-blue-900 mb-4">📋 المحلات المؤجرة حالياً</h3>
+              <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                <table className="w-full text-right bg-white">
+                  <thead className="bg-blue-600 text-white">
+                    <tr><th className="p-3">رقم المحل</th><th className="p-3">المستأجر</th><th className="p-3">الإيجار</th><th className="p-3">البداية</th><th className="p-3">النهاية</th><th className="p-3">المحصل</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
-                    {shops
-                      .filter(s => (statusFilter === 'الكل' || s.status === statusFilter) && (s.shop_number.includes(searchTerm) || s.tenant.includes(searchTerm)))
-                      .slice(0, 15) // عرض عينة لعدم إثقال المتصفح قبل ربط السحاب
-                      .map(shop => (
-                        <tr key={shop.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-4 font-black text-slate-900">{shop.shop_number}</td>
-                          <td className="p-4">
-                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${shop.status === 'مؤجر' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                              {shop.status}
-                            </span>
-                          </td>
-                          <td className="p-4 text-slate-600">{shop.tenant}</td>
-                          <td className="p-4">{shop.annual_rent.toLocaleString()} ريال</td>
-                          <td className="p-4 dir-ltr text-right">{shop.end_date}</td>
-                          <td className="p-4 text-emerald-600 font-bold">{shop.collected.toLocaleString()} ريال</td>
-                        </tr>
+                  <tbody>
+                    {shopsDB.filter(s => s.status === "مؤجر").map((s, i) => (
+                      <tr key={s.shopNumber} className={i % 2 === 0 ? "bg-slate-50" : "bg-white"}>
+                        <td className="p-3 font-bold">{s.shopNumber}</td><td className="p-3">{s.tenant}</td><td className="p-3">{s.annualRent}</td><td className="p-3">{s.startDate}</td><td className="p-3">{s.endDate}</td><td className="p-3 text-green-600 font-bold">{s.collected}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-slate-400 mt-4 text-left">* تم عرض أول 15 وحدة، محرك البحث يغطي كامل الـ 166 محل بدقة.</p>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ==================== 3. التحصيل وسندات القبض ==================== */}
-        {activeTab === 'collections' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-              <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-100 pb-4 mb-6 gap-4">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">أرشيف وحالة السندات الشامل</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">يتضمن السندات المفتوحة والمكتملة مع إمكانية الطباعة والتحميل الفوري</p>
-                </div>
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                  <button className="flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold px-4 py-2.5 rounded-xl border border-emerald-200 transition-colors w-full sm:w-auto">
-                    <FileSpreadsheet className="w-4 h-4" /> تحميل كـ Excel
-                  </button>
-                  <button onClick={() => window.print()} className="flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold px-4 py-2.5 rounded-xl border border-blue-200 transition-colors w-full sm:w-auto">
-                    <Printer className="w-4 h-4" /> طباعة الأرشيف الشامل
-                  </button>
-                </div>
+          {/* 2. التحصيل والسندات */}
+          {activeSubTab === "payments" && (
+            <div>
+               <div className="flex gap-4 mb-6">
+                <button onClick={() => setPaymentSubTab("new")} className={`px-4 py-2 border-b-2 font-bold ${paymentSubTab === "new" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500"}`}>🆕 إنشاء دفعة جديدة</button>
+                <button onClick={() => setPaymentSubTab("update")} className={`px-4 py-2 border-b-2 font-bold ${paymentSubTab === "update" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500"}`}>🔄 إغلاق السندات المفتوحة</button>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-slate-100">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/70 text-slate-600 text-xs font-bold border-b border-slate-200">
-                      <th className="p-4">رقم السند</th>
-                      <th className="p-4">المحل</th>
-                      <th className="p-4">المستأجر</th>
-                      <th className="p-4">المبلغ المتفق عليه</th>
-                      <th className="p-4 text-emerald-600">المدفوع حالياً</th>
-                      <th className="p-4 text-rose-600">المتبقي المطلوب</th>
-                      <th className="p-4">الحالة</th>
-                      <th className="p-4 text-center">إجراءات</th>
-                    </tr>
+              {paymentSubTab === "new" && (
+                <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-2 font-semibold">اختر المحل:</label>
+                    <select className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
+                      <option value="">-- المحلات المؤجرة --</option>
+                      {shopsDB.filter(s => s.status === "مؤجر").map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">طريقة الدفع:</label>
+                    <select className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
+                      <option value="نقد">نقد</option>
+                      <option value="إيداع بنكي">إيداع بنكي</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">المبلغ الكلي للدفعة:</label>
+                    <input type="number" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newPayTarget} onChange={(e) => setNewPayTarget(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">المبلغ المدفوع (الآن):</label>
+                    <input type="number" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required />
+                  </div>
+                  <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-green-500 to-green-700 text-white font-bold py-3 rounded-xl hover:-translate-y-1 transition-all shadow-lg">➕ حفظ وإصدار السند</button>
+                </form>
+              )}
+
+              {paymentSubTab === "update" && (
+                 <form onSubmit={handleUpdatePayment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block mb-2 font-semibold">اختر السند المفتوح:</label>
+                    <select className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
+                      <option value="">-- السندات المعلقة --</option>
+                      {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
+                    </select>
+                  </div>
+                  {updatePayReceipt && (
+                    <>
+                      <div>
+                        <label className="block mb-2 font-semibold">طريقة الدفع للمتبقي:</label>
+                        <select className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
+                          <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block mb-2 font-semibold">المبلغ المدفوع (الآن):</label>
+                        <input type="number" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required />
+                      </div>
+                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3 rounded-xl hover:-translate-y-1 transition-all shadow-lg">🔄 اعتماد وإغلاق</button>
+                    </>
+                  )}
+                 </form>
+              )}
+
+              <hr className="my-8 border-slate-200" />
+              <div className="flex justify-between items-center mb-4">
+                 <h3 className="text-xl font-bold text-blue-900">📋 أرشيف السندات</h3>
+                 <button onClick={() => exportToCSV(transactionsDB, "ارشيف_السندات.csv")} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm">📥 تحميل Excel</button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                <table className="w-full text-right bg-white text-sm">
+                  <thead className="bg-slate-800 text-white">
+                    <tr><th className="p-3">السند</th><th className="p-3">المحل</th><th className="p-3">المطلوب</th><th className="p-3">المدفوع</th><th className="p-3">المتبقي</th><th className="p-3">الحالة</th><th className="p-3">طباعة</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
-                    {transactions.map(tx => (
-                      <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="p-4 font-black text-slate-900">{tx.id}</td>
-                        <td className="p-4 font-bold">{tx.shop_number}</td>
-                        <td className="p-4 text-slate-600">{tx.tenant}</td>
-                        <td className="p-4">{tx.total.toLocaleString()} ريال</td>
-                        <td className="p-4 text-emerald-600 font-bold">{tx.paid.toLocaleString()} ريال</td>
-                        <td className="p-4 text-rose-600 font-bold">{tx.remaining.toLocaleString()} ريال</td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${tx.status === 'مغلق (مكتمل)' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
-                            {tx.status}
-                          </span>
+                  <tbody>
+                    {transactionsDB.map((t, i) => (
+                      <tr key={t.id} className={i % 2 === 0 ? "bg-slate-50" : "bg-white"}>
+                        <td className="p-3 font-bold">{t.id}</td><td className="p-3">{t.shop}</td><td className="p-3">{t.targetAmount}</td><td className="p-3 text-green-600">{t.paidAmount}</td><td className="p-3 text-red-500">{t.remainingAmount}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${t.status.includes('مغلق') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{t.status}</span>
                         </td>
-                        <td className="p-4 text-center">
-                          <button className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
-                            <Printer className="w-3.5 h-3.5" /> طباعة السند
-                          </button>
+                        <td className="p-3">
+                          {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">🖨️ طباعة</button>}
                         </td>
                       </tr>
                     ))}
@@ -288,77 +434,151 @@ export default function SmartMarketSystem() {
                 </table>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ==================== 4. أرشيف الديون ==================== */}
-        {activeTab === 'debts' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-              <h3 className="text-lg font-black text-slate-900 mb-4 border-b border-slate-100 pb-3">جدولة ديون وأرشيف المستأجرين المغادرين</h3>
-              <div className="overflow-x-auto rounded-xl border border-slate-100">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/70 text-slate-600 text-xs font-bold border-b border-slate-200">
-                      <th className="p-4">السنة المالية</th>
-                      <th className="p-4">اسم المستأجر السابق</th>
-                      <th className="p-4">تفاصيل وعقد المديونية</th>
-                      <th className="p-4 text-rose-600">المبلغ المعلق</th>
-                    </tr>
+          {/* 3. الديون */}
+          {activeSubTab === "debts" && (
+            <div>
+               <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                  <div>
+                    <label className="block mb-2 font-semibold">السنة المالية:</label>
+                    <input type="text" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">اسم المستأجر المغادر:</label>
+                    <input type="text" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block mb-2 font-semibold">تفاصيل العقد والمديونية:</label>
+                    <textarea className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea>
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">المبلغ المتبقي:</label>
+                    <input type="number" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required />
+                  </div>
+                  <div className="flex items-end">
+                     <button type="submit" className="w-full bg-gradient-to-r from-red-600 to-red-800 text-white font-bold py-3 rounded-xl hover:-translate-y-1 transition-all shadow-lg">🎯 جدولة المديونية</button>
+                  </div>
+               </form>
+               <h3 className="text-xl font-bold text-blue-900 mb-4">📊 أرشيف الديون</h3>
+               <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                <table className="w-full text-right bg-white">
+                  <thead className="bg-red-600 text-white">
+                    <tr><th className="p-3">السنة</th><th className="p-3">المستأجر السابق</th><th className="p-3">التفاصيل</th><th className="p-3">المبلغ المتبقي</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
-                    {debts.map(debt => (
-                      <tr key={debt.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="p-4 font-black text-slate-900">{debt.year}</td>
-                        <td className="p-4 font-bold">{debt.tenant}</td>
-                        <td className="p-4 text-slate-500">{debt.details}</td>
-                        <td className="p-4 text-rose-600 font-black">{debt.amount.toLocaleString()} ريال</td>
-                      </tr>
+                  <tbody>
+                    {debtsDB.map((d, i) => (
+                      <tr key={i} className="border-b"><td className="p-3">{d.year}</td><td className="p-3">{d.tenant}</td><td className="p-3">{d.details}</td><td className="p-3 font-bold text-red-600">{d.amount}</td></tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ==================== 5. إدارة المصروفات ==================== */}
-        {activeTab === 'expenses' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-              <h3 className="text-lg font-black text-slate-900 mb-4 border-b border-slate-100 pb-3">سجل وعرض المصروفات التشغيلية الحالية</h3>
-              <div className="overflow-x-auto rounded-xl border border-slate-100">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/70 text-slate-600 text-xs font-bold border-b border-slate-200">
-                      <th className="p-4">التاريخ</th>
-                      <th className="p-4">بند ومجال الصرف</th>
-                      <th className="p-4">الملاحظات والبيان</th>
-                      <th className="p-4 text-rose-600">المبلغ المصروف</th>
-                    </tr>
+          {/* 4. المصروفات */}
+          {activeSubTab === "expenses" && (
+            <div>
+               <form onSubmit={handleExpense} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                  <div>
+                    <label className="block mb-2 font-semibold">التاريخ:</label>
+                    <input type="date" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={expDate} onChange={(e) => setExpDate(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">بند الصرف:</label>
+                    <input type="text" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={expCat} onChange={(e) => setExpCat(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">المبلغ:</label>
+                    <input type="number" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block mb-2 font-semibold">ملاحظات:</label>
+                    <input type="text" className="w-full rounded-xl border border-slate-300 p-3 bg-white" value={expNotes} onChange={(e) => setExpNotes(e.target.value)} />
+                  </div>
+                  <button type="submit" className="md:col-span-2 bg-gradient-to-r from-slate-600 to-slate-800 text-white font-bold py-3 rounded-xl hover:-translate-y-1 transition-all shadow-lg">🚨 تسجيل المصروف</button>
+               </form>
+               <h3 className="text-xl font-bold text-blue-900 mb-4">📋 سجل المصروفات</h3>
+               <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                <table className="w-full text-right bg-white">
+                  <thead className="bg-slate-700 text-white">
+                    <tr><th className="p-3">التاريخ</th><th className="p-3">البند</th><th className="p-3">المبلغ</th><th className="p-3">ملاحظات</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-sm font-medium text-slate-700">
-                    {expenses.map(exp => (
-                      <tr key={exp.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="p-4 text-slate-500 font-medium">{exp.date}</td>
-                        <td className="p-4 font-bold text-slate-900">{exp.title}</td>
-                        <td className="p-4 text-slate-600">{exp.notes}</td>
-                        <td className="p-4 text-rose-600 font-black">{exp.amount.toLocaleString()} ريال</td>
-                      </tr>
+                  <tbody>
+                    {expensesDB.map((e, i) => (
+                      <tr key={i} className="border-b"><td className="p-3">{e.date}</td><td className="p-3">{e.category}</td><td className="p-3 font-bold text-orange-600">{e.amount}</td><td className="p-3">{e.notes}</td></tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ==================== تبويب لوحة المؤشرات ==================== */}
+      {activeMainTab === "dashboard" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-blue-100 text-center">
+               <h4 className="text-slate-500 font-bold mb-2">إجمالي التحصيلات</h4>
+               <p className="text-3xl font-extrabold text-blue-600">{totalCollected.toLocaleString()} ريال</p>
+            </div>
+            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-orange-100 text-center">
+               <h4 className="text-slate-500 font-bold mb-2">إجمالي المصروفات</h4>
+               <p className="text-3xl font-extrabold text-orange-500">{totalExpenses.toLocaleString()} ريال</p>
+            </div>
+            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-green-100 text-center">
+               <h4 className="text-slate-500 font-bold mb-2">صافي الدخل</h4>
+               <p className="text-3xl font-extrabold text-green-600">{netIncome.toLocaleString()} ريال</p>
+            </div>
+            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-red-100 text-center">
+               <h4 className="text-slate-500 font-bold mb-2">الديون المعلقة</h4>
+               <p className="text-3xl font-extrabold text-red-500">{totalDebts.toLocaleString()} ريال</p>
+            </div>
           </div>
-        )}
 
-      </main>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* إحصائيات المحلات */}
+            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-slate-100">
+              <h3 className="text-xl font-bold text-blue-900 mb-6 text-center">📊 حالة الـ 166 محل</h3>
+              <div className="space-y-4">
+                {Object.entries(statusCounts).map(([status, count]) => {
+                   let color = status === "مؤجر" ? "bg-green-500" : status === "شاغر" ? "bg-red-500" : "bg-yellow-500";
+                   let percentage = Math.round((count / 166) * 100);
+                   return (
+                     <div key={status}>
+                        <div className="flex justify-between mb-1 font-bold"><span>{status}</span><span>{count} محل ({percentage}%)</span></div>
+                        <div className="w-full bg-slate-200 rounded-full h-4">
+                           <div className={`${color} h-4 rounded-full`} style={{ width: `${percentage}%` }}></div>
+                        </div>
+                     </div>
+                   )
+                })}
+              </div>
+            </div>
 
-      {/* 🧾 فوتر النظام */}
-      <footer className="bg-white border-t border-slate-200 py-4 mt-12 text-center text-xs font-bold text-slate-400">
-        جميع الحقوق محفوظة © أسواق الشبرمي {new Date().getFullYear()} م
-      </footer>
+            {/* الإيرادات مقابل المصروفات */}
+            <div className="bg-white/80 p-6 rounded-3xl shadow-lg border border-slate-100 flex flex-col justify-center">
+               <h3 className="text-xl font-bold text-blue-900 mb-6 text-center">⚖️ الإيرادات مقابل المصروفات</h3>
+               
+               <div className="mb-6">
+                  <div className="flex justify-between mb-1 font-bold text-blue-600"><span>الإيرادات المحصلة</span><span>{totalCollected.toLocaleString()}</span></div>
+                  <div className="w-full bg-slate-200 rounded-full h-6 relative overflow-hidden">
+                     <div className="bg-blue-500 h-6" style={{ width: totalCollected === 0 ? '0%' : '100%' }}></div>
+                  </div>
+               </div>
+
+               <div>
+                  <div className="flex justify-between mb-1 font-bold text-orange-500"><span>المصروفات التشغيلية</span><span>{totalExpenses.toLocaleString()}</span></div>
+                  <div className="w-full bg-slate-200 rounded-full h-6 relative overflow-hidden">
+                     <div className="bg-orange-500 h-6" style={{ width: totalCollected === 0 ? '0%' : `${Math.min((totalExpenses / totalCollected) * 100, 100)}%` }}></div>
+                  </div>
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
