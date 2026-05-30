@@ -65,6 +65,63 @@ export default function ShubramiSystem() {
   const [expNotes, setExpNotes] = useState("");
 
   // ==================== دوال الطباعة والتصدير ====================
+  // دالة طباعة تقرير المحلات المؤجرة حالياً كـ PDF
+  const printRentedShopsPDF = (data) => {
+    const rentedShops = data.filter(s => s.status === "مؤجر");
+    if (rentedShops.length === 0) return alert("لا توجد محلات مؤجرة لطباعتها في التقرير حالياً");
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl">
+      <head>
+          <title>تقرير المحلات المؤجرة حالياً</title>
+          <style>
+              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; background-color: white; }
+              h2 { text-align: center; color: #f97316; margin-bottom: 5px; }
+              h4 { text-align: center; color: #666; margin-top: 5px; margin-bottom: 25px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+              th, td { border: 1px solid #cbd5e1; padding: 12px 10px; text-align: center; font-size: 14px; }
+              th { background-color: #1e293b; color: white; font-weight: bold; }
+              tr:nth-child(even) { background-color: #f8fafc; }
+              .text-green { color: #16a34a; font-weight: bold; }
+              .btn { display: block; padding: 14px; background-color: #f97316; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);}
+              @media print { .btn { display: none !important; } body { padding: 0; } }
+          </style>
+      </head>
+      <body>
+          <h2>🏢 تقرير المحلات المؤجرة حالياً - أسواق الشبرمي</h2>
+          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م</h4>
+          <table>
+              <thead>
+                  <tr>
+                      <th>رقم المحل</th>
+                      <th>المستأجر</th>
+                      <th>الإيجار السنوي</th>
+                      <th>بداية العقد</th>
+                      <th>نهاية العقد</th>
+                      <th>إجمالي المحصل</th>
+                  </tr>
+              </thead>
+              <tbody>
+                  ${rentedShops.map(s => `
+                      <tr>
+                          <td><b>${s.shopNumber}</b></td>
+                          <td>${s.tenant}</td>
+                          <td>${s.annualRent.toLocaleString()} ريال</td>
+                          <td>${s.startDate}</td>
+                          <td>${s.endDate}</td>
+                          <td class="text-green">${s.collected.toLocaleString()} ريال</td>
+                      </tr>
+                  `).join('')}
+              </tbody>
+          </table>
+          <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const exportToCSV = (data, filename) => {
     if (data.length === 0) return alert("لا توجد سجلات لتصديرها حالياً");
     
@@ -300,7 +357,6 @@ export default function ShubramiSystem() {
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
         .font-tajawal { font-family: 'Tajawal', sans-serif; }
         
-        /* التنسيقات المخصصة للقوائم المنسدلة في الوضع الليلي */
         select option {
           background-color: #1e293b;
           color: white;
@@ -309,13 +365,12 @@ export default function ShubramiSystem() {
       
       <div dir="rtl" className="min-h-screen font-tajawal text-slate-100 flex flex-col justify-between relative"
            style={{
-             backgroundImage: "url('https://images.unsplash.com/photo-1512453979438-51f69a5e31a0?q=80&w=2000&auto=format&fit=crop')", // صورة ليلية لمدينة ومباني
+             backgroundImage: "url('https://images.unsplash.com/photo-1512453979438-51f69a5e31a0?q=80&w=2000&auto=format&fit=crop')",
              backgroundSize: 'cover',
              backgroundPosition: 'center',
              backgroundAttachment: 'fixed'
            }}>
         
-        {/* طبقة التعتيم (Overlay) لزيادة وضوح الزجاجيات والنصوص */}
         <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-0 pointer-events-none"></div>
 
         <div className="relative z-10 p-4 md:p-8 flex flex-col min-h-screen justify-between">
@@ -460,7 +515,13 @@ export default function ShubramiSystem() {
                   )}
 
                   <hr className="my-10 border-white/10" />
-                  <h3 className="text-xl font-bold text-white mb-6">📋 المحلات المؤجرة حالياً</h3>
+                  
+                  {/* التعديل الجديد: إضافة خيار طباعة المحلات المؤجرة PDF بالتوازي */}
+                  <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+                     <h3 className="text-xl font-bold text-white">📋 المحلات المؤجرة حالياً</h3>
+                     <button onClick={() => printRentedShopsPDF(shopsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📄 طباعة الجدول PDF</button>
+                  </div>
+                  
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
                     <table className="w-full text-right text-slate-200">
                       <thead className="bg-black/60 text-white border-b border-white/10">
@@ -469,7 +530,7 @@ export default function ShubramiSystem() {
                       <tbody>
                         {shopsDB.filter(s => s.status === "مؤجر").map((s, i) => (
                           <tr key={s.shopNumber} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                            <td className="p-4 font-bold text-white">{s.shopNumber}</td><td className="p-4">{s.tenant}</td><td className="p-4">{s.annualRent}</td><td className="p-4">{s.startDate}</td><td className="p-4">{s.endDate}</td><td className="p-4 text-green-400 font-bold">{s.collected}</td>
+                            <td className="p-4 font-bold text-white">{s.shopNumber}</td><td className="p-4">{s.tenant}</td><td className="p-4">{s.annualRent.toLocaleString()} ريال</td><td className="p-4">{s.startDate}</td><td className="p-4">{s.endDate}</td><td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
                           </tr>
                         ))}
                       </tbody>
