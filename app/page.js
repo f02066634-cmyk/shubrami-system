@@ -97,7 +97,6 @@ export default function ShubramiSystem() {
 
 
   // ==================== دوال الطباعة والتصدير ====================
-  // دالة طباعة تقرير المديونيات المستحقة والمعلقة كـ PDF
   const printDebtsPDF = (data) => {
     if (data.length === 0) return alert("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً");
     
@@ -428,7 +427,7 @@ export default function ShubramiSystem() {
     alert("تم إدراج المديونية السابقة بنجاح.");
   };
 
-  // معالجة سداد المديونيات المستحقة
+  // 🚀 معالجة سداد المديونيات المستحقة (تحديث سند مفتوح بدلاً من إنشاء سندات متعددة)
   const handleDebtPayment = (e) => {
     e.preventDefault();
     if (!payDebtId) return;
@@ -439,31 +438,57 @@ export default function ShubramiSystem() {
     const payAmt = Number(payDebtAmount);
     if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية المتبقية!");
 
-    // إنشاء سند بالدفعة
-    const newTx = {
-      id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
-      startDate: new Date().toISOString().split('T')[0],
-      updateDate: new Date().toISOString().split('T')[0],
-      shop: targetDebt.isShopDebt ? targetDebt.id : `مديونية سابقة`,
-      tenant: targetDebt.tenant,
-      targetAmount: targetDebt.amount,
-      paidAmount: payAmt,
-      remainingAmount: targetDebt.amount - payAmt,
-      method: payDebtMethod,
-      status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
-    };
-    
-    setTransactionsDB([...transactionsDB, newTx]);
+    // البحث عن سند مديونية مفتوح (سداد جزئي) مرتبط بهذه المديونية
+    const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
 
-    // إذا كانت المديونية لمحل (عقد منتهي)، نزيد المحصل الخاص بالمحل وسوف يختفي تلقائياً
+    if (existingTxIndex >= 0) {
+      // 1. تحديث السند الحالي (تراكم المبالغ)
+      const existingTx = transactionsDB[existingTxIndex];
+      const updatedPaid = existingTx.paidAmount + payAmt;
+      const updatedRemaining = existingTx.targetAmount - updatedPaid;
+      const newMethod = existingTx.method.includes(payDebtMethod) ? existingTx.method : `${existingTx.method} و ${payDebtMethod}`;
+
+      const updatedTx = {
+        ...existingTx,
+        paidAmount: updatedPaid,
+        remainingAmount: updatedRemaining,
+        method: newMethod,
+        updateDate: new Date().toISOString().split('T')[0],
+        status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
+      };
+
+      const newTxDB = [...transactionsDB];
+      newTxDB[existingTxIndex] = updatedTx;
+      setTransactionsDB(newTxDB);
+
+    } else {
+      // 2. إنشاء سند مديونية لأول مرة
+      const newTx = {
+        id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
+        referenceId: targetDebt.id, // للربط في الدفعات القادمة
+        isDebtReceipt: true, // علامة تميزه عن السندات العادية
+        startDate: new Date().toISOString().split('T')[0],
+        updateDate: new Date().toISOString().split('T')[0],
+        shop: targetDebt.isShopDebt ? targetDebt.id : `مديونية سابقة`,
+        tenant: targetDebt.tenant,
+        targetAmount: targetDebt.amount, // أصل المديونية عند بدء السداد
+        paidAmount: payAmt,
+        remainingAmount: targetDebt.amount - payAmt,
+        method: payDebtMethod,
+        status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
+      };
+      
+      setTransactionsDB([...transactionsDB, newTx]);
+    }
+
+    // تحديث الأرصدة الفعلية في النظام
     if (targetDebt.isShopDebt) {
       setShopsDB(shopsDB.map(s => s.shopNumber === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
     } else {
-      // إذا كانت مديونية يدوية، نقلل مبلغها
       setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
     }
 
-    alert("تم تسجيل سداد المديونية بنجاح وإصدار السند!");
+    alert(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند بنجاح.");
     setPayDebtId("");
     setPayDebtAmount("");
   };
@@ -476,11 +501,12 @@ export default function ShubramiSystem() {
   };
 
   // ==================== الحسابات للوحة المؤشرات ====================
-  const totalCollectedFromManualDebts = transactionsDB.filter(t => t.shop === 'مديونية سابقة').reduce((sum, t) => sum + t.paidAmount, 0);
+  // الدخل الإجمالي يتضمن تحصيلات المحلات (وتشمل العقود المنتهية) + تحصيلات المديونيات اليدوية
+  // تم فلترة السندات اليدوية بناء على الخاصية isDebtReceipt واستثناء المحلات
+  const totalCollectedFromManualDebts = transactionsDB.filter(t => t.isDebtReceipt && !shopsDB.some(s => s.shopNumber === t.referenceId)).reduce((sum, t) => sum + t.paidAmount, 0);
   const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0) + totalCollectedFromManualDebts;
   const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
   
-  // إجمالي الديون يشمل العقود المنتهية والديون اليدوية المتبقية
   const totalDebts = allOutstandingDebts.reduce((sum, d) => sum + d.amount, 0);
   const netIncome = totalCollected - totalExpenses;
 
@@ -829,7 +855,7 @@ export default function ShubramiSystem() {
                               <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
                               <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={payDebtAmount} onChange={(e) => setPayDebtAmount(e.target.value)} required />
                             </div>
-                            <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg text-lg">💰 حفظ وإصدار سند قبض للمديونية</button>
+                            <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg text-lg">💰 حفظ الدفعة للمديونية</button>
                           </>
                         )}
                      </form>
@@ -861,7 +887,6 @@ export default function ShubramiSystem() {
                    
                    <hr className="my-10 border-white/10" />
                    
-                   {/* التعديل الجديد: إضافة خيار طباعة المديونيات المستحقة والمعلقة كـ PDF */}
                    <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                       <h3 className="text-xl font-bold text-white">📊 جدول المديونيات المستحقة والمعلقة</h3>
                       <button onClick={() => printDebtsPDF(allOutstandingDebts)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📄 طباعة الجدول PDF</button>
@@ -869,7 +894,6 @@ export default function ShubramiSystem() {
                    
                    <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
                     <table className="w-full text-right text-slate-200">
-                      {/* تعديل العمود ليصبح مسمى (تاريخ نهاية العقد) */}
                       <thead className="bg-black/60 text-white border-b border-white/10">
                         <tr><th className="p-4">المعرف / المحل</th><th className="p-4">تاريخ نهاية العقد</th><th className="p-4">المستأجر</th><th className="p-4">التفاصيل</th><th className="p-4">المبلغ المتبقي</th></tr>
                       </thead>
