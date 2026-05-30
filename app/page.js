@@ -18,7 +18,7 @@ export default function ShubramiSystem() {
   const [activeSubTab, setActiveSubTab] = useState("contracts"); // contracts, payments, debts, expenses
   const [contractSubTab, setContractSubTab] = useState("new"); // new, edit
   const [paymentSubTab, setPaymentSubTab] = useState("new"); // new, update
-  const [debtSubTab, setDebtSubTab] = useState("pay"); // pay, new (لتبويبات المديونيات)
+  const [debtSubTab, setDebtSubTab] = useState("pay"); // pay, new
 
   // قواعد البيانات المؤقتة
   const [shopsDB, setShopsDB] = useState(initialShops);
@@ -79,7 +79,7 @@ export default function ShubramiSystem() {
     return end < today; 
   };
 
-  // 🚀 جلب المديونيات الآلية (للعقود المنتهية التي لم تُسدد بالكامل)
+  // جلب المديونيات الآلية (للعقود المنتهية التي لم تُسدد بالكامل)
   const expiredShopsDebts = shopsDB
     .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected)
     .map(s => ({
@@ -97,6 +97,60 @@ export default function ShubramiSystem() {
 
 
   // ==================== دوال الطباعة والتصدير ====================
+  // دالة طباعة تقرير المديونيات المستحقة والمعلقة كـ PDF
+  const printDebtsPDF = (data) => {
+    if (data.length === 0) return alert("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً");
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl">
+      <head>
+          <title>تقرير المديونيات المستحقة والمعلقة</title>
+          <style>
+              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; background-color: white; }
+              h2 { text-align: center; color: #f97316; margin-bottom: 5px; }
+              h4 { text-align: center; color: #666; margin-top: 5px; margin-bottom: 25px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+              th, td { border: 1px solid #cbd5e1; padding: 12px 10px; text-align: center; font-size: 14px; }
+              th { background-color: #1e293b; color: white; font-weight: bold; }
+              tr:nth-child(even) { background-color: #f8fafc; }
+              .text-red { color: #dc2626; font-weight: bold; }
+              .btn { display: block; padding: 14px; background-color: #f97316; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);}
+              @media print { .btn { display: none !important; } body { padding: 0; } }
+          </style>
+      </head>
+      <body>
+          <h2>🏢 تقرير مديونيات مستحقة ومعلقة - أسواق الشبرمي</h2>
+          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م</h4>
+          <table>
+              <thead>
+                  <tr>
+                      <th>المعرف / رقم المحل</th>
+                      <th>تاريخ نهاية العقد</th>
+                      <th>المستأجر</th>
+                      <th>التفاصيل</th>
+                      <th>المبلغ المتبقي</th>
+                  </tr>
+              </thead>
+              <tbody>
+                  ${data.map(d => `
+                      <tr>
+                          <td><b>${d.id}</b></td>
+                          <td>${d.year}</td>
+                          <td>${d.tenant}</td>
+                          <td>${d.details}</td>
+                          <td class="text-red">${d.amount.toLocaleString()} ريال</td>
+                      </tr>
+                  `).join('')}
+              </tbody>
+          </table>
+          <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const printRentedShopsPDF = (data) => {
     const rentedShops = data.filter(s => s.status === "مؤجر");
     if (rentedShops.length === 0) return alert("لا توجد محلات مؤجرة لطباعتها في التقرير حالياً");
@@ -374,7 +428,7 @@ export default function ShubramiSystem() {
     alert("تم إدراج المديونية السابقة بنجاح.");
   };
 
-  // 🚀 معالجة سداد المديونيات المستحقة
+  // معالجة سداد المديونيات المستحقة
   const handleDebtPayment = (e) => {
     e.preventDefault();
     if (!payDebtId) return;
@@ -422,7 +476,6 @@ export default function ShubramiSystem() {
   };
 
   // ==================== الحسابات للوحة المؤشرات ====================
-  // الدخل الإجمالي يتضمن تحصيلات المحلات + تحصيلات المديونيات اليدوية
   const totalCollectedFromManualDebts = transactionsDB.filter(t => t.shop === 'مديونية سابقة').reduce((sum, t) => sum + t.paidAmount, 0);
   const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0) + totalCollectedFromManualDebts;
   const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
@@ -742,7 +795,7 @@ export default function ShubramiSystem() {
                 </div>
               )}
 
-              {/* 3. المديونيات المستحقة */}
+              {/* 3. مديونيات مستحقة */}
               {activeSubTab === "debts" && (
                 <div className="animate-fade-in">
                   
@@ -785,7 +838,7 @@ export default function ShubramiSystem() {
                   {debtSubTab === "new" && (
                      <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
                         <div>
-                          <label className="block mb-2 font-semibold text-slate-300">السنة المالية / التاريخ:</label>
+                          <label className="block mb-2 font-semibold text-slate-300">تاريخ نهاية العقد / السنة المالية:</label>
                           <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
                         </div>
                         <div>
@@ -807,11 +860,18 @@ export default function ShubramiSystem() {
                   )}
                    
                    <hr className="my-10 border-white/10" />
-                   <h3 className="text-xl font-bold text-white mb-6">📊 جدول المديونيات المستحقة والمعلقة</h3>
+                   
+                   {/* التعديل الجديد: إضافة خيار طباعة المديونيات المستحقة والمعلقة كـ PDF */}
+                   <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+                      <h3 className="text-xl font-bold text-white">📊 جدول المديونيات المستحقة والمعلقة</h3>
+                      <button onClick={() => printDebtsPDF(allOutstandingDebts)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📄 طباعة الجدول PDF</button>
+                   </div>
+                   
                    <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
                     <table className="w-full text-right text-slate-200">
+                      {/* تعديل العمود ليصبح مسمى (تاريخ نهاية العقد) */}
                       <thead className="bg-black/60 text-white border-b border-white/10">
-                        <tr><th className="p-4">المعرف / المحل</th><th className="p-4">السنة</th><th className="p-4">المستأجر</th><th className="p-4">التفاصيل</th><th className="p-4">المبلغ المتبقي</th></tr>
+                        <tr><th className="p-4">المعرف / المحل</th><th className="p-4">تاريخ نهاية العقد</th><th className="p-4">المستأجر</th><th className="p-4">التفاصيل</th><th className="p-4">المبلغ المتبقي</th></tr>
                       </thead>
                       <tbody>
                         {allOutstandingDebts.length === 0 ? (
