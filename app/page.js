@@ -18,11 +18,12 @@ export default function ShubramiSystem() {
   const [activeSubTab, setActiveSubTab] = useState("contracts"); // contracts, payments, debts, expenses
   const [contractSubTab, setContractSubTab] = useState("new"); // new, edit
   const [paymentSubTab, setPaymentSubTab] = useState("new"); // new, update
+  const [debtSubTab, setDebtSubTab] = useState("pay"); // pay, new (لتبويبات المديونيات)
 
   // قواعد البيانات المؤقتة
   const [shopsDB, setShopsDB] = useState(initialShops);
   const [transactionsDB, setTransactionsDB] = useState([]);
-  const [debtsDB, setDebtsDB] = useState([]);
+  const [debtsDB, setDebtsDB] = useState([]); // المديونيات اليدوية
   const [expensesDB, setExpensesDB] = useState([]);
 
   // المتغيرات للنماذج (Forms)
@@ -52,11 +53,16 @@ export default function ShubramiSystem() {
   const [updatePayMethod, setUpdatePayMethod] = useState("نقد");
   const [updatePayAmount, setUpdatePayAmount] = useState(0);
 
-  // 5. الديون
+  // 5. المديونيات المستحقة
   const [debtYear, setDebtYear] = useState("");
   const [debtTenant, setDebtTenant] = useState("");
   const [debtDetails, setDebtDetails] = useState("");
   const [debtAmount, setDebtAmount] = useState("");
+  
+  // متغيرات سداد المديونية
+  const [payDebtId, setPayDebtId] = useState("");
+  const [payDebtAmount, setPayDebtAmount] = useState("");
+  const [payDebtMethod, setPayDebtMethod] = useState("نقد");
 
   // 6. المصروفات
   const [expDate, setExpDate] = useState("");
@@ -64,17 +70,33 @@ export default function ShubramiSystem() {
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
 
-  // ==================== دوال المساعدة للتواريخ ====================
+  // ==================== دوال المساعدة للتواريخ والمديونيات ====================
   const isContractExpired = (endDate) => {
     if (!endDate || endDate === "-") return false;
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // تصفير الوقت للتركيز على التاريخ فقط
+    today.setHours(0, 0, 0, 0);
     const end = new Date(endDate);
-    return end < today; // إذا كان تاريخ النهاية قبل تاريخ اليوم، فهو منتهي
+    return end < today; 
   };
 
+  // 🚀 جلب المديونيات الآلية (للعقود المنتهية التي لم تُسدد بالكامل)
+  const expiredShopsDebts = shopsDB
+    .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected)
+    .map(s => ({
+      id: s.shopNumber,
+      year: s.endDate,
+      tenant: s.tenant,
+      details: `عقد منتهي يتطلب تجديد - ${s.shopNumber}`,
+      amount: s.annualRent - s.collected,
+      isShopDebt: true
+    }));
+
+  // دمج المديونيات الآلية مع المديونيات اليدوية
+  const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => ({ ...d, isShopDebt: false }));
+  const allOutstandingDebts = [...expiredShopsDebts, ...manualDebts];
+
+
   // ==================== دوال الطباعة والتصدير ====================
-  // دالة طباعة تقرير المحلات المؤجرة حالياً كـ PDF
   const printRentedShopsPDF = (data) => {
     const rentedShops = data.filter(s => s.status === "مؤجر");
     if (rentedShops.length === 0) return alert("لا توجد محلات مؤجرة لطباعتها في التقرير حالياً");
@@ -344,11 +366,52 @@ export default function ShubramiSystem() {
     alert("تم تحديث السند بنجاح!");
   };
 
+  // إضافة مديونية يدوية
   const handleDebt = (e) => {
     e.preventDefault();
-    setDebtsDB([...debtsDB, { year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) }]);
+    setDebtsDB([...debtsDB, { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) }]);
     setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
     alert("تم إدراج المديونية السابقة بنجاح.");
+  };
+
+  // 🚀 معالجة سداد المديونيات المستحقة
+  const handleDebtPayment = (e) => {
+    e.preventDefault();
+    if (!payDebtId) return;
+    
+    const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
+    if (!targetDebt) return;
+    
+    const payAmt = Number(payDebtAmount);
+    if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية المتبقية!");
+
+    // إنشاء سند بالدفعة
+    const newTx = {
+      id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
+      startDate: new Date().toISOString().split('T')[0],
+      updateDate: new Date().toISOString().split('T')[0],
+      shop: targetDebt.isShopDebt ? targetDebt.id : `مديونية سابقة`,
+      tenant: targetDebt.tenant,
+      targetAmount: targetDebt.amount,
+      paidAmount: payAmt,
+      remainingAmount: targetDebt.amount - payAmt,
+      method: payDebtMethod,
+      status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
+    };
+    
+    setTransactionsDB([...transactionsDB, newTx]);
+
+    // إذا كانت المديونية لمحل (عقد منتهي)، نزيد المحصل الخاص بالمحل وسوف يختفي تلقائياً
+    if (targetDebt.isShopDebt) {
+      setShopsDB(shopsDB.map(s => s.shopNumber === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
+    } else {
+      // إذا كانت مديونية يدوية، نقلل مبلغها
+      setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
+    }
+
+    alert("تم تسجيل سداد المديونية بنجاح وإصدار السند!");
+    setPayDebtId("");
+    setPayDebtAmount("");
   };
 
   const handleExpense = (e) => {
@@ -359,9 +422,13 @@ export default function ShubramiSystem() {
   };
 
   // ==================== الحسابات للوحة المؤشرات ====================
-  const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0);
+  // الدخل الإجمالي يتضمن تحصيلات المحلات + تحصيلات المديونيات اليدوية
+  const totalCollectedFromManualDebts = transactionsDB.filter(t => t.shop === 'مديونية سابقة').reduce((sum, t) => sum + t.paidAmount, 0);
+  const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0) + totalCollectedFromManualDebts;
   const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
-  const totalDebts = debtsDB.reduce((sum, debt) => sum + debt.amount, 0);
+  
+  // إجمالي الديون يشمل العقود المنتهية والديون اليدوية المتبقية
+  const totalDebts = allOutstandingDebts.reduce((sum, d) => sum + d.amount, 0);
   const netIncome = totalCollected - totalExpenses;
 
   const statusCounts = shopsDB.reduce((acc, shop) => {
@@ -416,7 +483,7 @@ export default function ShubramiSystem() {
                    <p className="text-3xl font-extrabold text-green-400 drop-shadow-sm">{netIncome.toLocaleString()} ريال</p>
                 </div>
                 <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center hover:bg-white/10 transition-all">
-                   <h4 className="text-slate-300 font-bold mb-2">الديون السابقة المعلقة</h4>
+                   <h4 className="text-slate-300 font-bold mb-2">الديون المستحقة المعلقة</h4>
                    <p className="text-3xl font-extrabold text-red-400 drop-shadow-sm">{totalDebts.toLocaleString()} ريال</p>
                 </div>
               </div>
@@ -450,7 +517,7 @@ export default function ShubramiSystem() {
                 {[
                   { id: "contracts", label: "📝 إدارة العقود والمحلات" },
                   { id: "payments", label: "💰 التحصيل وسندات القبض" },
-                  { id: "debts", label: "📂 أرشيف ديون المغادرين" },
+                  { id: "debts", label: "📂 مديونيات مستحقة" },
                   { id: "expenses", label: "🛠️ إدارة المصروفات" }
                 ].map(tab => (
                   <button key={tab.id} onClick={() => setActiveSubTab(tab.id)} 
@@ -675,41 +742,91 @@ export default function ShubramiSystem() {
                 </div>
               )}
 
-              {/* 3. الديون */}
+              {/* 3. المديونيات المستحقة */}
               {activeSubTab === "debts" && (
                 <div className="animate-fade-in">
-                   <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                      <div>
-                        <label className="block mb-2 font-semibold text-slate-300">السنة المالية:</label>
-                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
-                      </div>
-                      <div>
-                        <label className="block mb-2 font-semibold text-slate-300">اسم المستأجر المغادر:</label>
-                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block mb-2 font-semibold text-slate-300">تفاصيل العقد والمديونية:</label>
-                        <textarea className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none min-h-[100px]" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea>
-                      </div>
-                      <div>
-                        <label className="block mb-2 font-semibold text-slate-300">المبلغ المتبقي:</label>
-                        <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required />
-                      </div>
-                      <div className="flex items-end">
-                         <button type="submit" className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg text-lg">🎯 جدولة المديونية</button>
-                      </div>
-                   </form>
+                  
+                  <div className="flex gap-6 mb-8 border-b border-white/10 pb-2">
+                    <button onClick={() => setDebtSubTab("pay")} className={`px-4 py-2 font-bold transition-colors ${debtSubTab === "pay" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>💰 سداد مديونية مستحقة</button>
+                    <button onClick={() => setDebtSubTab("new")} className={`px-4 py-2 font-bold transition-colors ${debtSubTab === "new" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>✍️ إدراج مديونية يدوية</button>
+                  </div>
+
+                  {debtSubTab === "pay" && (
+                     <form onSubmit={handleDebtPayment} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+                        <div className="md:col-span-2">
+                          <label className="block mb-2 font-semibold text-slate-300">اختر المديونية المستحقة للسداد:</label>
+                          <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={payDebtId} onChange={(e) => setPayDebtId(e.target.value)} required>
+                            <option value="">-- المديونيات المعلقة --</option>
+                            {allOutstandingDebts.map(d => (
+                              <option key={d.id} value={d.id}>
+                                {d.id} - {d.tenant} (المتبقي: {d.amount} ريال)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {payDebtId && (
+                          <>
+                            <div>
+                              <label className="block mb-2 font-semibold text-slate-300">طريقة الدفع:</label>
+                              <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={payDebtMethod} onChange={(e) => setPayDebtMethod(e.target.value)}>
+                                <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
+                              <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={payDebtAmount} onChange={(e) => setPayDebtAmount(e.target.value)} required />
+                            </div>
+                            <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg text-lg">💰 حفظ وإصدار سند قبض للمديونية</button>
+                          </>
+                        )}
+                     </form>
+                  )}
+
+                  {debtSubTab === "new" && (
+                     <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+                        <div>
+                          <label className="block mb-2 font-semibold text-slate-300">السنة المالية / التاريخ:</label>
+                          <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
+                        </div>
+                        <div>
+                          <label className="block mb-2 font-semibold text-slate-300">اسم المستأجر / الجهة:</label>
+                          <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block mb-2 font-semibold text-slate-300">تفاصيل المديونية:</label>
+                          <textarea className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none min-h-[100px]" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea>
+                        </div>
+                        <div>
+                          <label className="block mb-2 font-semibold text-slate-300">المبلغ المطلوب:</label>
+                          <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required />
+                        </div>
+                        <div className="flex items-end">
+                           <button type="submit" className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-3.5 rounded-xl hover:from-red-600 hover:to-red-700 transition-all shadow-lg text-lg">🎯 إدراج مديونية معلقة</button>
+                        </div>
+                     </form>
+                  )}
                    
-                   <h3 className="text-xl font-bold text-white mb-6">📊 أرشيف ديون المغادرين</h3>
-                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
+                   <hr className="my-10 border-white/10" />
+                   <h3 className="text-xl font-bold text-white mb-6">📊 جدول المديونيات المستحقة والمعلقة</h3>
+                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
                     <table className="w-full text-right text-slate-200">
                       <thead className="bg-black/60 text-white border-b border-white/10">
-                        <tr><th className="p-4">السنة</th><th className="p-4">المستأجر السابق</th><th className="p-4">التفاصيل</th><th className="p-4">المبلغ المتبقي</th></tr>
+                        <tr><th className="p-4">المعرف / المحل</th><th className="p-4">السنة</th><th className="p-4">المستأجر</th><th className="p-4">التفاصيل</th><th className="p-4">المبلغ المتبقي</th></tr>
                       </thead>
                       <tbody>
-                        {debtsDB.map((d, i) => (
-                          <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors"><td className="p-4">{d.year}</td><td className="p-4">{d.tenant}</td><td className="p-4">{d.details}</td><td className="p-4 font-bold text-orange-400">{d.amount}</td></tr>
-                        ))}
+                        {allOutstandingDebts.length === 0 ? (
+                          <tr><td colSpan="5" className="p-4 text-center text-slate-400">لا توجد مديونيات مستحقة حالياً.</td></tr>
+                        ) : (
+                          allOutstandingDebts.map((d, i) => (
+                            <tr key={d.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                              <td className="p-4 font-bold">{d.id}</td>
+                              <td className="p-4">{d.year}</td>
+                              <td className="p-4">{d.tenant}</td>
+                              <td className="p-4 text-slate-400 text-sm">{d.details}</td>
+                              <td className="p-4 font-bold text-red-400">{d.amount.toLocaleString()} ريال</td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
