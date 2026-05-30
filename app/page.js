@@ -64,6 +64,15 @@ export default function ShubramiSystem() {
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
 
+  // ==================== دوال المساعدة للتواريخ ====================
+  const isContractExpired = (endDate) => {
+    if (!endDate || endDate === "-") return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // تصفير الوقت للتركيز على التاريخ فقط
+    const end = new Date(endDate);
+    return end < today; // إذا كان تاريخ النهاية قبل تاريخ اليوم، فهو منتهي
+  };
+
   // ==================== دوال الطباعة والتصدير ====================
   // دالة طباعة تقرير المحلات المؤجرة حالياً كـ PDF
   const printRentedShopsPDF = (data) => {
@@ -84,6 +93,7 @@ export default function ShubramiSystem() {
               th { background-color: #1e293b; color: white; font-weight: bold; }
               tr:nth-child(even) { background-color: #f8fafc; }
               .text-green { color: #16a34a; font-weight: bold; }
+              .text-red { color: #dc2626; font-weight: bold; }
               .btn { display: block; padding: 14px; background-color: #f97316; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);}
               @media print { .btn { display: none !important; } body { padding: 0; } }
           </style>
@@ -100,6 +110,7 @@ export default function ShubramiSystem() {
                       <th>بداية العقد</th>
                       <th>نهاية العقد</th>
                       <th>إجمالي المحصل</th>
+                      <th>حالة العقد</th>
                   </tr>
               </thead>
               <tbody>
@@ -111,6 +122,7 @@ export default function ShubramiSystem() {
                           <td>${s.startDate}</td>
                           <td>${s.endDate}</td>
                           <td class="text-green">${s.collected.toLocaleString()} ريال</td>
+                          <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي (يتطلب تجديد)</span>' : '<span class="text-green">ساري</span>'}</td>
                       </tr>
                   `).join('')}
               </tbody>
@@ -518,7 +530,6 @@ export default function ShubramiSystem() {
                          <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
                       </div>
                       
-                      {/* تواريخ بداية ونهاية العقد المدمجة في واجهة التعديل */}
                       <div className="grid grid-cols-2 gap-4 md:col-span-2">
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">بداية العقد:</label>
@@ -544,12 +555,22 @@ export default function ShubramiSystem() {
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
                     <table className="w-full text-right text-slate-200">
                       <thead className="bg-black/60 text-white border-b border-white/10">
-                        <tr><th className="p-4">رقم المحل</th><th className="p-4">المستأجر</th><th className="p-4">الإيجار</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4">المحصل</th></tr>
+                        <tr><th className="p-4">رقم المحل</th><th className="p-4">المستأجر</th><th className="p-4">الإيجار</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4">المحصل</th><th className="p-4">حالة العقد</th></tr>
                       </thead>
                       <tbody>
                         {shopsDB.filter(s => s.status === "مؤجر").map((s, i) => (
                           <tr key={s.shopNumber} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                            <td className="p-4 font-bold text-white">{s.shopNumber}</td><td className="p-4">{s.tenant}</td><td className="p-4">{s.annualRent.toLocaleString()} ريال</td><td className="p-4">{s.startDate}</td><td className="p-4">{s.endDate}</td><td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
+                            <td className="p-4 font-bold text-white">{s.shopNumber}</td>
+                            <td className="p-4">{s.tenant}</td>
+                            <td className="p-4">{s.annualRent.toLocaleString()} ريال</td>
+                            <td className="p-4">{s.startDate}</td>
+                            <td className="p-4">{s.endDate}</td>
+                            <td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
+                            <td className="p-4">
+                              {isContractExpired(s.endDate) 
+                                ? <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm whitespace-nowrap">⚠️ منتهي (يتطلب تجديد)</span> 
+                                : <span className="text-green-400 font-bold text-sm">ساري</span>}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
