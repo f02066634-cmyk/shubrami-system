@@ -269,7 +269,14 @@ export default function ShubramiSystem() {
     if (!editContractShop) return;
     setShopsDB(shopsDB.map(s => 
       s.shopNumber === editContractShop 
-      ? { ...s, status: editContractStatus, tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", annualRent: Number(editContractRent), startDate: editContractStart, endDate: editContractEnd }
+      ? { 
+          ...s, 
+          status: editContractStatus, 
+          tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", 
+          annualRent: editContractStatus === "مؤجر" ? Number(editContractRent) : 0, 
+          startDate: editContractStatus === "مؤجر" ? editContractStart : "-", 
+          endDate: editContractStatus === "مؤجر" ? editContractEnd : "-" 
+        }
       : s
     ));
     alert("تم تحديث بيانات العقد بنجاح!");
@@ -504,19 +511,31 @@ export default function ShubramiSystem() {
                       </div>
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">المستأجر:</label>
-                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 outline-none" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
                       </div>
                       <div>
                          <label className="block mb-2 font-semibold text-slate-300">الإيجار السنوي:</label>
-                         <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} />
+                         <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
                       </div>
+                      
+                      {/* تواريخ بداية ونهاية العقد المدمجة في واجهة التعديل */}
+                      <div className="grid grid-cols-2 gap-4 md:col-span-2">
+                        <div>
+                          <label className="block mb-2 font-semibold text-slate-300">بداية العقد:</label>
+                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                        </div>
+                        <div>
+                          <label className="block mb-2 font-semibold text-slate-300">نهاية العقد:</label>
+                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                        </div>
+                      </div>
+
                       <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg shadow-orange-500/20 text-lg">🔄 تحديث العقد</button>
                     </form>
                   )}
 
                   <hr className="my-10 border-white/10" />
                   
-                  {/* التعديل الجديد: إضافة خيار طباعة المحلات المؤجرة PDF بالتوازي */}
                   <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                      <h3 className="text-xl font-bold text-white">📋 المحلات المؤجرة حالياً</h3>
                      <button onClick={() => printRentedShopsPDF(shopsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📄 طباعة الجدول PDF</button>
