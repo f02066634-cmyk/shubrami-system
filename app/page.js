@@ -427,7 +427,7 @@ export default function ShubramiSystem() {
     alert("تم إدراج المديونية السابقة بنجاح.");
   };
 
-  // 🚀 معالجة سداد المديونيات المستحقة (تحديث سند مفتوح بدلاً من إنشاء سندات متعددة)
+  // معالجة سداد المديونيات المستحقة
   const handleDebtPayment = (e) => {
     e.preventDefault();
     if (!payDebtId) return;
@@ -501,8 +501,6 @@ export default function ShubramiSystem() {
   };
 
   // ==================== الحسابات للوحة المؤشرات ====================
-  // الدخل الإجمالي يتضمن تحصيلات المحلات (وتشمل العقود المنتهية) + تحصيلات المديونيات اليدوية
-  // تم فلترة السندات اليدوية بناء على الخاصية isDebtReceipt واستثناء المحلات
   const totalCollectedFromManualDebts = transactionsDB.filter(t => t.isDebtReceipt && !shopsDB.some(s => s.shopNumber === t.referenceId)).reduce((sum, t) => sum + t.paidAmount, 0);
   const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0) + totalCollectedFromManualDebts;
   const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
@@ -736,10 +734,11 @@ export default function ShubramiSystem() {
                   {paymentSubTab === "new" && (
                     <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <label className="block mb-2 font-semibold text-slate-300">اختر المحل:</label>
+                        <label className="block mb-2 font-semibold text-slate-300">اختر المحل (العقود السارية فقط):</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
                           <option value="">-- المحلات المؤجرة --</option>
-                          {shopsDB.filter(s => s.status === "مؤجر").map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+                          {/* التعديل هنا: منع ظهور العقود المنتهية في قائمة السندات العادية */}
+                          {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
                         </select>
                       </div>
                       <div>
