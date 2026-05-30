@@ -150,10 +150,15 @@ export default function ShubramiSystem() {
     printWindow.document.close();
   };
 
+  // تحديث دالة طباعة تقرير المحلات المؤجر ليشمل عمود المتبقي وسطر المجاميع الكلية
   const printRentedShopsPDF = (data) => {
     const rentedShops = data.filter(s => s.status === "مؤجر");
     if (rentedShops.length === 0) return alert("لا توجد محلات مؤجرة لطباعتها في التقرير حالياً");
     
+    const sumRent = rentedShops.reduce((sum, s) => sum + s.annualRent, 0);
+    const sumCollected = rentedShops.reduce((sum, s) => sum + s.collected, 0);
+    const sumRemaining = sumRent - sumCollected;
+
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
@@ -169,6 +174,7 @@ export default function ShubramiSystem() {
               tr:nth-child(even) { background-color: #f8fafc; }
               .text-green { color: #16a34a; font-weight: bold; }
               .text-red { color: #dc2626; font-weight: bold; }
+              .total-row { background-color: #e2e8f0; font-weight: bold; }
               .btn { display: block; padding: 14px; background-color: #f97316; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);}
               @media print { .btn { display: none !important; } body { padding: 0; } }
           </style>
@@ -185,6 +191,7 @@ export default function ShubramiSystem() {
                       <th>بداية العقد</th>
                       <th>نهاية العقد</th>
                       <th>إجمالي المحصل</th>
+                      <th>المتبقي من الإيجار</th>
                       <th>حالة العقد</th>
                   </tr>
               </thead>
@@ -197,9 +204,18 @@ export default function ShubramiSystem() {
                           <td>${s.startDate}</td>
                           <td>${s.endDate}</td>
                           <td class="text-green">${s.collected.toLocaleString()} ريال</td>
+                          <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
                           <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي (يتطلب تجديد)</span>' : '<span class="text-green">ساري</span>'}</td>
                       </tr>
                   `).join('')}
+                  <tr class="total-row">
+                      <td colspan="2">المجموع الكلي</td>
+                      <td>${sumRent.toLocaleString()} ريال</td>
+                      <td colspan="2"></td>
+                      <td class="text-green">${sumCollected.toLocaleString()} ريال</td>
+                      <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
+                      <td></td>
+                  </tr>
               </tbody>
           </table>
           <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
@@ -438,11 +454,9 @@ export default function ShubramiSystem() {
     const payAmt = Number(payDebtAmount);
     if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية المتبقية!");
 
-    // البحث عن سند مديونية مفتوح (سداد جزئي) مرتبط بهذه المديونية
     const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
 
     if (existingTxIndex >= 0) {
-      // 1. تحديث السند الحالي (تراكم المبالغ)
       const existingTx = transactionsDB[existingTxIndex];
       const updatedPaid = existingTx.paidAmount + payAmt;
       const updatedRemaining = existingTx.targetAmount - updatedPaid;
@@ -462,16 +476,15 @@ export default function ShubramiSystem() {
       setTransactionsDB(newTxDB);
 
     } else {
-      // 2. إنشاء سند مديونية لأول مرة
       const newTx = {
         id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
-        referenceId: targetDebt.id, // للربط في الدفعات القادمة
-        isDebtReceipt: true, // علامة تميزه عن السندات العادية
+        referenceId: targetDebt.id,
+        isDebtReceipt: true,
         startDate: new Date().toISOString().split('T')[0],
         updateDate: new Date().toISOString().split('T')[0],
         shop: targetDebt.isShopDebt ? targetDebt.id : `مديونية سابقة`,
         tenant: targetDebt.tenant,
-        targetAmount: targetDebt.amount, // أصل المديونية عند بدء السداد
+        targetAmount: targetDebt.amount,
         paidAmount: payAmt,
         remainingAmount: targetDebt.amount - payAmt,
         method: payDebtMethod,
@@ -481,7 +494,6 @@ export default function ShubramiSystem() {
       setTransactionsDB([...transactionsDB, newTx]);
     }
 
-    // تحديث الأرصدة الفعلية في النظام
     if (targetDebt.isShopDebt) {
       setShopsDB(shopsDB.map(s => s.shopNumber === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
     } else {
@@ -512,6 +524,12 @@ export default function ShubramiSystem() {
     acc[shop.status] = (acc[shop.status] || 0) + 1;
     return acc;
   }, {});
+
+  // حساب المجاميع الكلية لجدول المحلات المؤجرة حالياً
+  const rentedShopsList = shopsDB.filter(s => s.status === "مؤجر");
+  const totalRentSum = rentedShopsList.reduce((sum, s) => sum + s.annualRent, 0);
+  const totalCollectedSum = rentedShopsList.reduce((sum, s) => sum + s.collected, 0);
+  const totalRemainingSum = totalRentSum - totalCollectedSum;
 
   // ==================== واجهة المستخدم (UI) ====================
   return (
@@ -699,10 +717,20 @@ export default function ShubramiSystem() {
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
                     <table className="w-full text-right text-slate-200">
                       <thead className="bg-black/60 text-white border-b border-white/10">
-                        <tr><th className="p-4">رقم المحل</th><th className="p-4">المستأجر</th><th className="p-4">الإيجار</th><th className="p-4">البداية</th><th className="p-4">النهاية</th><th className="p-4">المحصل</th><th className="p-4">حالة العقد</th></tr>
+                        {/* تعديل الرأس: إضافة عمود المتبقي من الإيجار */}
+                        <tr>
+                          <th className="p-4">رقم المحل</th>
+                          <th className="p-4">المستأجر</th>
+                          <th className="p-4">الإيجار السنوي</th>
+                          <th className="p-4">البداية</th>
+                          <th className="p-4">النهاية</th>
+                          <th className="p-4">إجمالي المحصل</th>
+                          <th className="p-4">المتبقي من الإيجار</th>
+                          <th className="p-4">حالة العقد</th>
+                        </tr>
                       </thead>
                       <tbody>
-                        {shopsDB.filter(s => s.status === "مؤجر").map((s, i) => (
+                        {rentedShopsList.map((s, i) => (
                           <tr key={s.shopNumber} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                             <td className="p-4 font-bold text-white">{s.shopNumber}</td>
                             <td className="p-4">{s.tenant}</td>
@@ -710,6 +738,8 @@ export default function ShubramiSystem() {
                             <td className="p-4">{s.startDate}</td>
                             <td className="p-4">{s.endDate}</td>
                             <td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
+                            {/* إضافة العمود الجديد لحساب وعرض المبلغ المتبقي لكل محل على حدة */}
+                            <td className="p-4 text-red-400 font-bold">{(s.annualRent - s.collected).toLocaleString()} ريال</td>
                             <td className="p-4">
                               {isContractExpired(s.endDate) 
                                 ? <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm whitespace-nowrap">⚠️ منتهي (يتطلب تجديد)</span> 
@@ -717,6 +747,17 @@ export default function ShubramiSystem() {
                             </td>
                           </tr>
                         ))}
+                        {/* تعديل الجدول: إضافة سطر المجموع الكلي أسفل جدول المحلات المؤجرة */}
+                        {rentedShopsList.length > 0 && (
+                          <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
+                            <td className="p-4" colSpan="2">المجموع الكلي</td>
+                            <td className="p-4 text-slate-200">{totalRentSum.toLocaleString()} ريال</td>
+                            <td className="p-4" colSpan="2"></td>
+                            <td className="p-4 text-green-400">{totalCollectedSum.toLocaleString()} ريال</td>
+                            <td className="p-4 text-red-400">{totalRemainingSum.toLocaleString()} ريال</td>
+                            <td className="p-4"></td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -737,7 +778,6 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">اختر المحل (العقود السارية فقط):</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
                           <option value="">-- المحلات المؤجرة --</option>
-                          {/* التعديل هنا: منع ظهور العقود المنتهية في قائمة السندات العادية */}
                           {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
                         </select>
                       </div>
