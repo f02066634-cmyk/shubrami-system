@@ -150,7 +150,6 @@ export default function ShubramiSystem() {
     printWindow.document.close();
   };
 
-  // تحديث دالة طباعة تقرير المحلات المؤجر ليشمل عمود المتبقي وسطر المجاميع الكلية
   const printRentedShopsPDF = (data) => {
     const rentedShops = data.filter(s => s.status === "مؤجر");
     if (rentedShops.length === 0) return alert("لا توجد محلات مؤجرة لطباعتها في التقرير حالياً");
@@ -672,7 +671,8 @@ export default function ShubramiSystem() {
                           }
                         }} required>
                           <option value="">-- اختر المحل المؤجر --</option>
-                          {shopsDB.filter(s => s.status === "مؤجر").map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+                          {/* التعديل هنا: الفلترة تظهر فقط العقود السارية، أو المنتهية التي المتبقي منها 0 */}
+                          {shopsDB.filter(s => s.status === "مؤجر" && (!isContractExpired(s.endDate) || (s.annualRent - s.collected) <= 0)).map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
                         </select>
                       </div>
                       <div>
@@ -717,7 +717,6 @@ export default function ShubramiSystem() {
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
                     <table className="w-full text-right text-slate-200">
                       <thead className="bg-black/60 text-white border-b border-white/10">
-                        {/* تعديل الرأس: إضافة عمود المتبقي من الإيجار */}
                         <tr>
                           <th className="p-4">رقم المحل</th>
                           <th className="p-4">المستأجر</th>
@@ -738,7 +737,6 @@ export default function ShubramiSystem() {
                             <td className="p-4">{s.startDate}</td>
                             <td className="p-4">{s.endDate}</td>
                             <td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
-                            {/* إضافة العمود الجديد لحساب وعرض المبلغ المتبقي لكل محل على حدة */}
                             <td className="p-4 text-red-400 font-bold">{(s.annualRent - s.collected).toLocaleString()} ريال</td>
                             <td className="p-4">
                               {isContractExpired(s.endDate) 
@@ -747,7 +745,6 @@ export default function ShubramiSystem() {
                             </td>
                           </tr>
                         ))}
-                        {/* تعديل الجدول: إضافة سطر المجموع الكلي أسفل جدول المحلات المؤجرة */}
                         {rentedShopsList.length > 0 && (
                           <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
                             <td className="p-4" colSpan="2">المجموع الكلي</td>
