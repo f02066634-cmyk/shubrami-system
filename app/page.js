@@ -33,8 +33,9 @@ export default function ShubramiSystem() {
   const [filterContractYear, setFilterContractYear] = useState("الكل"); 
   const [dashboardYear, setDashboardYear] = useState("الكل");
   
-  // فلتر حالة السندات المفصل
+  // فلاتر جدول السندات
   const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
+  const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
 
   // المتغيرات للنماذج
   // 1. عقد جديد
@@ -119,6 +120,13 @@ export default function ShubramiSystem() {
   expensesDB.forEach(e => { if(e.date) dashYearsSet.add(getYear(e.date)); });
   allOutstandingDebts.forEach(d => { if(d.year) dashYearsSet.add(getYear(d.year)); });
   const dashboardAvailableYears = [...dashYearsSet].filter(Boolean).sort((a, b) => b - a);
+
+  // استخراج السنوات الخاصة بالسندات فقط (بناءً على رقم السند: SH-YYYY-XXXX)
+  const receiptYears = [...new Set(transactionsDB.map(t => {
+    const parts = String(t.id).split('-');
+    return parts.length > 1 ? parts[1] : null;
+  }))].filter(Boolean).sort((a, b) => b - a);
+
 
   // ==================== دوال الطباعة والتصدير ====================
   const printDebtsPDF = (data) => {
@@ -596,10 +604,16 @@ export default function ShubramiSystem() {
   const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
 
-  // ==================== الفرز الجديد الدقيق لجدول السندات ====================
+  // ==================== الفرز المزدوج (الجديد) لجدول السندات ====================
   const filteredTransactions = transactionsDB.filter(t => {
-    if (filterReceiptStatus === "الكل") return true;
-    return t.status === filterReceiptStatus;
+    const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
+    
+    // استخراج السنة من رقم السند مباشرة (مثال: SH-2026-0001 -> 2026)
+    const parts = String(t.id).split('-');
+    const txYear = parts.length > 1 ? parts[1] : null;
+    const yearMatch = filterReceiptYear === "الكل" || txYear === filterReceiptYear;
+    
+    return statusMatch && yearMatch;
   });
 
   // ==================== واجهة المستخدم (UI) ====================
@@ -959,7 +973,7 @@ export default function ShubramiSystem() {
                      </div>
                   </div>
 
-                  {/* ===== الفلتر الجديد الدقيق لجدول السندات ===== */}
+                  {/* ===== الفلتر المزدوج الجديد لجدول السندات ===== */}
                   <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
                     <div className="flex-1 min-w-[200px]">
                       <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند الدقيقة:</label>
@@ -969,6 +983,16 @@ export default function ShubramiSystem() {
                         <option value="مفتوح (سداد جزئي)">مفتوح (سداد جزئي)</option>
                         <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
                         <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
+                      </select>
+                    </div>
+                    
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بسنة الإصدار (من رقم السند):</label>
+                      <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptYear} onChange={(e) => setFilterReceiptYear(e.target.value)}>
+                        <option value="الكل">كل السنوات</option>
+                        {receiptYears.map(year => (
+                           <option key={year} value={year}>{year}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -992,7 +1016,7 @@ export default function ShubramiSystem() {
                             </tr>
                           ))
                         ) : (
-                          <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق حالة الفرز الحالية.</td></tr>
+                          <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز الحالية.</td></tr>
                         )}
                       </tbody>
                     </table>
