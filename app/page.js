@@ -33,8 +33,8 @@ export default function ShubramiSystem() {
   const [filterContractYear, setFilterContractYear] = useState("الكل"); 
   const [dashboardYear, setDashboardYear] = useState("الكل");
   
-  // المتغير الجديد: فلتر حالة السندات
-  const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل"); // الكل, مفتوح, مغلق
+  // فلتر حالة السندات المفصل
+  const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
 
   // المتغيرات للنماذج
   // 1. عقد جديد
@@ -596,12 +596,10 @@ export default function ShubramiSystem() {
   const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
 
-  // ==================== الفرز الجديد لجدول السندات ====================
+  // ==================== الفرز الجديد الدقيق لجدول السندات ====================
   const filteredTransactions = transactionsDB.filter(t => {
     if (filterReceiptStatus === "الكل") return true;
-    if (filterReceiptStatus === "مغلق") return t.status.includes("مغلق");
-    if (filterReceiptStatus === "مفتوح") return t.status.includes("مفتوح");
-    return true;
+    return t.status === filterReceiptStatus;
   });
 
   // ==================== واجهة المستخدم (UI) ====================
@@ -930,7 +928,7 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">اختر السند المفتوح:</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
                           <option value="">-- السندات المعلقة --</option>
-                          {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
+                          {transactionsDB.filter(t => t.status.includes("مفتوح")).map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
                         </select>
                       </div>
                       {updatePayReceipt && (
@@ -961,14 +959,16 @@ export default function ShubramiSystem() {
                      </div>
                   </div>
 
-                  {/* ===== الفلتر الجديد لجدول السندات ===== */}
+                  {/* ===== الفلتر الجديد الدقيق لجدول السندات ===== */}
                   <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
                     <div className="flex-1 min-w-[200px]">
-                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند:</label>
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند الدقيقة:</label>
                       <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
                         <option value="الكل">الكل (شامل)</option>
-                        <option value="مفتوح">مفتوح (قيد التحصيل / سداد جزئي)</option>
-                        <option value="مغلق">مغلق (مكتمل / سداد مديونية)</option>
+                        <option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option>
+                        <option value="مفتوح (سداد جزئي)">مفتوح (سداد جزئي)</option>
+                        <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
+                        <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
                       </select>
                     </div>
                   </div>
