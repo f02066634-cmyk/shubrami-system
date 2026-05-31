@@ -144,7 +144,7 @@ export default function ShubramiSystem() {
                           <td>${d.year}</td>
                           <td>${d.tenant}</td>
                           <td>${d.details}</td>
-                          <td class="text-red">${d.amount.toLocaleString()} ريال</td>
+                          <td class="text-red">${d.amount.toLocaleString()} Companion</td>
                       </tr>
                   `).join('')}
               </tbody>
@@ -238,16 +238,7 @@ export default function ShubramiSystem() {
     const headers = ["رقم السند", "تاريخ البدء", "تاريخ التحديث", "رقم المحل", "المستأجر", "المبلغ الكلي المتفق عليه", "إجمالي المدفوع حتى الآن", "المبلغ المتبقي", "طريقة الدفع", "الحالة"].join(",");
     
     const rows = data.map(row => [
-      row.id,
-      row.startDate,
-      row.updateDate,
-      row.shop,
-      row.tenant,
-      row.targetAmount,
-      row.paidAmount,
-      row.remainingAmount,
-      row.method,
-      row.status
+      row.id, row.startDate, row.updateDate, row.shop, row.tenant, row.targetAmount, row.paidAmount, row.remainingAmount, row.method, row.status
     ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
     
     const csvContent = "\uFEFF" + "sep=,\n" + headers + "\n" + rows;
@@ -376,7 +367,7 @@ export default function ShubramiSystem() {
     alert(`تم حفظ العقد للمحل ${newContractShop} بنجاح!`);
   };
 
-  // 🚀 تعديل دالة تحديث/تجديد العقد لتقوم بالاستحداث كصف جديد عند التجديد
+  // 🚀 تعديل دالة تحديث/تجديد العقد: إضافة شرط تغيير التواريخ الإلزامي عند التجديد
   const handleEditContract = (e) => {
     e.preventDefault();
     if (!editContractId) return alert("الرجاء تحديد المحل أولاً");
@@ -384,11 +375,10 @@ export default function ShubramiSystem() {
     const originalRow = shopsDB.find(s => s.id === editContractId);
     if (!originalRow) return;
 
-    // فحص هل العقد الحالي منتهي وبالتالي العملية هي "تجديد عقد"؟
     const isRenewal = isContractExpired(originalRow.endDate);
 
     if (isRenewal) {
-      // شروط تجديد العقد الإلزامية (رقم عقد جديد وغير فارغ ومختلف عن السابق)
+      // 1. شروط الأرقام الموحدة لعقد إيجار الجديد
       if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") {
         return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد بالخانة المخصصة!");
       }
@@ -396,9 +386,17 @@ export default function ShubramiSystem() {
         return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً عن رقم العقد المنتهي السابق لحفظ التاريخ ماليًا!");
       }
 
+      // 2. التعديل المحدث: شرط تغيير التواريخ بشكل إلزامي وجديد
+      if (!editContractStart || !editContractEnd) {
+        return alert("خطأ: الرجاء إدخال تاريخ بداية ونهاية العقد الجديد!");
+      }
+      if (editContractStart === originalRow.startDate || editContractEnd === originalRow.endDate) {
+        return alert("خطأ مالي وتعاقدي: لتجديد هذا العقد، يلزم تعديل تواريخ البداية والنهاية لتتوافق مع المدة التعاقدية الجديدة (لا يمكن تكرار تواريخ العقد القديم منتهي الصلاحية)!");
+      }
+
       // إنشاء كائن الصف الجديد بالكامل وإلحاقه بقاعدة البيانات
       const newContractRow = {
-        id: `row-${Date.now()}`, // توليد معرف فريد جديد تماماً
+        id: `row-${Date.now()}`, 
         shopNumber: originalRow.shopNumber,
         area: originalRow.area,
         status: "مؤجر",
@@ -407,11 +405,11 @@ export default function ShubramiSystem() {
         annualRent: Number(editContractRent),
         startDate: editContractStart,
         endDate: editContractEnd,
-        collected: 0 // يبدأ من صفر كعقد مالي منفصل
+        collected: 0 
       };
 
       setShopsDB([...shopsDB, newContractRow]);
-      alert(`🎉 تم تجديد العقد للمحل (${originalRow.shopNumber}) بنجاح! نزل الآن كصف جديد ورقم عقد مستقل، وتم حفظ السجل القديم كأرشيف.`);
+      alert(`🎉 تم تجديد العقد للمحل (${originalRow.shopNumber}) بنجاح! نزل الآن كصف جديد ورقم عقد مستقل، وتحول العقد القديم تلقائياً إلى أرشيف غير قابل للتعديل.`);
       
       // تصفية حقول النموذج بعد النجاح
       setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
@@ -484,7 +482,6 @@ export default function ShubramiSystem() {
     alert("تم تحديث السند بنجاح!");
   };
 
-  // إضافة مديونية يدوية
   const handleDebt = (e) => {
     e.preventDefault();
     setDebtsDB([...debtsDB, { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) }]);
@@ -492,7 +489,6 @@ export default function ShubramiSystem() {
     alert("تم إدراج المديونية السابقة بنجاح.");
   };
 
-  // معالجة سداد المديونيات المستحقة
   const handleDebtPayment = (e) => {
     e.preventDefault();
     if (!payDebtId) return;
@@ -523,7 +519,6 @@ export default function ShubramiSystem() {
       const newTxDB = [...transactionsDB];
       newTxDB[existingTxIndex] = updatedTx;
       setTransactionsDB(newTxDB);
-
     } else {
       const newTx = {
         id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
@@ -544,7 +539,6 @@ export default function ShubramiSystem() {
     }
 
     if (targetDebt.isShopDebt) {
-      // التعديل هنا: مطابقة صف المحل الدقيق بناء على المعرف الفريد id لتجنب تكرار العمليات
       setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
     } else {
       setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
@@ -717,7 +711,17 @@ export default function ShubramiSystem() {
                           }
                         }} required>
                           <option value="">-- اختر من المحلات المؤجرة المتاحة --</option>
-                          {shopsDB.filter(s => s.status === "مؤجر" && (!isContractExpired(s.endDate) || (s.annualRent - s.collected) <= 0)).map(s => (
+                          {/* التعديل المحدث هنا: حجب العقود المنتهية القديمة إذا كان المحل يملك عقداً سارياً وجديداً نزل في الجدول */}
+                          {shopsDB.filter(s => {
+                            if (s.status !== "مؤجر") return false;
+                            const isExpired = isContractExpired(s.endDate);
+                            if (!isExpired) return true; // تظهر العقود السارية دائماً للتصحيح أو التعديل
+                            
+                            // العقد المنتهي يظهر فقط بشرطين: 1. متبقيه 0  2. لا يوجد عقد ساري بديل لنفس رقم المحل حالياً بالجدول
+                            const isPaid = (s.annualRent - s.collected) <= 0;
+                            const hasActiveContract = shopsDB.some(activeShop => activeShop.shopNumber === s.shopNumber && activeShop.status === "مؤجر" && !isContractExpired(activeShop.endDate));
+                            return isPaid && !hasActiveContract;
+                          }).map(s => (
                             <option key={s.id} value={s.id}>
                               {s.shopNumber} - {s.tenant} {isContractExpired(s.endDate) ? '(⚠️ منتهي - متاح للتجديد)' : '(ساري)'}
                             </option>
@@ -733,10 +737,9 @@ export default function ShubramiSystem() {
                         </select>
                       </div>
 
-                      {/* تنبيه ذكي يظهر للمستخدم في حال رصد عقد منتهي يتطلب استحداث */}
                       {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && (
                         <div className="md:col-span-2 p-3 bg-orange-500/20 text-orange-400 rounded-xl border border-orange-500/30 text-sm font-bold">
-                          ⚠️ النظام رصد أن هذا العقد منتهي بالكامل. تعديل البيانات الآن سيقوم تلقائياً بإنشاء دورة تعاقدية جديدة بـ (صف منفصل) للحفاظ على السجلات السابقة ماليًا. يرجى إدخال رقم عقد إيجار جديد فريد.
+                          ⚠️ النظام رصد أن هذا العقد منتهي بالكامل. الحفظ الآن سيقوم تلقائياً بإنشاء دورة تعاقدية جديدة (بصف منفصل) لحفظ السجل المالي والأرشيف، ويشترط إدخال رقم عقد وتواريخ جديدة تماماً.
                         </div>
                       )}
 
@@ -867,7 +870,7 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">اختر السند المفتوح:</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
                           <option value="">-- السندات المعلقة --</option>
-                          {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
+                          {transactionsDB.filter(t => t.status === "فتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
                         </select>
                       </div>
                       {updatePayReceipt && (
