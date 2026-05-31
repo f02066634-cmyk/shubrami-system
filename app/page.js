@@ -28,15 +28,16 @@ export default function ShubramiSystem() {
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
 
-  // متغيرات الفرز (الفلاتر)
+  // متغيرات الفرز (الفلاتر) لجدول العقود
   const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
   const [filterContractYear, setFilterContractYear] = useState("الكل"); 
-  const [dashboardYear, setDashboardYear] = useState("الكل");
+  const [searchContract, setSearchContract] = useState(""); // المتغير الجديد لبحث العقود
   
-  // فلاتر جدول السندات
+  // فلاتر لوحة التحكم العامة والسندات
+  const [dashboardYear, setDashboardYear] = useState("الكل");
   const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
   const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
-  const [searchReceipt, setSearchReceipt] = useState(""); // المتغير الجديد للبحث
+  const [searchReceipt, setSearchReceipt] = useState(""); 
 
   // المتغيرات للنماذج
   // 1. عقد جديد
@@ -122,7 +123,6 @@ export default function ShubramiSystem() {
   allOutstandingDebts.forEach(d => { if(d.year) dashYearsSet.add(getYear(d.year)); });
   const dashboardAvailableYears = [...dashYearsSet].filter(Boolean).sort((a, b) => b - a);
 
-  // استخراج السنوات الخاصة بالسندات فقط (بناءً على رقم السند: SH-YYYY-XXXX)
   const receiptYears = [...new Set(transactionsDB.map(t => {
     const parts = String(t.id).split('-');
     return parts.length > 1 ? parts[1] : null;
@@ -600,16 +600,31 @@ export default function ShubramiSystem() {
     return acc;
   }, {});
 
+  // ==================== الفرز المزدوج والبحث لجدول العقود ====================
   const filteredRentedShops = shopsDB.filter(s => {
     if (s.status !== "مؤجر") return false;
+
+    // 1. فرز بحالة العقد
     const isExpired = isContractExpired(s.endDate);
     if (filterContractStatus === "ساري" && isExpired) return false;
     if (filterContractStatus === "منتهي" && !isExpired) return false;
+
+    // 2. فرز بسنة العقد (السنة المالية)
     if (filterContractYear !== "الكل") {
       const startY = getYear(s.startDate) || "";
       const endY = getYear(s.endDate) || "";
       if (startY !== filterContractYear && endY !== filterContractYear) return false;
     }
+
+    // 3. فلترة بنص البحث (رقم المحل، اسم المستأجر، رقم العقد)
+    const searchLower = searchContract.toLowerCase().trim();
+    if (searchLower !== "") {
+      const matchShop = String(s.shopNumber).toLowerCase().includes(searchLower);
+      const matchTenant = String(s.tenant).toLowerCase().includes(searchLower);
+      const matchEjar = String(s.ejarNumber).toLowerCase().includes(searchLower);
+      if (!matchShop && !matchTenant && !matchEjar) return false;
+    }
+
     return true;
   });
 
@@ -617,7 +632,7 @@ export default function ShubramiSystem() {
   const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
 
-  // ==================== الفرز المزدوج + البحث لجدول السندات ====================
+  // ==================== الفرز المزدوج والبحث لجدول السندات ====================
   const filteredTransactions = transactionsDB.filter(t => {
     const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
     
@@ -634,7 +649,6 @@ export default function ShubramiSystem() {
     return statusMatch && yearMatch && searchMatch;
   });
 
-  // حساب المجاميع الخاصة بجدول السندات بناءً على الفلترة والبحث
   const filteredTxTargetSum = filteredTransactions.reduce((sum, t) => sum + t.targetAmount, 0);
   const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
   const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
@@ -853,7 +867,19 @@ export default function ShubramiSystem() {
                      <button onClick={() => printRentedShopsPDF(filteredRentedShops)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول (لنتائج الفرز)</button>
                   </div>
 
+                  {/* ===== شريط البحث والفلاتر لجدول العقود والمحلات ===== */}
                   <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
+                    <div className="flex-1 min-w-[250px]">
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">🔍 بحث سريع (المحل، المستأجر، رقم العقد):</label>
+                      <input 
+                        type="text" 
+                        placeholder="ابحث برقم المحل، اسم المستأجر، أو رقم العقد..." 
+                        className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none focus:border-orange-500 transition-colors" 
+                        value={searchContract} 
+                        onChange={(e) => setSearchContract(e.target.value)} 
+                      />
+                    </div>
+
                     <div className="flex-1 min-w-[200px]">
                       <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة العقد:</label>
                       <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterContractStatus} onChange={(e) => setFilterContractStatus(e.target.value)}>
@@ -862,6 +888,7 @@ export default function ShubramiSystem() {
                         <option value="منتهي">منتهي فقط</option>
                       </select>
                     </div>
+                    
                     <div className="flex-1 min-w-[200px]">
                       <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بسنة العقد (مالياً):</label>
                       <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterContractYear} onChange={(e) => setFilterContractYear(e.target.value)}>
@@ -889,34 +916,36 @@ export default function ShubramiSystem() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredRentedShops.map((s) => (
-                          <tr key={s.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                            <td className="p-4 font-bold text-white">{s.shopNumber}</td>
-                            <td className="p-4">{s.tenant}</td>
-                            <td className="p-4 font-bold text-blue-300">{s.ejarNumber}</td>
-                            <td className="p-4">{s.annualRent.toLocaleString()} ريال</td>
-                            <td className="p-4">{s.startDate}</td>
-                            <td className="p-4">{s.endDate}</td>
-                            <td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
-                            <td className="p-4 text-red-400 font-bold">{(s.annualRent - s.collected).toLocaleString()} ريال</td>
-                            <td className="p-4">
-                              {isContractExpired(s.endDate) 
-                                ? <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm whitespace-nowrap">⚠️ منتهي</span> 
-                                : <span className="text-green-400 font-bold text-sm">ساري</span>}
-                            </td>
-                          </tr>
-                        ))}
                         {filteredRentedShops.length > 0 ? (
-                          <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
-                            <td className="p-4" colSpan="3">مجموع نتائج الفرز الحالية</td>
-                            <td className="p-4 text-slate-200">{totalRentSum.toLocaleString()} ريال</td>
-                            <td className="p-4" colSpan="2"></td>
-                            <td className="p-4 text-green-400">{totalCollectedSum.toLocaleString()} ريال</td>
-                            <td className="p-4 text-red-400">{totalRemainingSum.toLocaleString()} ريال</td>
-                            <td className="p-4"></td>
-                          </tr>
+                          <>
+                            {filteredRentedShops.map((s) => (
+                              <tr key={s.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                <td className="p-4 font-bold text-white">{s.shopNumber}</td>
+                                <td className="p-4">{s.tenant}</td>
+                                <td className="p-4 font-bold text-blue-300">{s.ejarNumber}</td>
+                                <td className="p-4">{s.annualRent.toLocaleString()} ريال</td>
+                                <td className="p-4">{s.startDate}</td>
+                                <td className="p-4">{s.endDate}</td>
+                                <td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
+                                <td className="p-4 text-red-400 font-bold">{(s.annualRent - s.collected).toLocaleString()} ريال</td>
+                                <td className="p-4">
+                                  {isContractExpired(s.endDate) 
+                                    ? <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm whitespace-nowrap">⚠️ منتهي</span> 
+                                    : <span className="text-green-400 font-bold text-sm">ساري</span>}
+                                </td>
+                              </tr>
+                            ))}
+                            <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
+                              <td className="p-4" colSpan="3">مجموع نتائج البحث والفرز التعاقدية الحالية</td>
+                              <td className="p-4 text-slate-200">{totalRentSum.toLocaleString()} ريال</td>
+                              <td className="p-4" colSpan="2"></td>
+                              <td className="p-4 text-green-400">{totalCollectedSum.toLocaleString()} ريال</td>
+                              <td className="p-4 text-red-400">{totalRemainingSum.toLocaleString()} ريال</td>
+                              <td className="p-4"></td>
+                            </tr>
+                          </>
                         ) : (
-                          <tr><td colSpan="9" className="p-6 text-center text-slate-400 font-bold">لا توجد عقود تطابق خيارات الفرز الحالية.</td></tr>
+                          <tr><td colSpan="9" className="p-6 text-center text-slate-400 font-bold">لا توجد عقود تطابق خيارات الفرز أو البحث الحالية.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -996,7 +1025,6 @@ export default function ShubramiSystem() {
                      </div>
                   </div>
 
-                  {/* ===== الفلتر المزدوج + مربع البحث الجديد لجدول السندات ===== */}
                   <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
                     <div className="flex-1 min-w-[250px]">
                       <label className="block mb-2 font-semibold text-slate-300 text-sm">🔍 بحث سريع (السند، المحل، المستأجر):</label>
@@ -1064,7 +1092,6 @@ export default function ShubramiSystem() {
                                 </td>
                               </tr>
                             ))}
-                            {/* صف المجاميع أسفل الجدول */}
                             <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
                                 <td className="p-4" colSpan="3">مجموع نتائج البحث والفرز الحالية</td>
                                 <td className="p-4 text-slate-200">{filteredTxTargetSum.toLocaleString()} ريال</td>
@@ -1167,7 +1194,7 @@ export default function ShubramiSystem() {
                               <td className="p-4">{d.year}</td>
                               <td className="p-4">{d.tenant}</td>
                               <td className="p-4 text-slate-400 text-sm">{d.details}</td>
-                              <td className="p-4 font-bold text-red-400">{d.amount.toLocaleString()} ريال</td>
+                              <td className="p-4 font-bold text-red-400">{d.amount.toLocaleString()} margin ريال</td>
                             </tr>
                           ))
                         )}
