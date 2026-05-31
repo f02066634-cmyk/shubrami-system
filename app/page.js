@@ -265,7 +265,6 @@ export default function ShubramiSystem() {
   const printTablePDF = (data) => {
     if (data.length === 0) return alert("لا توجد بيانات لطباعتها في التقرير");
     const printWindow = window.open('', '_blank');
-    printWindow.document.write suicide;
     printWindow.document.write(`
       <html dir="rtl">
       <head>
