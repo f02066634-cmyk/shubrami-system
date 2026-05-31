@@ -36,6 +36,7 @@ export default function ShubramiSystem() {
   // فلاتر جدول السندات
   const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
   const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
+  const [searchReceipt, setSearchReceipt] = useState(""); // المتغير الجديد للبحث
 
   // المتغيرات للنماذج
   // 1. عقد جديد
@@ -616,7 +617,7 @@ export default function ShubramiSystem() {
   const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
 
-  // ==================== الفرز المزدوج لجدول السندات ====================
+  // ==================== الفرز المزدوج + البحث لجدول السندات ====================
   const filteredTransactions = transactionsDB.filter(t => {
     const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
     
@@ -624,10 +625,16 @@ export default function ShubramiSystem() {
     const txYear = parts.length > 1 ? parts[1] : null;
     const yearMatch = filterReceiptYear === "الكل" || txYear === filterReceiptYear;
     
-    return statusMatch && yearMatch;
+    const searchLower = searchReceipt.toLowerCase().trim();
+    const searchMatch = searchLower === "" || 
+                        String(t.id).toLowerCase().includes(searchLower) || 
+                        String(t.shop).toLowerCase().includes(searchLower) || 
+                        String(t.tenant).toLowerCase().includes(searchLower);
+    
+    return statusMatch && yearMatch && searchMatch;
   });
 
-  // حساب المجاميع الخاصة بجدول السندات
+  // حساب المجاميع الخاصة بجدول السندات بناءً على الفلترة والبحث
   const filteredTxTargetSum = filteredTransactions.reduce((sum, t) => sum + t.targetAmount, 0);
   const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
   const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
@@ -989,7 +996,19 @@ export default function ShubramiSystem() {
                      </div>
                   </div>
 
+                  {/* ===== الفلتر المزدوج + مربع البحث الجديد لجدول السندات ===== */}
                   <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
+                    <div className="flex-1 min-w-[250px]">
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">🔍 بحث سريع (السند، المحل، المستأجر):</label>
+                      <input 
+                        type="text" 
+                        placeholder="اكتب للبحث..." 
+                        className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none focus:border-orange-500 transition-colors" 
+                        value={searchReceipt} 
+                        onChange={(e) => setSearchReceipt(e.target.value)} 
+                      />
+                    </div>
+
                     <div className="flex-1 min-w-[200px]">
                       <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند الدقيقة:</label>
                       <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
@@ -1002,7 +1021,7 @@ export default function ShubramiSystem() {
                     </div>
                     
                     <div className="flex-1 min-w-[200px]">
-                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بسنة الإصدار (من رقم السند):</label>
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بسنة الإصدار:</label>
                       <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptYear} onChange={(e) => setFilterReceiptYear(e.target.value)}>
                         <option value="الكل">كل السنوات</option>
                         {receiptYears.map(year => (
@@ -1047,7 +1066,7 @@ export default function ShubramiSystem() {
                             ))}
                             {/* صف المجاميع أسفل الجدول */}
                             <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
-                                <td className="p-4" colSpan="3">مجموع نتائج الفرز الحالية</td>
+                                <td className="p-4" colSpan="3">مجموع نتائج البحث والفرز الحالية</td>
                                 <td className="p-4 text-slate-200">{filteredTxTargetSum.toLocaleString()} ريال</td>
                                 <td className="p-4 text-green-400">{filteredTxPaidSum.toLocaleString()} ريال</td>
                                 <td className="p-4 text-red-400">{filteredTxRemainingSum.toLocaleString()} ريال</td>
@@ -1055,7 +1074,7 @@ export default function ShubramiSystem() {
                             </tr>
                           </>
                         ) : (
-                          <tr><td colSpan="8" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز الحالية.</td></tr>
+                          <tr><td colSpan="8" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز أو البحث.</td></tr>
                         )}
                       </tbody>
                     </table>
