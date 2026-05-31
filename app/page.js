@@ -276,6 +276,11 @@ export default function ShubramiSystem() {
 
   const printTablePDF = (data) => {
     if (data.length === 0) return alert("لا توجد بيانات لطباعتها في التقرير");
+    
+    const sumTarget = data.reduce((s, t) => s + t.targetAmount, 0);
+    const sumPaid = data.reduce((s, t) => s + t.paidAmount, 0);
+    const sumRemaining = data.reduce((s, t) => s + t.remainingAmount, 0);
+
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
@@ -328,6 +333,13 @@ export default function ShubramiSystem() {
                           </td>
                       </tr>
                   `).join('')}
+                  <tr style="background-color: #e2e8f0; font-weight: bold; border-top: 2px solid #94a3b8;">
+                      <td colspan="3">المجموع الكلي</td>
+                      <td>${sumTarget.toLocaleString()} ريال</td>
+                      <td class="text-green">${sumPaid.toLocaleString()} ريال</td>
+                      <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
+                      <td colspan="2"></td>
+                  </tr>
               </tbody>
           </table>
           <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
@@ -604,17 +616,21 @@ export default function ShubramiSystem() {
   const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
 
-  // ==================== الفرز المزدوج (الجديد) لجدول السندات ====================
+  // ==================== الفرز المزدوج لجدول السندات ====================
   const filteredTransactions = transactionsDB.filter(t => {
     const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
     
-    // استخراج السنة من رقم السند مباشرة (مثال: SH-2026-0001 -> 2026)
     const parts = String(t.id).split('-');
     const txYear = parts.length > 1 ? parts[1] : null;
     const yearMatch = filterReceiptYear === "الكل" || txYear === filterReceiptYear;
     
     return statusMatch && yearMatch;
   });
+
+  // حساب المجاميع الخاصة بجدول السندات
+  const filteredTxTargetSum = filteredTransactions.reduce((sum, t) => sum + t.targetAmount, 0);
+  const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
+  const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
 
   // ==================== واجهة المستخدم (UI) ====================
   return (
@@ -973,7 +989,6 @@ export default function ShubramiSystem() {
                      </div>
                   </div>
 
-                  {/* ===== الفلتر المزدوج الجديد لجدول السندات ===== */}
                   <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
                     <div className="flex-1 min-w-[200px]">
                       <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند الدقيقة:</label>
@@ -1000,23 +1015,47 @@ export default function ShubramiSystem() {
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
                     <table className="w-full text-right text-slate-200 text-sm">
                       <thead className="bg-black/60 text-white border-b border-white/10">
-                        <tr><th className="p-4">السند</th><th className="p-4">المحل</th><th className="p-4">المطلوب</th><th className="p-4">المدفوع</th><th className="p-4">المتبقي</th><th className="p-4">الحالة</th><th className="p-4 text-center">الإجراء</th></tr>
+                        <tr>
+                          <th className="p-4">السند</th>
+                          <th className="p-4">المحل</th>
+                          <th className="p-4 text-orange-200">المستأجر</th>
+                          <th className="p-4">المطلوب</th>
+                          <th className="p-4">المدفوع</th>
+                          <th className="p-4">المتبقي</th>
+                          <th className="p-4">الحالة</th>
+                          <th className="p-4 text-center">الإجراء</th>
+                        </tr>
                       </thead>
                       <tbody>
                         {filteredTransactions.length > 0 ? (
-                          filteredTransactions.map((t) => (
-                            <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                              <td className="p-4 font-bold text-white">{t.id}</td><td className="p-4">{t.shop}</td><td className="p-4">{t.targetAmount}</td><td className="p-4 text-green-400">{t.paidAmount}</td><td className="p-4 text-red-400">{t.remainingAmount}</td>
-                              <td className="p-4">
-                                <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
-                              </td>
-                              <td className="p-4 text-center">
-                                {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
-                              </td>
+                          <>
+                            {filteredTransactions.map((t) => (
+                              <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                <td className="p-4 font-bold text-white">{t.id}</td>
+                                <td className="p-4">{t.shop}</td>
+                                <td className="p-4 font-semibold text-slate-300">{t.tenant}</td>
+                                <td className="p-4">{t.targetAmount.toLocaleString()} ريال</td>
+                                <td className="p-4 text-green-400">{t.paidAmount.toLocaleString()} ريال</td>
+                                <td className="p-4 text-red-400">{t.remainingAmount.toLocaleString()} ريال</td>
+                                <td className="p-4">
+                                  <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
+                                </td>
+                                <td className="p-4 text-center">
+                                  {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
+                                </td>
+                              </tr>
+                            ))}
+                            {/* صف المجاميع أسفل الجدول */}
+                            <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
+                                <td className="p-4" colSpan="3">مجموع نتائج الفرز الحالية</td>
+                                <td className="p-4 text-slate-200">{filteredTxTargetSum.toLocaleString()} ريال</td>
+                                <td className="p-4 text-green-400">{filteredTxPaidSum.toLocaleString()} ريال</td>
+                                <td className="p-4 text-red-400">{filteredTxRemainingSum.toLocaleString()} ريال</td>
+                                <td className="p-4" colSpan="2"></td>
                             </tr>
-                          ))
+                          </>
                         ) : (
-                          <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز الحالية.</td></tr>
+                          <tr><td colSpan="8" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز الحالية.</td></tr>
                         )}
                       </tbody>
                     </table>
