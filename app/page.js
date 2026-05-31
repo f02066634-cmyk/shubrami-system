@@ -1,13 +1,14 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 
-// ==================== تهيئة البيانات الأولية للـ 166 محل ====================
+// ==================== تهيئة البيانات الأولية للـ 166 محل مع إضافة معرف فريد ====================
 const initialShops = Array.from({ length: 166 }, (_, i) => ({
+  id: `row-${i + 1}`, // معرف فريد لكل صف لضمان دقة العمليات المكررة لنفس المحل
   shopNumber: `محل ${i + 1}`,
   area: 60,
   status: "شاغر",
   tenant: "-",
-  ejarNumber: "-", // الحقل الجديد لرقم عقد إيجار
+  ejarNumber: "-", 
   annualRent: 15000,
   startDate: "-",
   endDate: "-",
@@ -31,16 +32,17 @@ export default function ShubramiSystem() {
   // 1. عقد جديد
   const [newContractShop, setNewContractShop] = useState("");
   const [newContractTenant, setNewContractTenant] = useState("");
-  const [newContractEjarNumber, setNewContractEjarNumber] = useState(""); // متغير رقم العقد
+  const [newContractEjarNumber, setNewContractEjarNumber] = useState(""); 
   const [newContractRent, setNewContractRent] = useState(15000);
   const [newContractStart, setNewContractStart] = useState("");
   const [newContractEnd, setNewContractEnd] = useState("");
 
-  // 2. تعديل عقد
+  // 2. تحديث وتجديد العقد
+  const [editContractId, setEditContractId] = useState(""); // تتبع معرف الصف المختار بدقة
   const [editContractShop, setEditContractShop] = useState("");
   const [editContractStatus, setEditContractStatus] = useState("مؤجر");
   const [editContractTenant, setEditContractTenant] = useState("");
-  const [editContractEjarNumber, setEditContractEjarNumber] = useState(""); // متغير تعديل رقم العقد
+  const [editContractEjarNumber, setEditContractEjarNumber] = useState(""); 
   const [editContractRent, setEditContractRent] = useState(0);
   const [editContractStart, setEditContractStart] = useState("");
   const [editContractEnd, setEditContractEnd] = useState("");
@@ -86,7 +88,8 @@ export default function ShubramiSystem() {
   const expiredShopsDebts = shopsDB
     .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected)
     .map(s => ({
-      id: s.shopNumber,
+      id: s.id, // ربط المديونية بمعرف الصف الفريد بدلاً من رقم المحل لعدم التداخل
+      label: s.shopNumber,
       year: s.endDate,
       tenant: s.tenant,
       details: `عقد منتهي يتطلب تجديد - ${s.shopNumber}`,
@@ -137,7 +140,7 @@ export default function ShubramiSystem() {
               <tbody>
                   ${data.map(d => `
                       <tr>
-                          <td><b>${d.id}</b></td>
+                          <td><b>${d.isShopDebt ? d.label : d.id}</b></td>
                           <td>${d.year}</td>
                           <td>${d.tenant}</td>
                           <td>${d.details}</td>
@@ -209,7 +212,7 @@ export default function ShubramiSystem() {
                           <td>${s.endDate}</td>
                           <td class="text-green">${s.collected.toLocaleString()} ريال</td>
                           <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
-                          <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي (يتطلب تجديد)</span>' : '<span class="text-green">ساري</span>'}</td>
+                          <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
                       </tr>
                   `).join('')}
                   <tr class="total-row">
@@ -262,6 +265,7 @@ export default function ShubramiSystem() {
   const printTablePDF = (data) => {
     if (data.length === 0) return alert("لا توجد بيانات لطباعتها في التقرير");
     const printWindow = window.open('', '_blank');
+    printWindow.document.write suicide;
     printWindow.document.write(`
       <html dir="rtl">
       <head>
@@ -361,7 +365,6 @@ export default function ShubramiSystem() {
   // ==================== معالجة النماذج ====================
   const handleNewContract = (e) => {
     e.preventDefault();
-    // تم إضافة شرط التحقق من رقم عقد إيجار
     if (!newContractShop || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تعبئة جميع البيانات بشكل صحيح، بما فيها رقم عقد إيجار");
     
     setShopsDB(shopsDB.map(s => 
@@ -374,23 +377,62 @@ export default function ShubramiSystem() {
     alert(`تم حفظ العقد للمحل ${newContractShop} بنجاح!`);
   };
 
+  // 🚀 تعديل دالة تحديث/تجديد العقد لتقوم بالاستحداث كصف جديد عند التجديد
   const handleEditContract = (e) => {
     e.preventDefault();
-    if (!editContractShop) return;
-    setShopsDB(shopsDB.map(s => 
-      s.shopNumber === editContractShop 
-      ? { 
-          ...s, 
-          status: editContractStatus, 
-          tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", 
-          ejarNumber: editContractStatus === "مؤجر" ? editContractEjarNumber : "-", 
-          annualRent: editContractStatus === "مؤجر" ? Number(editContractRent) : 0, 
-          startDate: editContractStatus === "مؤجر" ? editContractStart : "-", 
-          endDate: editContractStatus === "مؤجر" ? editContractEnd : "-" 
-        }
-      : s
-    ));
-    alert("تم تحديث بيانات العقد بنجاح!");
+    if (!editContractId) return alert("الرجاء تحديد المحل أولاً");
+
+    const originalRow = shopsDB.find(s => s.id === editContractId);
+    if (!originalRow) return;
+
+    // فحص هل العقد الحالي منتهي وبالتالي العملية هي "تجديد عقد"؟
+    const isRenewal = isContractExpired(originalRow.endDate);
+
+    if (isRenewal) {
+      // شروط تجديد العقد الإلزامية (رقم عقد جديد وغير فارغ ومختلف عن السابق)
+      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") {
+        return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد بالخانة المخصصة!");
+      }
+      if (editContractEjarNumber === originalRow.ejarNumber) {
+        return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً عن رقم العقد المنتهي السابق لحفظ التاريخ ماليًا!");
+      }
+
+      // إنشاء كائن الصف الجديد بالكامل وإلحاقه بقاعدة البيانات
+      const newContractRow = {
+        id: `row-${Date.now()}`, // توليد معرف فريد جديد تماماً
+        shopNumber: originalRow.shopNumber,
+        area: originalRow.area,
+        status: "مؤجر",
+        tenant: editContractTenant,
+        ejarNumber: editContractEjarNumber,
+        annualRent: Number(editContractRent),
+        startDate: editContractStart,
+        endDate: editContractEnd,
+        collected: 0 // يبدأ من صفر كعقد مالي منفصل
+      };
+
+      setShopsDB([...shopsDB, newContractRow]);
+      alert(`🎉 تم تجديد العقد للمحل (${originalRow.shopNumber}) بنجاح! نزل الآن كصف جديد ورقم عقد مستقل، وتم حفظ السجل القديم كأرشيف.`);
+      
+      // تصفية حقول النموذج بعد النجاح
+      setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+    } else {
+      // التعديل أو التصحيح الطبيعي للعقود السارية دون تكرار الصفوف
+      setShopsDB(shopsDB.map(s => 
+        s.id === editContractId 
+        ? { 
+            ...s, 
+            status: editContractStatus, 
+            tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", 
+            ejarNumber: editContractStatus === "مؤجر" ? editContractEjarNumber : "-", 
+            annualRent: editContractStatus === "مؤجر" ? Number(editContractRent) : 0, 
+            startDate: editContractStatus === "مؤجر" ? editContractStart : "-", 
+            endDate: editContractStatus === "مؤجر" ? editContractEnd : "-" 
+          }
+        : s
+      ));
+      alert("تم تحديث بيانات العقد الحالي بنجاح!");
+    }
   };
 
   const handleNewPayment = (e) => {
@@ -398,7 +440,7 @@ export default function ShubramiSystem() {
     if (!newPayShop) return;
     if (newPayAmount > newPayTarget) return alert("خطأ: المدفوع أكبر من المتفق عليه!");
     
-    const shopData = shopsDB.find(s => s.shopNumber === newPayShop);
+    const shopData = shopsDB.find(s => s.shopNumber === newPayShop && !isContractExpired(s.endDate));
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
     if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً من تبويب التحديث.`);
 
@@ -409,7 +451,7 @@ export default function ShubramiSystem() {
       startDate: new Date().toISOString().split('T')[0],
       updateDate: new Date().toISOString().split('T')[0],
       shop: newPayShop,
-      tenant: shopData.tenant,
+      tenant: shopData ? shopData.tenant : "-",
       targetAmount: Number(newPayTarget),
       paidAmount: Number(newPayAmount),
       remainingAmount: remaining,
@@ -418,7 +460,7 @@ export default function ShubramiSystem() {
     };
 
     setTransactionsDB([...transactionsDB, newTx]);
-    setShopsDB(shopsDB.map(s => s.shopNumber === newPayShop ? { ...s, collected: s.collected + Number(newPayAmount) } : s));
+    setShopsDB(shopsDB.map(s => (s.shopNumber === newPayShop && !isContractExpired(s.endDate)) ? { ...s, collected: s.collected + Number(newPayAmount) } : s));
     alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند!" : "تم حفظ الدفعة وفتح سند معلق.");
   };
 
@@ -490,7 +532,7 @@ export default function ShubramiSystem() {
         isDebtReceipt: true,
         startDate: new Date().toISOString().split('T')[0],
         updateDate: new Date().toISOString().split('T')[0],
-        shop: targetDebt.isShopDebt ? targetDebt.id : `مديونية سابقة`,
+        shop: targetDebt.isShopDebt ? targetDebt.label : `مديونية سابقة`,
         tenant: targetDebt.tenant,
         targetAmount: targetDebt.amount,
         paidAmount: payAmt,
@@ -503,7 +545,8 @@ export default function ShubramiSystem() {
     }
 
     if (targetDebt.isShopDebt) {
-      setShopsDB(shopsDB.map(s => s.shopNumber === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
+      // التعديل هنا: مطابقة صف المحل الدقيق بناء على المعرف الفريد id لتجنب تكرار العمليات
+      setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
     } else {
       setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
     }
@@ -521,7 +564,7 @@ export default function ShubramiSystem() {
   };
 
   // ==================== الحسابات للوحة المؤشرات ====================
-  const totalCollectedFromManualDebts = transactionsDB.filter(t => t.isDebtReceipt && !shopsDB.some(s => s.shopNumber === t.referenceId)).reduce((sum, t) => sum + t.paidAmount, 0);
+  const totalCollectedFromManualDebts = transactionsDB.filter(t => t.isDebtReceipt && !shopsDB.some(s => s.id === t.referenceId)).reduce((sum, t) => sum + t.paidAmount, 0);
   const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0) + totalCollectedFromManualDebts;
   const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
   
@@ -533,7 +576,6 @@ export default function ShubramiSystem() {
     return acc;
   }, {});
 
-  // حساب المجاميع الكلية لجدول المحلات المؤجرة حالياً
   const rentedShopsList = shopsDB.filter(s => s.status === "مؤجر");
   const totalRentSum = rentedShopsList.reduce((sum, s) => sum + s.annualRent, 0);
   const totalCollectedSum = rentedShopsList.reduce((sum, s) => sum + s.collected, 0);
@@ -545,21 +587,14 @@ export default function ShubramiSystem() {
       <style dangerouslySetInnerHTML={{__html: `
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
         .font-tajawal { font-family: 'Tajawal', sans-serif; }
-        
-        select option {
-          background-color: #1e293b;
-          color: white;
-        }
+        select option { background-color: #1e293b; color: white; }
       `}} />
       
       <div dir="rtl" className="min-h-screen font-tajawal text-slate-100 flex flex-col justify-between relative"
            style={{
              backgroundImage: "url('https://images.unsplash.com/photo-1512453979438-51f69a5e31a0?q=80&w=2000&auto=format&fit=crop')",
-             backgroundSize: 'cover',
-             backgroundPosition: 'center',
-             backgroundAttachment: 'fixed'
+             backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed'
            }}>
-        
         <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-0 pointer-events-none"></div>
 
         <div className="relative z-10 p-4 md:p-8 flex flex-col min-h-screen justify-between">
@@ -570,40 +605,40 @@ export default function ShubramiSystem() {
               <div className="h-1.5 w-32 bg-gradient-to-r from-orange-500 to-orange-400 mx-auto rounded-full shadow-lg"></div>
             </div>
 
-            {/* ==================== القسم العلوي: لوحة المؤشرات الدائمة ==================== */}
+            {/* المؤشرات الإجمالية */}
             <div className="space-y-6 mb-12">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center hover:bg-white/10 transition-all">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
                    <h4 className="text-slate-300 font-bold mb-2">إجمالي التحصيلات</h4>
-                   <p className="text-3xl font-extrabold text-blue-400 drop-shadow-sm">{totalCollected.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-blue-400">{totalCollected.toLocaleString()} ريال</p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center hover:bg-white/10 transition-all">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
                    <h4 className="text-slate-300 font-bold mb-2">إجمالي المصروفات</h4>
-                   <p className="text-3xl font-extrabold text-orange-400 drop-shadow-sm">{totalExpenses.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-orange-400">{totalExpenses.toLocaleString()} ريال</p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center hover:bg-white/10 transition-all">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
                    <h4 className="text-slate-300 font-bold mb-2">صافي الدخل</h4>
-                   <p className="text-3xl font-extrabold text-green-400 drop-shadow-sm">{netIncome.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-green-400">{netIncome.toLocaleString()} ريال</p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center hover:bg-white/10 transition-all">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
                    <h4 className="text-slate-300 font-bold mb-2">الديون المستحقة المعلقة</h4>
-                   <p className="text-3xl font-extrabold text-red-400 drop-shadow-sm">{totalDebts.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-red-400">{totalDebts.toLocaleString()} ريال</p>
                 </div>
               </div>
 
-              {/* إحصائيات حالة المحلات الـ 166 */}
+              {/* حالة الـ 166 محل */}
               <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10">
-                <h3 className="text-xl font-bold text-white mb-6 text-center tracking-wide">📊 حالة المحلات الإجمالية (166 محل)</h3>
+                <h3 className="text-xl font-bold text-white mb-6 text-center">📊 حالة المحلات الإجمالية (166 محل)</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-center">
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
                     <p className="text-slate-400 mb-1 font-semibold">مؤجر</p>
                     <p className="text-3xl font-bold text-green-400">{statusCounts["مؤجر"] || 0}</p>
                   </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
                     <p className="text-slate-400 mb-1 font-semibold">شاغر</p>
                     <p className="text-3xl font-bold text-red-400">{statusCounts["شاغر"] || 0}</p>
                   </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
                     <p className="text-slate-400 mb-1 font-semibold">تحت الصيانة</p>
                     <p className="text-3xl font-bold text-yellow-400">{statusCounts["تحت الصيانة"] || 0}</p>
                   </div>
@@ -611,12 +646,11 @@ export default function ShubramiSystem() {
               </div>
             </div>
 
-            {/* ==================== القسم السفلي: عمليات الإدخال والتحصيل ==================== */}
+            {/* الأقسام والعمليات */}
             <div className="bg-black/30 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/10">
               <h2 className="text-2xl font-bold text-white mb-6 border-b border-white/10 pb-4">📥 عمليات التحصيل وإدارة البيانات</h2>
               
-              {/* القائمة الفرعية */}
-              <div className="flex flex-wrap gap-2 mb-8 bg-black/40 p-2 rounded-2xl border border-white/5 shadow-inner">
+              <div className="flex flex-wrap gap-2 mb-8 bg-black/40 p-2 rounded-2xl">
                 {[
                   { id: "contracts", label: "📝 إدارة العقود والمحلات" },
                   { id: "payments", label: "💰 التحصيل وسندات القبض" },
@@ -624,111 +658,124 @@ export default function ShubramiSystem() {
                   { id: "expenses", label: "🛠️ إدارة المصروفات" }
                 ].map(tab => (
                   <button key={tab.id} onClick={() => setActiveSubTab(tab.id)} 
-                          className={`flex-1 py-3 px-4 rounded-xl font-bold transition-all duration-300 ${activeSubTab === tab.id ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}>
+                          className={`flex-1 py-3 px-4 rounded-xl font-bold transition-all ${activeSubTab === tab.id ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg" : "text-slate-300 hover:bg-white/10"}`}>
                     {tab.label}
                   </button>
                 ))}
               </div>
 
-              {/* 1. إدارة العقود */}
+              {/* 1. إدارة العقود والمحلات */}
               {activeSubTab === "contracts" && (
                 <div className="animate-fade-in">
                   <div className="flex gap-6 mb-8 border-b border-white/10 pb-2">
                     <button onClick={() => setContractSubTab("new")} className={`px-4 py-2 font-bold transition-colors ${contractSubTab === "new" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>✍️ تسجيل عقد جديد</button>
-                    <button onClick={() => setContractSubTab("edit")} className={`px-4 py-2 font-bold transition-colors ${contractSubTab === "edit" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🔄 تحديث بيانات عقد</button>
+                    <button onClick={() => setContractSubTab("edit")} className={`px-4 py-2 font-bold transition-colors ${contractSubTab === "edit" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🔄 تحديث وتجديد عقد</button>
                   </div>
 
                   {contractSubTab === "new" && (
                     <form onSubmit={handleNewContract} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">اختر المحل الشاغر:</label>
-                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white placeholder-slate-400 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractShop} onChange={(e) => setNewContractShop(e.target.value)} required>
-                          <option value="" className="text-slate-400">-- اختر المحل --</option>
-                          {shopsDB.filter(s => s.status !== "مؤجر").map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber}</option>)}
+                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={newContractShop} onChange={(e) => setNewContractShop(e.target.value)} required>
+                          <option value="">-- اختر المحل --</option>
+                          {shopsDB.filter(s => s.status !== "مؤجر").map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">اسم المستأجر:</label>
-                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractTenant} onChange={(e) => setNewContractTenant(e.target.value)} required />
+                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={newContractTenant} onChange={(e) => setNewContractTenant(e.target.value)} required />
                       </div>
-                      {/* الحقل الجديد: رقم عقد إيجار */}
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">رقم عقد إيجار (إلزامي):</label>
-                        <input type="text" placeholder="مثال: 12345678" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractEjarNumber} onChange={(e) => setNewContractEjarNumber(e.target.value)} required />
+                        <input type="text" placeholder="مثال: 87654321" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={newContractEjarNumber} onChange={(e) => setNewContractEjarNumber(e.target.value)} required />
                       </div>
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">الإيجار السنوي:</label>
-                        <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractRent} onChange={(e) => setNewContractRent(e.target.value)} required />
+                        <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={newContractRent} onChange={(e) => setNewContractRent(e.target.value)} required />
                       </div>
                       <div className="grid grid-cols-2 gap-4 md:col-span-2">
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">بداية العقد:</label>
-                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractStart} onChange={(e) => setNewContractStart(e.target.value)} required />
+                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={newContractStart} onChange={(e) => setNewContractStart(e.target.value)} required />
                         </div>
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">نهاية العقد:</label>
-                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractEnd} onChange={(e) => setNewContractEnd(e.target.value)} required />
+                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={newContractEnd} onChange={(e) => setNewContractEnd(e.target.value)} required />
                         </div>
                       </div>
-                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg shadow-orange-500/20 text-lg">💾 حفظ العقد الجديد</button>
+                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">💾 حفظ العقد الجديد</button>
                     </form>
                   )}
 
                   {contractSubTab === "edit" && (
                     <form onSubmit={handleEditContract} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <label className="block mb-2 font-semibold text-slate-300">اختر المحل للتعديل:</label>
-                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractShop} onChange={(e) => {
-                          const shop = shopsDB.find(s => s.shopNumber === e.target.value);
-                          if(shop) {
-                            setEditContractShop(shop.shopNumber); setEditContractStatus(shop.status); setEditContractTenant(shop.tenant); setEditContractEjarNumber(shop.ejarNumber); setEditContractRent(shop.annualRent); setEditContractStart(shop.startDate); setEditContractEnd(shop.endDate);
+                        <label className="block mb-2 font-semibold text-slate-300">اختر العقد المطلوب للتعديل/التجديد:</label>
+                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractId} onChange={(e) => {
+                          const row = shopsDB.find(s => s.id === e.target.value);
+                          if(row) {
+                            setEditContractId(row.id); setEditContractShop(row.shopNumber); setEditContractStatus(row.status); setEditContractTenant(row.tenant); setEditContractEjarNumber(row.ejarNumber === "-" ? "" : row.ejarNumber); setEditContractRent(row.annualRent); setEditContractStart(row.startDate); setEditContractEnd(row.endDate);
                           }
                         }} required>
-                          <option value="">-- اختر المحل المؤجر --</option>
-                          {shopsDB.filter(s => s.status === "مؤجر" && (!isContractExpired(s.endDate) || (s.annualRent - s.collected) <= 0)).map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+                          <option value="">-- اختر من المحلات المؤجرة المتاحة --</option>
+                          {shopsDB.filter(s => s.status === "مؤجر" && (!isContractExpired(s.endDate) || (s.annualRent - s.collected) <= 0)).map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.shopNumber} - {s.tenant} {isContractExpired(s.endDate) ? '(⚠️ منتهي - متاح للتجديد)' : '(ساري)'}
+                            </option>
+                          ))}
                         </select>
                       </div>
                       <div>
-                        <label className="block mb-2 font-semibold text-slate-300">الحالة:</label>
-                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractStatus} onChange={(e) => setEditContractStatus(e.target.value)}>
+                        <label className="block mb-2 font-semibold text-slate-300">الحالة التعاقدية الحالية:</label>
+                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractStatus} onChange={(e) => setEditContractStatus(e.target.value)} disabled={editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)}>
                           <option value="مؤجر">مؤجر</option>
                           <option value="شاغر">شاغر (إخلاء)</option>
                           <option value="تحت الصيانة">تحت الصيانة</option>
                         </select>
                       </div>
+
+                      {/* تنبيه ذكي يظهر للمستخدم في حال رصد عقد منتهي يتطلب استحداث */}
+                      {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && (
+                        <div className="md:col-span-2 p-3 bg-orange-500/20 text-orange-400 rounded-xl border border-orange-500/30 text-sm font-bold">
+                          ⚠️ النظام رصد أن هذا العقد منتهي بالكامل. تعديل البيانات الآن سيقوم تلقائياً بإنشاء دورة تعاقدية جديدة بـ (صف منفصل) للحفاظ على السجلات السابقة ماليًا. يرجى إدخال رقم عقد إيجار جديد فريد.
+                        </div>
+                      )}
+
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">المستأجر:</label>
-                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                        <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} />
                       </div>
                       <div>
-                         <label className="block mb-2 font-semibold text-slate-300">رقم عقد إيجار:</label>
-                         <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                         <label className="block mb-2 font-semibold text-slate-300">رقم عقد إيجار المحدث/الجديد:</label>
+                         <input type="text" placeholder={editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "أدخل رقم العقد الجديد هنا" : "رقم العقد الحالي"} className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} />
                       </div>
                       <div>
-                         <label className="block mb-2 font-semibold text-slate-300">الإيجار السنوي:</label>
-                         <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                         <label className="block mb-2 font-semibold text-slate-300">الإيجار السنوي الجديد:</label>
+                         <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} />
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 md:col-span-2">
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">بداية العقد:</label>
-                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} />
                         </div>
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">نهاية العقد:</label>
-                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                          <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} />
                         </div>
                       </div>
 
-                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg shadow-orange-500/20 text-lg">🔄 تحديث العقد</button>
+                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">
+                        {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث بيانات العقد الحالي"}
+                      </button>
                     </form>
                   )}
 
                   <hr className="my-10 border-white/10" />
                   
                   <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-                     <h3 className="text-xl font-bold text-white">📋 المحلات المؤجرة حالياً</h3>
-                     <button onClick={() => printRentedShopsPDF(shopsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📄 طباعة الجدول PDF</button>
+                     <h3 className="text-xl font-bold text-white">📋 المحلات المؤجرة وسجل العقود حالياً</h3>
+                     <button onClick={() => printRentedShopsPDF(shopsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
                   </div>
                   
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
@@ -747,8 +794,8 @@ export default function ShubramiSystem() {
                         </tr>
                       </thead>
                       <tbody>
-                        {rentedShopsList.map((s, i) => (
-                          <tr key={s.shopNumber} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        {rentedShopsList.map((s) => (
+                          <tr key={s.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                             <td className="p-4 font-bold text-white">{s.shopNumber}</td>
                             <td className="p-4">{s.tenant}</td>
                             <td className="p-4 font-bold text-blue-300">{s.ejarNumber}</td>
@@ -759,7 +806,7 @@ export default function ShubramiSystem() {
                             <td className="p-4 text-red-400 font-bold">{(s.annualRent - s.collected).toLocaleString()} ريال</td>
                             <td className="p-4">
                               {isContractExpired(s.endDate) 
-                                ? <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm whitespace-nowrap">⚠️ منتهي (يتطلب تجديد)</span> 
+                                ? <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm whitespace-nowrap">⚠️ منتهي</span> 
                                 : <span className="text-green-400 font-bold text-sm">ساري</span>}
                             </td>
                           </tr>
@@ -794,14 +841,13 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">اختر المحل (العقود السارية فقط):</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
                           <option value="">-- المحلات المؤجرة --</option>
-                          {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+                          {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">طريقة الدفع:</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
-                          <option value="نقد">نقد</option>
-                          <option value="إيداع بنكي">إيداع بنكي</option>
+                          <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
                         </select>
                       </div>
                       <div>
@@ -812,7 +858,7 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
                         <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required />
                       </div>
-                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg shadow-orange-500/20 text-lg">➕ حفظ وإصدار السند</button>
+                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">➕ حفظ وإصدار السند</button>
                     </form>
                   )}
 
@@ -837,7 +883,7 @@ export default function ShubramiSystem() {
                             <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
                             <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required />
                           </div>
-                          <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg text-lg">🔄 اعتماد وإغلاق</button>
+                          <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">🔄 اعتماد وإغلاق</button>
                         </>
                       )}
                      </form>
@@ -848,8 +894,8 @@ export default function ShubramiSystem() {
                   <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                      <h3 className="text-xl font-bold text-white">📋 أرشيف وحالة السندات الشامل</h3>
                      <div className="flex gap-3">
-                        <button onClick={() => printTablePDF(transactionsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📄 طباعة الجدول PDF</button>
-                        <button onClick={() => exportToCSV(transactionsDB, "ارشيف_السندات.csv")} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📥 تحميل Excel</button>
+                        <button onClick={() => printTablePDF(transactionsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
+                        <button onClick={() => exportToCSV(transactionsDB, "ارشيف_السندات.csv")} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📥 تحميل Excel</button>
                      </div>
                   </div>
                   
@@ -859,14 +905,14 @@ export default function ShubramiSystem() {
                         <tr><th className="p-4">السند</th><th className="p-4">المحل</th><th className="p-4">المطلوب</th><th className="p-4">المدفوع</th><th className="p-4">المتبقي</th><th className="p-4">الحالة</th><th className="p-4 text-center">الإجراء</th></tr>
                       </thead>
                       <tbody>
-                        {transactionsDB.map((t, i) => (
+                        {transactionsDB.map((t) => (
                           <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                             <td className="p-4 font-bold text-white">{t.id}</td><td className="p-4">{t.shop}</td><td className="p-4">{t.targetAmount}</td><td className="p-4 text-green-400">{t.paidAmount}</td><td className="p-4 text-red-400">{t.remainingAmount}</td>
                             <td className="p-4">
                               <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
                             </td>
                             <td className="p-4 text-center">
-                              {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg transition-all text-xs font-bold">🖨️ طباعة السند</button>}
+                              {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
                             </td>
                           </tr>
                         ))}
@@ -879,7 +925,6 @@ export default function ShubramiSystem() {
               {/* 3. مديونيات مستحقة */}
               {activeSubTab === "debts" && (
                 <div className="animate-fade-in">
-                  
                   <div className="flex gap-6 mb-8 border-b border-white/10 pb-2">
                     <button onClick={() => setDebtSubTab("pay")} className={`px-4 py-2 font-bold transition-colors ${debtSubTab === "pay" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>💰 سداد مديونية مستحقة</button>
                     <button onClick={() => setDebtSubTab("new")} className={`px-4 py-2 font-bold transition-colors ${debtSubTab === "new" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>✍️ إدراج مديونية يدوية</button>
@@ -893,7 +938,7 @@ export default function ShubramiSystem() {
                             <option value="">-- المديونيات المعلقة --</option>
                             {allOutstandingDebts.map(d => (
                               <option key={d.id} value={d.id}>
-                                {d.id} - {d.tenant} (المتبقي: {d.amount} ريال)
+                                {d.isShopDebt ? d.label : `يدوية: ${d.id}`} - {d.tenant} (المتبقي: {d.amount} ريال)
                               </option>
                             ))}
                           </select>
@@ -910,7 +955,7 @@ export default function ShubramiSystem() {
                               <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
                               <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={payDebtAmount} onChange={(e) => setPayDebtAmount(e.target.value)} required />
                             </div>
-                            <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg text-lg">💰 حفظ الدفعة للمديونية</button>
+                            <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">💰 حفظ الدفعة للمديونية</button>
                           </>
                         )}
                      </form>
@@ -920,22 +965,22 @@ export default function ShubramiSystem() {
                      <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">تاريخ نهاية العقد / السنة المالية:</label>
-                          <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
+                          <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
                         </div>
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">اسم المستأجر / الجهة:</label>
-                          <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required />
+                          <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required />
                         </div>
                         <div className="md:col-span-2">
                           <label className="block mb-2 font-semibold text-slate-300">تفاصيل المديونية:</label>
-                          <textarea className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none min-h-[100px]" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea>
+                          <textarea className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none min-h-[100px]" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea>
                         </div>
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">المبلغ المطلوب:</label>
-                          <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required />
+                          <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required />
                         </div>
                         <div className="flex items-end">
-                           <button type="submit" className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-3.5 rounded-xl hover:from-red-600 hover:to-red-700 transition-all shadow-lg text-lg">🎯 إدراج مديونية معلقة</button>
+                           <button type="submit" className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-3.5 rounded-xl text-lg">🎯 إدراج مديونية معلقة</button>
                         </div>
                      </form>
                   )}
@@ -944,7 +989,7 @@ export default function ShubramiSystem() {
                    
                    <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                       <h3 className="text-xl font-bold text-white">📊 جدول المديونيات المستحقة والمعلقة</h3>
-                      <button onClick={() => printDebtsPDF(allOutstandingDebts)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all backdrop-blur-md">📄 طباعة الجدول PDF</button>
+                      <button onClick={() => printDebtsPDF(allOutstandingDebts)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
                    </div>
                    
                    <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
@@ -956,9 +1001,9 @@ export default function ShubramiSystem() {
                         {allOutstandingDebts.length === 0 ? (
                           <tr><td colSpan="5" className="p-4 text-center text-slate-400">لا توجد مديونيات مستحقة حالياً.</td></tr>
                         ) : (
-                          allOutstandingDebts.map((d, i) => (
+                          allOutstandingDebts.map((d) => (
                             <tr key={d.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                              <td className="p-4 font-bold">{d.id}</td>
+                              <td className="p-4 font-bold">{d.isShopDebt ? d.label : d.id}</td>
                               <td className="p-4">{d.year}</td>
                               <td className="p-4">{d.tenant}</td>
                               <td className="p-4 text-slate-400 text-sm">{d.details}</td>
@@ -992,7 +1037,7 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">ملاحظات:</label>
                         <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={expNotes} onChange={(e) => setExpNotes(e.target.value)} />
                       </div>
-                      <button type="submit" className="md:col-span-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg text-lg">🚨 تسجيل المصروف</button>
+                      <button type="submit" className="md:col-span-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">🚨 تسجيل المصروف</button>
                    </form>
                    
                    <h3 className="text-xl font-bold text-white mb-6">📋 سجل المصروفات التشغيلية</h3>
@@ -1013,7 +1058,6 @@ export default function ShubramiSystem() {
             </div>
           </div>
 
-          {/* ==================== تذييل الصفحة ==================== */}
           <footer className="mt-16 text-center text-slate-400 text-sm font-semibold border-t border-white/10 pt-6 drop-shadow-md relative z-10">
             © {new Date().getFullYear()} نظام أسواق الشبرمي. جميع الحقوق محفوظة.
           </footer>
