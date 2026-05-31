@@ -1,9 +1,9 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 
-// ==================== تهيئة البيانات الأولية للـ 166 محل مع إضافة معرف فريد ====================
+// ==================== تهيئة البيانات الأولية للـ 166 محل ====================
 const initialShops = Array.from({ length: 166 }, (_, i) => ({
-  id: `row-${i + 1}`, // معرف فريد لكل صف لضمان دقة العمليات المكررة لنفس المحل
+  id: `row-${i + 1}`, 
   shopNumber: `محل ${i + 1}`,
   area: 60,
   status: "شاغر",
@@ -17,18 +17,22 @@ const initialShops = Array.from({ length: 166 }, (_, i) => ({
 
 export default function ShubramiSystem() {
   // ==================== إدارة حالة النظام (State) ====================
-  const [activeSubTab, setActiveSubTab] = useState("contracts"); // contracts, payments, debts, expenses
-  const [contractSubTab, setContractSubTab] = useState("new"); // new, edit
-  const [paymentSubTab, setPaymentSubTab] = useState("new"); // new, update
-  const [debtSubTab, setDebtSubTab] = useState("pay"); // pay, new
+  const [activeSubTab, setActiveSubTab] = useState("contracts");
+  const [contractSubTab, setContractSubTab] = useState("new");
+  const [paymentSubTab, setPaymentSubTab] = useState("new");
+  const [debtSubTab, setDebtSubTab] = useState("pay");
 
   // قواعد البيانات المؤقتة
   const [shopsDB, setShopsDB] = useState(initialShops);
   const [transactionsDB, setTransactionsDB] = useState([]);
-  const [debtsDB, setDebtsDB] = useState([]); // المديونيات اليدوية
+  const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
 
-  // المتغيرات للنماذج (Forms)
+  // متغيرات الفرز (الفلاتر الجديدة لجدول العقود)
+  const [filterContractStatus, setFilterContractStatus] = useState("الكل"); // الكل, ساري, منتهي
+  const [filterContractYear, setFilterContractYear] = useState("الكل"); // الكل, 2023, 2024...
+
+  // المتغيرات للنماذج
   // 1. عقد جديد
   const [newContractShop, setNewContractShop] = useState("");
   const [newContractTenant, setNewContractTenant] = useState("");
@@ -38,7 +42,7 @@ export default function ShubramiSystem() {
   const [newContractEnd, setNewContractEnd] = useState("");
 
   // 2. تحديث وتجديد العقد
-  const [editContractId, setEditContractId] = useState(""); // تتبع معرف الصف المختار بدقة
+  const [editContractId, setEditContractId] = useState("");
   const [editContractShop, setEditContractShop] = useState("");
   const [editContractStatus, setEditContractStatus] = useState("مؤجر");
   const [editContractTenant, setEditContractTenant] = useState("");
@@ -58,13 +62,12 @@ export default function ShubramiSystem() {
   const [updatePayMethod, setUpdatePayMethod] = useState("نقد");
   const [updatePayAmount, setUpdatePayAmount] = useState(0);
 
-  // 5. المديونيات المستحقة
+  // 5. المديونيات
   const [debtYear, setDebtYear] = useState("");
   const [debtTenant, setDebtTenant] = useState("");
   const [debtDetails, setDebtDetails] = useState("");
   const [debtAmount, setDebtAmount] = useState("");
   
-  // متغيرات سداد المديونية
   const [payDebtId, setPayDebtId] = useState("");
   const [payDebtAmount, setPayDebtAmount] = useState("");
   const [payDebtMethod, setPayDebtMethod] = useState("نقد");
@@ -84,11 +87,10 @@ export default function ShubramiSystem() {
     return end < today; 
   };
 
-  // جلب المديونيات الآلية (للعقود المنتهية التي لم تُسدد بالكامل)
   const expiredShopsDebts = shopsDB
     .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected)
     .map(s => ({
-      id: s.id, // ربط المديونية بمعرف الصف الفريد بدلاً من رقم المحل لعدم التداخل
+      id: s.id,
       label: s.shopNumber,
       year: s.endDate,
       tenant: s.tenant,
@@ -97,10 +99,11 @@ export default function ShubramiSystem() {
       isShopDebt: true
     }));
 
-  // دمج المديونيات الآلية مع المديونيات اليدوية
   const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => ({ ...d, isShopDebt: false }));
   const allOutstandingDebts = [...expiredShopsDebts, ...manualDebts];
 
+  // استخراج السنوات المتاحة من العقود لتعبئة قائمة الفرز (سنة البداية أو النهاية)
+  const availableYears = [...new Set(shopsDB.filter(s => s.status === "مؤجر" && s.startDate !== "-").flatMap(s => [s.startDate.split('-')[0], s.endDate.split('-')[0]]))].sort((a, b) => b - a);
 
   // ==================== دوال الطباعة والتصدير ====================
   const printDebtsPDF = (data) => {
@@ -144,7 +147,7 @@ export default function ShubramiSystem() {
                           <td>${d.year}</td>
                           <td>${d.tenant}</td>
                           <td>${d.details}</td>
-                          <td class="text-red">${d.amount.toLocaleString()} Companion</td>
+                          <td class="text-red">${d.amount.toLocaleString()} ريال</td>
                       </tr>
                   `).join('')}
               </tbody>
@@ -156,19 +159,18 @@ export default function ShubramiSystem() {
     printWindow.document.close();
   };
 
-  const printRentedShopsPDF = (data) => {
-    const rentedShops = data.filter(s => s.status === "مؤجر");
-    if (rentedShops.length === 0) return alert("لا توجد محلات مؤجرة لطباعتها في التقرير حالياً");
+  const printRentedShopsPDF = (filteredData) => {
+    if (filteredData.length === 0) return alert("لا توجد محلات في الفرز الحالي لطباعتها");
     
-    const sumRent = rentedShops.reduce((sum, s) => sum + s.annualRent, 0);
-    const sumCollected = rentedShops.reduce((sum, s) => sum + s.collected, 0);
+    const sumRent = filteredData.reduce((sum, s) => sum + s.annualRent, 0);
+    const sumCollected = filteredData.reduce((sum, s) => sum + s.collected, 0);
     const sumRemaining = sumRent - sumCollected;
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
       <head>
-          <title>تقرير المحلات المؤجرة حالياً</title>
+          <title>تقرير المحلات المؤجرة وسجل العقود</title>
           <style>
               body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; background-color: white; }
               h2 { text-align: center; color: #f97316; margin-bottom: 5px; }
@@ -185,8 +187,8 @@ export default function ShubramiSystem() {
           </style>
       </head>
       <body>
-          <h2>🏢 تقرير المحلات المؤجرة حالياً - أسواق الشبرمي</h2>
-          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م</h4>
+          <h2>🏢 تقرير المحلات المؤجرة وسجل العقود - أسواق الشبرمي</h2>
+          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م | بناءً على الفرز الحالي</h4>
           <table>
               <thead>
                   <tr>
@@ -202,7 +204,7 @@ export default function ShubramiSystem() {
                   </tr>
               </thead>
               <tbody>
-                  ${rentedShops.map(s => `
+                  ${filteredData.map(s => `
                       <tr>
                           <td><b>${s.shopNumber}</b></td>
                           <td>${s.tenant}</td>
@@ -234,9 +236,7 @@ export default function ShubramiSystem() {
 
   const exportToCSV = (data, filename) => {
     if (data.length === 0) return alert("لا توجد سجلات لتصديرها حالياً");
-    
     const headers = ["رقم السند", "تاريخ البدء", "تاريخ التحديث", "رقم المحل", "المستأجر", "المبلغ الكلي المتفق عليه", "إجمالي المدفوع حتى الآن", "المبلغ المتبقي", "طريقة الدفع", "الحالة"].join(",");
-    
     const rows = data.map(row => [
       row.id, row.startDate, row.updateDate, row.shop, row.tenant, row.targetAmount, row.paidAmount, row.remainingAmount, row.method, row.status
     ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -244,7 +244,6 @@ export default function ShubramiSystem() {
     const csvContent = "\uFEFF" + "sep=,\n" + headers + "\n" + rows;
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    
     const link = document.createElement("a");
     link.setAttribute("href", url);
     link.setAttribute("download", filename);
@@ -367,7 +366,6 @@ export default function ShubramiSystem() {
     alert(`تم حفظ العقد للمحل ${newContractShop} بنجاح!`);
   };
 
-  // 🚀 تعديل دالة تحديث/تجديد العقد: إضافة شرط تغيير التواريخ الإلزامي عند التجديد
   const handleEditContract = (e) => {
     e.preventDefault();
     if (!editContractId) return alert("الرجاء تحديد المحل أولاً");
@@ -378,23 +376,19 @@ export default function ShubramiSystem() {
     const isRenewal = isContractExpired(originalRow.endDate);
 
     if (isRenewal) {
-      // 1. شروط الأرقام الموحدة لعقد إيجار الجديد
       if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") {
         return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد بالخانة المخصصة!");
       }
       if (editContractEjarNumber === originalRow.ejarNumber) {
         return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً عن رقم العقد المنتهي السابق لحفظ التاريخ ماليًا!");
       }
-
-      // 2. التعديل المحدث: شرط تغيير التواريخ بشكل إلزامي وجديد
       if (!editContractStart || !editContractEnd) {
         return alert("خطأ: الرجاء إدخال تاريخ بداية ونهاية العقد الجديد!");
       }
       if (editContractStart === originalRow.startDate || editContractEnd === originalRow.endDate) {
-        return alert("خطأ مالي وتعاقدي: لتجديد هذا العقد، يلزم تعديل تواريخ البداية والنهاية لتتوافق مع المدة التعاقدية الجديدة (لا يمكن تكرار تواريخ العقد القديم منتهي الصلاحية)!");
+        return alert("خطأ مالي وتعاقدي: لتجديد هذا العقد، يلزم تعديل تواريخ البداية والنهاية لتتوافق مع المدة التعاقدية الجديدة!");
       }
 
-      // إنشاء كائن الصف الجديد بالكامل وإلحاقه بقاعدة البيانات
       const newContractRow = {
         id: `row-${Date.now()}`, 
         shopNumber: originalRow.shopNumber,
@@ -410,11 +404,8 @@ export default function ShubramiSystem() {
 
       setShopsDB([...shopsDB, newContractRow]);
       alert(`🎉 تم تجديد العقد للمحل (${originalRow.shopNumber}) بنجاح! نزل الآن كصف جديد ورقم عقد مستقل، وتحول العقد القديم تلقائياً إلى أرشيف غير قابل للتعديل.`);
-      
-      // تصفية حقول النموذج بعد النجاح
       setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
     } else {
-      // التعديل أو التصحيح الطبيعي للعقود السارية دون تكرار الصفوف
       setShopsDB(shopsDB.map(s => 
         s.id === editContractId 
         ? { 
@@ -492,10 +483,8 @@ export default function ShubramiSystem() {
   const handleDebtPayment = (e) => {
     e.preventDefault();
     if (!payDebtId) return;
-    
     const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
     if (!targetDebt) return;
-    
     const payAmt = Number(payDebtAmount);
     if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية المتبقية!");
 
@@ -515,7 +504,6 @@ export default function ShubramiSystem() {
         updateDate: new Date().toISOString().split('T')[0],
         status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
       };
-
       const newTxDB = [...transactionsDB];
       newTxDB[existingTxIndex] = updatedTx;
       setTransactionsDB(newTxDB);
@@ -534,7 +522,6 @@ export default function ShubramiSystem() {
         method: payDebtMethod,
         status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
       };
-      
       setTransactionsDB([...transactionsDB, newTx]);
     }
 
@@ -545,8 +532,7 @@ export default function ShubramiSystem() {
     }
 
     alert(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند بنجاح.");
-    setPayDebtId("");
-    setPayDebtAmount("");
+    setPayDebtId(""); setPayDebtAmount("");
   };
 
   const handleExpense = (e) => {
@@ -560,7 +546,6 @@ export default function ShubramiSystem() {
   const totalCollectedFromManualDebts = transactionsDB.filter(t => t.isDebtReceipt && !shopsDB.some(s => s.id === t.referenceId)).reduce((sum, t) => sum + t.paidAmount, 0);
   const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0) + totalCollectedFromManualDebts;
   const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
-  
   const totalDebts = allOutstandingDebts.reduce((sum, d) => sum + d.amount, 0);
   const netIncome = totalCollected - totalExpenses;
 
@@ -569,9 +554,27 @@ export default function ShubramiSystem() {
     return acc;
   }, {});
 
-  const rentedShopsList = shopsDB.filter(s => s.status === "مؤجر");
-  const totalRentSum = rentedShopsList.reduce((sum, s) => sum + s.annualRent, 0);
-  const totalCollectedSum = rentedShopsList.reduce((sum, s) => sum + s.collected, 0);
+  // حساب المحلات بعد تطبيق الفلاتر
+  const filteredRentedShops = shopsDB.filter(s => {
+    if (s.status !== "مؤجر") return false;
+
+    // 1. فرز بحالة العقد
+    const isExpired = isContractExpired(s.endDate);
+    if (filterContractStatus === "ساري" && isExpired) return false;
+    if (filterContractStatus === "منتهي" && !isExpired) return false;
+
+    // 2. فرز بسنة العقد (السنة المالية)
+    if (filterContractYear !== "الكل") {
+      const startY = s.startDate !== "-" ? s.startDate.split('-')[0] : "";
+      const endY = s.endDate !== "-" ? s.endDate.split('-')[0] : "";
+      if (startY !== filterContractYear && endY !== filterContractYear) return false;
+    }
+
+    return true;
+  });
+
+  const totalRentSum = filteredRentedShops.reduce((sum, s) => sum + s.annualRent, 0);
+  const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
 
   // ==================== واجهة المستخدم (UI) ====================
@@ -592,13 +595,11 @@ export default function ShubramiSystem() {
 
         <div className="relative z-10 p-4 md:p-8 flex flex-col min-h-screen justify-between">
           <div>
-            {/* رأس النظام */}
             <div className="mb-10 text-center">
               <h1 className="text-4xl md:text-5xl font-extrabold text-white mb-3 tracking-wide drop-shadow-md">🏢 نظام إدارة وتحصيل أسواق الشبرمي</h1>
               <div className="h-1.5 w-32 bg-gradient-to-r from-orange-500 to-orange-400 mx-auto rounded-full shadow-lg"></div>
             </div>
 
-            {/* المؤشرات الإجمالية */}
             <div className="space-y-6 mb-12">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
@@ -619,7 +620,6 @@ export default function ShubramiSystem() {
                 </div>
               </div>
 
-              {/* حالة الـ 166 محل */}
               <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10">
                 <h3 className="text-xl font-bold text-white mb-6 text-center">📊 حالة المحلات الإجمالية (166 محل)</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-center">
@@ -639,7 +639,6 @@ export default function ShubramiSystem() {
               </div>
             </div>
 
-            {/* الأقسام والعمليات */}
             <div className="bg-black/30 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/10">
               <h2 className="text-2xl font-bold text-white mb-6 border-b border-white/10 pb-4">📥 عمليات التحصيل وإدارة البيانات</h2>
               
@@ -711,13 +710,11 @@ export default function ShubramiSystem() {
                           }
                         }} required>
                           <option value="">-- اختر من المحلات المؤجرة المتاحة --</option>
-                          {/* التعديل المحدث هنا: حجب العقود المنتهية القديمة إذا كان المحل يملك عقداً سارياً وجديداً نزل في الجدول */}
                           {shopsDB.filter(s => {
                             if (s.status !== "مؤجر") return false;
                             const isExpired = isContractExpired(s.endDate);
-                            if (!isExpired) return true; // تظهر العقود السارية دائماً للتصحيح أو التعديل
+                            if (!isExpired) return true; 
                             
-                            // العقد المنتهي يظهر فقط بشرطين: 1. متبقيه 0  2. لا يوجد عقد ساري بديل لنفس رقم المحل حالياً بالجدول
                             const isPaid = (s.annualRent - s.collected) <= 0;
                             const hasActiveContract = shopsDB.some(activeShop => activeShop.shopNumber === s.shopNumber && activeShop.status === "مؤجر" && !isContractExpired(activeShop.endDate));
                             return isPaid && !hasActiveContract;
@@ -775,9 +772,30 @@ export default function ShubramiSystem() {
 
                   <hr className="my-10 border-white/10" />
                   
-                  <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+                  <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
                      <h3 className="text-xl font-bold text-white">📋 المحلات المؤجرة وسجل العقود حالياً</h3>
-                     <button onClick={() => printRentedShopsPDF(shopsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
+                     <button onClick={() => printRentedShopsPDF(filteredRentedShops)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول (لنتائج الفرز)</button>
+                  </div>
+
+                  {/* ===== أدوات الفرز الجديدة ===== */}
+                  <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة العقد:</label>
+                      <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterContractStatus} onChange={(e) => setFilterContractStatus(e.target.value)}>
+                        <option value="الكل">الكل (ساري ومنتهي)</option>
+                        <option value="ساري">ساري فقط</option>
+                        <option value="منتهي">منتهي فقط</option>
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بسنة العقد (مالياً):</label>
+                      <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterContractYear} onChange={(e) => setFilterContractYear(e.target.value)}>
+                        <option value="الكل">كل السنوات</option>
+                        {availableYears.map(year => (
+                           <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md custom-scrollbar">
@@ -796,7 +814,7 @@ export default function ShubramiSystem() {
                         </tr>
                       </thead>
                       <tbody>
-                        {rentedShopsList.map((s) => (
+                        {filteredRentedShops.map((s) => (
                           <tr key={s.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                             <td className="p-4 font-bold text-white">{s.shopNumber}</td>
                             <td className="p-4">{s.tenant}</td>
@@ -813,15 +831,17 @@ export default function ShubramiSystem() {
                             </td>
                           </tr>
                         ))}
-                        {rentedShopsList.length > 0 && (
+                        {filteredRentedShops.length > 0 ? (
                           <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
-                            <td className="p-4" colSpan="3">المجموع الكلي</td>
+                            <td className="p-4" colSpan="3">مجموع نتائج الفرز الحالية</td>
                             <td className="p-4 text-slate-200">{totalRentSum.toLocaleString()} ريال</td>
                             <td className="p-4" colSpan="2"></td>
                             <td className="p-4 text-green-400">{totalCollectedSum.toLocaleString()} ريال</td>
                             <td className="p-4 text-red-400">{totalRemainingSum.toLocaleString()} ريال</td>
                             <td className="p-4"></td>
                           </tr>
+                        ) : (
+                          <tr><td colSpan="9" className="p-6 text-center text-slate-400 font-bold">لا توجد عقود تطابق خيارات الفرز الحالية.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -870,7 +890,7 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">اختر السند المفتوح:</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
                           <option value="">-- السندات المعلقة --</option>
-                          {transactionsDB.filter(t => t.status === "فتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
+                          {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
                         </select>
                       </div>
                       {updatePayReceipt && (
