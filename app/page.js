@@ -28,9 +28,12 @@ export default function ShubramiSystem() {
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
 
-  // متغيرات الفرز (الفلاتر الجديدة لجدول العقود)
-  const [filterContractStatus, setFilterContractStatus] = useState("الكل"); // الكل, ساري, منتهي
-  const [filterContractYear, setFilterContractYear] = useState("الكل"); // الكل, 2023, 2024...
+  // متغيرات الفرز (الفلاتر)
+  const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
+  const [filterContractYear, setFilterContractYear] = useState("الكل"); 
+  
+  // المتغير الجديد: فلتر السنة المالية للوحة المؤشرات العلوية
+  const [dashboardYear, setDashboardYear] = useState("الكل");
 
   // المتغيرات للنماذج
   // 1. عقد جديد
@@ -78,13 +81,19 @@ export default function ShubramiSystem() {
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
 
-  // ==================== دوال المساعدة للتواريخ والمديونيات ====================
+  // ==================== دوال المساعدة ====================
   const isContractExpired = (endDate) => {
     if (!endDate || endDate === "-") return false;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const end = new Date(endDate);
     return end < today; 
+  };
+
+  const getYear = (dateStr) => {
+    if (!dateStr || dateStr === "-") return null;
+    const str = String(dateStr);
+    return str.includes("-") ? str.split("-")[0] : str;
   };
 
   const expiredShopsDebts = shopsDB
@@ -102,13 +111,19 @@ export default function ShubramiSystem() {
   const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => ({ ...d, isShopDebt: false }));
   const allOutstandingDebts = [...expiredShopsDebts, ...manualDebts];
 
-  // استخراج السنوات المتاحة من العقود لتعبئة قائمة الفرز (سنة البداية أو النهاية)
-  const availableYears = [...new Set(shopsDB.filter(s => s.status === "مؤجر" && s.startDate !== "-").flatMap(s => [s.startDate.split('-')[0], s.endDate.split('-')[0]]))].sort((a, b) => b - a);
+  // استخراج السنوات المتاحة لجدول العقود
+  const availableYears = [...new Set(shopsDB.filter(s => s.status === "مؤجر" && s.startDate !== "-").flatMap(s => [getYear(s.startDate), getYear(s.endDate)]))].sort((a, b) => b - a);
+
+  // استخراج السنوات المتاحة للوحة المؤشرات (من السندات، المصروفات، والديون)
+  const dashYearsSet = new Set();
+  transactionsDB.forEach(t => { if(t.updateDate) dashYearsSet.add(getYear(t.updateDate)); });
+  expensesDB.forEach(e => { if(e.date) dashYearsSet.add(getYear(e.date)); });
+  allOutstandingDebts.forEach(d => { if(d.year) dashYearsSet.add(getYear(d.year)); });
+  const dashboardAvailableYears = [...dashYearsSet].filter(Boolean).sort((a, b) => b - a);
 
   // ==================== دوال الطباعة والتصدير ====================
   const printDebtsPDF = (data) => {
     if (data.length === 0) return alert("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً");
-    
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
@@ -134,7 +149,7 @@ export default function ShubramiSystem() {
               <thead>
                   <tr>
                       <th>المعرف / رقم المحل</th>
-                      <th>تاريخ نهاية العقد</th>
+                      <th>تاريخ نهاية العقد / السنة</th>
                       <th>المستأجر</th>
                       <th>التفاصيل</th>
                       <th>المبلغ المتبقي</th>
@@ -542,19 +557,33 @@ export default function ShubramiSystem() {
     alert("تم تسجيل المصروف بنجاح.");
   };
 
-  // ==================== الحسابات للوحة المؤشرات ====================
-  const totalCollectedFromManualDebts = transactionsDB.filter(t => t.isDebtReceipt && !shopsDB.some(s => s.id === t.referenceId)).reduce((sum, t) => sum + t.paidAmount, 0);
-  const totalCollected = shopsDB.reduce((sum, shop) => sum + shop.collected, 0) + totalCollectedFromManualDebts;
-  const totalExpenses = expensesDB.reduce((sum, exp) => sum + exp.amount, 0);
-  const totalDebts = allOutstandingDebts.reduce((sum, d) => sum + d.amount, 0);
-  const netIncome = totalCollected - totalExpenses;
+  // ==================== الحسابات للوحة المؤشرات (ارتباط ذكي بالسنة المالية) ====================
+  // 1. فلترة البيانات العلوية حسب السنة المختارة
+  const filteredTxForDash = dashboardYear === "الكل" 
+      ? transactionsDB 
+      : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
 
+  const filteredExpForDash = dashboardYear === "الكل"
+      ? expensesDB
+      : expensesDB.filter(e => getYear(e.date) === dashboardYear);
+
+  const filteredDebtsForDash = dashboardYear === "الكل"
+      ? allOutstandingDebts
+      : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
+
+  // 2. استخراج المجاميع الدقيقة من البيانات المفلترة
+  const dashTotalCollected = filteredTxForDash.reduce((sum, t) => sum + t.paidAmount, 0);
+  const dashTotalExpenses = filteredExpForDash.reduce((sum, e) => sum + e.amount, 0);
+  const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
+  const dashNetIncome = dashTotalCollected - dashTotalExpenses;
+
+  // إحصائيات حالة المحلات الفورية (تظهر دائماً بغض النظر عن السنة المالية لأنها حالة فعلية للمبنى)
   const statusCounts = shopsDB.reduce((acc, shop) => {
     acc[shop.status] = (acc[shop.status] || 0) + 1;
     return acc;
   }, {});
 
-  // حساب المحلات بعد تطبيق الفلاتر
+  // حساب المحلات لجدول العقود (بعد تطبيق فلاتر الجدول الخاص به)
   const filteredRentedShops = shopsDB.filter(s => {
     if (s.status !== "مؤجر") return false;
 
@@ -565,8 +594,8 @@ export default function ShubramiSystem() {
 
     // 2. فرز بسنة العقد (السنة المالية)
     if (filterContractYear !== "الكل") {
-      const startY = s.startDate !== "-" ? s.startDate.split('-')[0] : "";
-      const endY = s.endDate !== "-" ? s.endDate.split('-')[0] : "";
+      const startY = getYear(s.startDate) || "";
+      const endY = getYear(s.endDate) || "";
       if (startY !== filterContractYear && endY !== filterContractYear) return false;
     }
 
@@ -601,37 +630,53 @@ export default function ShubramiSystem() {
             </div>
 
             <div className="space-y-6 mb-12">
+              {/* شريط فلتر لوحة المؤشرات المالية */}
+              <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
+                 <h3 className="text-xl font-bold text-white">📊 لوحة المؤشرات المالية للإدارة</h3>
+                 <div className="flex items-center gap-3 bg-black/40 p-2 px-4 rounded-xl border border-white/5 shadow-inner">
+                    <label className="font-semibold text-slate-300 text-sm">تحديد السنة المالية للمؤشرات:</label>
+                    <select className="rounded-lg border border-white/20 p-1.5 bg-black/60 text-white outline-none font-bold min-w-[100px]" value={dashboardYear} onChange={(e) => setDashboardYear(e.target.value)}>
+                      <option value="الكل">الكل (شامل)</option>
+                      {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                 </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+                   <div className="absolute inset-0 bg-gradient-to-t from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                    <h4 className="text-slate-300 font-bold mb-2">إجمالي التحصيلات</h4>
-                   <p className="text-3xl font-extrabold text-blue-400">{totalCollected.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-blue-400">{dashTotalCollected.toLocaleString()} ريال</p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+                   <div className="absolute inset-0 bg-gradient-to-t from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                    <h4 className="text-slate-300 font-bold mb-2">إجمالي المصروفات</h4>
-                   <p className="text-3xl font-extrabold text-orange-400">{totalExpenses.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-orange-400">{dashTotalExpenses.toLocaleString()} ريال</p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+                   <div className="absolute inset-0 bg-gradient-to-t from-green-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                    <h4 className="text-slate-300 font-bold mb-2">صافي الدخل</h4>
-                   <p className="text-3xl font-extrabold text-green-400">{netIncome.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-green-400">{dashNetIncome.toLocaleString()} ريال</p>
                 </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center">
+                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+                   <div className="absolute inset-0 bg-gradient-to-t from-red-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                    <h4 className="text-slate-300 font-bold mb-2">الديون المستحقة المعلقة</h4>
-                   <p className="text-3xl font-extrabold text-red-400">{totalDebts.toLocaleString()} ريال</p>
+                   <p className="text-3xl font-extrabold text-red-400">{dashTotalDebts.toLocaleString()} ريال</p>
                 </div>
               </div>
 
-              <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10">
-                <h3 className="text-xl font-bold text-white mb-6 text-center">📊 حالة المحلات الإجمالية (166 محل)</h3>
+              <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 mt-6">
+                <h3 className="text-xl font-bold text-white mb-6 text-center">🏢 حالة المحلات العقارية الفورية (166 محل)</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-center">
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
                     <p className="text-slate-400 mb-1 font-semibold">مؤجر</p>
                     <p className="text-3xl font-bold text-green-400">{statusCounts["مؤجر"] || 0}</p>
                   </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
                     <p className="text-slate-400 mb-1 font-semibold">شاغر</p>
                     <p className="text-3xl font-bold text-red-400">{statusCounts["شاغر"] || 0}</p>
                   </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
                     <p className="text-slate-400 mb-1 font-semibold">تحت الصيانة</p>
                     <p className="text-3xl font-bold text-yellow-400">{statusCounts["تحت الصيانة"] || 0}</p>
                   </div>
@@ -777,7 +822,6 @@ export default function ShubramiSystem() {
                      <button onClick={() => printRentedShopsPDF(filteredRentedShops)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول (لنتائج الفرز)</button>
                   </div>
 
-                  {/* ===== أدوات الفرز الجديدة ===== */}
                   <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
                     <div className="flex-1 min-w-[200px]">
                       <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة العقد:</label>
