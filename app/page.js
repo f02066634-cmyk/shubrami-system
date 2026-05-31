@@ -31,9 +31,10 @@ export default function ShubramiSystem() {
   // متغيرات الفرز (الفلاتر)
   const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
   const [filterContractYear, setFilterContractYear] = useState("الكل"); 
-  
-  // المتغير الجديد: فلتر السنة المالية للوحة المؤشرات العلوية
   const [dashboardYear, setDashboardYear] = useState("الكل");
+  
+  // المتغير الجديد: فلتر حالة السندات
+  const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل"); // الكل, مفتوح, مغلق
 
   // المتغيرات للنماذج
   // 1. عقد جديد
@@ -111,10 +112,8 @@ export default function ShubramiSystem() {
   const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => ({ ...d, isShopDebt: false }));
   const allOutstandingDebts = [...expiredShopsDebts, ...manualDebts];
 
-  // استخراج السنوات المتاحة لجدول العقود
   const availableYears = [...new Set(shopsDB.filter(s => s.status === "مؤجر" && s.startDate !== "-").flatMap(s => [getYear(s.startDate), getYear(s.endDate)]))].sort((a, b) => b - a);
 
-  // استخراج السنوات المتاحة للوحة المؤشرات (من السندات، المصروفات، والديون)
   const dashYearsSet = new Set();
   transactionsDB.forEach(t => { if(t.updateDate) dashYearsSet.add(getYear(t.updateDate)); });
   expensesDB.forEach(e => { if(e.date) dashYearsSet.add(getYear(e.date)); });
@@ -292,7 +291,7 @@ export default function ShubramiSystem() {
       </head>
       <body>
           <h2>🏢 تقرير أرشيف وحالة السندات الشامل - أسواق الشبرمي</h2>
-          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م</h4>
+          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م | بناءً على الفرز الحالي</h4>
           <table>
               <thead>
                   <tr>
@@ -557,8 +556,7 @@ export default function ShubramiSystem() {
     alert("تم تسجيل المصروف بنجاح.");
   };
 
-  // ==================== الحسابات للوحة المؤشرات (ارتباط ذكي بالسنة المالية) ====================
-  // 1. فلترة البيانات العلوية حسب السنة المختارة
+  // ==================== الحسابات للوحة المؤشرات ====================
   const filteredTxForDash = dashboardYear === "الكل" 
       ? transactionsDB 
       : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
@@ -571,40 +569,40 @@ export default function ShubramiSystem() {
       ? allOutstandingDebts
       : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
 
-  // 2. استخراج المجاميع الدقيقة من البيانات المفلترة
   const dashTotalCollected = filteredTxForDash.reduce((sum, t) => sum + t.paidAmount, 0);
   const dashTotalExpenses = filteredExpForDash.reduce((sum, e) => sum + e.amount, 0);
   const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
   const dashNetIncome = dashTotalCollected - dashTotalExpenses;
 
-  // إحصائيات حالة المحلات الفورية (تظهر دائماً بغض النظر عن السنة المالية لأنها حالة فعلية للمبنى)
   const statusCounts = shopsDB.reduce((acc, shop) => {
     acc[shop.status] = (acc[shop.status] || 0) + 1;
     return acc;
   }, {});
 
-  // حساب المحلات لجدول العقود (بعد تطبيق فلاتر الجدول الخاص به)
   const filteredRentedShops = shopsDB.filter(s => {
     if (s.status !== "مؤجر") return false;
-
-    // 1. فرز بحالة العقد
     const isExpired = isContractExpired(s.endDate);
     if (filterContractStatus === "ساري" && isExpired) return false;
     if (filterContractStatus === "منتهي" && !isExpired) return false;
-
-    // 2. فرز بسنة العقد (السنة المالية)
     if (filterContractYear !== "الكل") {
       const startY = getYear(s.startDate) || "";
       const endY = getYear(s.endDate) || "";
       if (startY !== filterContractYear && endY !== filterContractYear) return false;
     }
-
     return true;
   });
 
   const totalRentSum = filteredRentedShops.reduce((sum, s) => sum + s.annualRent, 0);
   const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
+
+  // ==================== الفرز الجديد لجدول السندات ====================
+  const filteredTransactions = transactionsDB.filter(t => {
+    if (filterReceiptStatus === "الكل") return true;
+    if (filterReceiptStatus === "مغلق") return t.status.includes("مغلق");
+    if (filterReceiptStatus === "مفتوح") return t.status.includes("مفتوح");
+    return true;
+  });
 
   // ==================== واجهة المستخدم (UI) ====================
   return (
@@ -630,7 +628,6 @@ export default function ShubramiSystem() {
             </div>
 
             <div className="space-y-6 mb-12">
-              {/* شريط فلتر لوحة المؤشرات المالية */}
               <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
                  <h3 className="text-xl font-bold text-white">📊 لوحة المؤشرات المالية للإدارة</h3>
                  <div className="flex items-center gap-3 bg-black/40 p-2 px-4 rounded-xl border border-white/5 shadow-inner">
@@ -759,7 +756,6 @@ export default function ShubramiSystem() {
                             if (s.status !== "مؤجر") return false;
                             const isExpired = isContractExpired(s.endDate);
                             if (!isExpired) return true; 
-                            
                             const isPaid = (s.annualRent - s.collected) <= 0;
                             const hasActiveContract = shopsDB.some(activeShop => activeShop.shopNumber === s.shopNumber && activeShop.status === "مؤجر" && !isContractExpired(activeShop.endDate));
                             return isPaid && !hasActiveContract;
@@ -957,12 +953,24 @@ export default function ShubramiSystem() {
 
                   <hr className="my-10 border-white/10" />
                   
-                  <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+                  <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
                      <h3 className="text-xl font-bold text-white">📋 أرشيف وحالة السندات الشامل</h3>
                      <div className="flex gap-3">
-                        <button onClick={() => printTablePDF(transactionsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
-                        <button onClick={() => exportToCSV(transactionsDB, "ارشيف_السندات.csv")} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📥 تحميل Excel</button>
+                        <button onClick={() => printTablePDF(filteredTransactions)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
+                        <button onClick={() => exportToCSV(filteredTransactions, "ارشيف_السندات.csv")} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📥 تحميل Excel</button>
                      </div>
+                  </div>
+
+                  {/* ===== الفلتر الجديد لجدول السندات ===== */}
+                  <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند:</label>
+                      <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
+                        <option value="الكل">الكل (شامل)</option>
+                        <option value="مفتوح">مفتوح (قيد التحصيل / سداد جزئي)</option>
+                        <option value="مغلق">مغلق (مكتمل / سداد مديونية)</option>
+                      </select>
+                    </div>
                   </div>
                   
                   <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
@@ -971,17 +979,21 @@ export default function ShubramiSystem() {
                         <tr><th className="p-4">السند</th><th className="p-4">المحل</th><th className="p-4">المطلوب</th><th className="p-4">المدفوع</th><th className="p-4">المتبقي</th><th className="p-4">الحالة</th><th className="p-4 text-center">الإجراء</th></tr>
                       </thead>
                       <tbody>
-                        {transactionsDB.map((t) => (
-                          <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                            <td className="p-4 font-bold text-white">{t.id}</td><td className="p-4">{t.shop}</td><td className="p-4">{t.targetAmount}</td><td className="p-4 text-green-400">{t.paidAmount}</td><td className="p-4 text-red-400">{t.remainingAmount}</td>
-                            <td className="p-4">
-                              <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
-                            </td>
-                            <td className="p-4 text-center">
-                              {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
-                            </td>
-                          </tr>
-                        ))}
+                        {filteredTransactions.length > 0 ? (
+                          filteredTransactions.map((t) => (
+                            <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                              <td className="p-4 font-bold text-white">{t.id}</td><td className="p-4">{t.shop}</td><td className="p-4">{t.targetAmount}</td><td className="p-4 text-green-400">{t.paidAmount}</td><td className="p-4 text-red-400">{t.remainingAmount}</td>
+                              <td className="p-4">
+                                <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
+                              </td>
+                              <td className="p-4 text-center">
+                                {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق حالة الفرز الحالية.</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
