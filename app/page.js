@@ -7,6 +7,7 @@ const initialShops = Array.from({ length: 166 }, (_, i) => ({
   area: 60,
   status: "شاغر",
   tenant: "-",
+  ejarNumber: "-", // الحقل الجديد لرقم عقد إيجار
   annualRent: 15000,
   startDate: "-",
   endDate: "-",
@@ -30,6 +31,7 @@ export default function ShubramiSystem() {
   // 1. عقد جديد
   const [newContractShop, setNewContractShop] = useState("");
   const [newContractTenant, setNewContractTenant] = useState("");
+  const [newContractEjarNumber, setNewContractEjarNumber] = useState(""); // متغير رقم العقد
   const [newContractRent, setNewContractRent] = useState(15000);
   const [newContractStart, setNewContractStart] = useState("");
   const [newContractEnd, setNewContractEnd] = useState("");
@@ -38,6 +40,7 @@ export default function ShubramiSystem() {
   const [editContractShop, setEditContractShop] = useState("");
   const [editContractStatus, setEditContractStatus] = useState("مؤجر");
   const [editContractTenant, setEditContractTenant] = useState("");
+  const [editContractEjarNumber, setEditContractEjarNumber] = useState(""); // متغير تعديل رقم العقد
   const [editContractRent, setEditContractRent] = useState(0);
   const [editContractStart, setEditContractStart] = useState("");
   const [editContractEnd, setEditContractEnd] = useState("");
@@ -186,6 +189,7 @@ export default function ShubramiSystem() {
                   <tr>
                       <th>رقم المحل</th>
                       <th>المستأجر</th>
+                      <th>رقم عقد إيجار</th>
                       <th>الإيجار السنوي</th>
                       <th>بداية العقد</th>
                       <th>نهاية العقد</th>
@@ -199,6 +203,7 @@ export default function ShubramiSystem() {
                       <tr>
                           <td><b>${s.shopNumber}</b></td>
                           <td>${s.tenant}</td>
+                          <td>${s.ejarNumber}</td>
                           <td>${s.annualRent.toLocaleString()} ريال</td>
                           <td>${s.startDate}</td>
                           <td>${s.endDate}</td>
@@ -208,7 +213,7 @@ export default function ShubramiSystem() {
                       </tr>
                   `).join('')}
                   <tr class="total-row">
-                      <td colspan="2">المجموع الكلي</td>
+                      <td colspan="3">المجموع الكلي</td>
                       <td>${sumRent.toLocaleString()} ريال</td>
                       <td colspan="2"></td>
                       <td class="text-green">${sumCollected.toLocaleString()} ريال</td>
@@ -356,13 +361,16 @@ export default function ShubramiSystem() {
   // ==================== معالجة النماذج ====================
   const handleNewContract = (e) => {
     e.preventDefault();
-    if (!newContractShop || newContractTenant.trim() === "") return alert("الرجاء تعبئة البيانات بشكل صحيح");
+    // تم إضافة شرط التحقق من رقم عقد إيجار
+    if (!newContractShop || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تعبئة جميع البيانات بشكل صحيح، بما فيها رقم عقد إيجار");
+    
     setShopsDB(shopsDB.map(s => 
       s.shopNumber === newContractShop 
-      ? { ...s, status: "مؤجر", tenant: newContractTenant, annualRent: Number(newContractRent), startDate: newContractStart, endDate: newContractEnd }
+      ? { ...s, status: "مؤجر", tenant: newContractTenant, ejarNumber: newContractEjarNumber, annualRent: Number(newContractRent), startDate: newContractStart, endDate: newContractEnd }
       : s
     ));
     setNewContractTenant("");
+    setNewContractEjarNumber("");
     alert(`تم حفظ العقد للمحل ${newContractShop} بنجاح!`);
   };
 
@@ -375,6 +383,7 @@ export default function ShubramiSystem() {
           ...s, 
           status: editContractStatus, 
           tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", 
+          ejarNumber: editContractStatus === "مؤجر" ? editContractEjarNumber : "-", 
           annualRent: editContractStatus === "مؤجر" ? Number(editContractRent) : 0, 
           startDate: editContractStatus === "مؤجر" ? editContractStart : "-", 
           endDate: editContractStatus === "مؤجر" ? editContractEnd : "-" 
@@ -642,11 +651,16 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">اسم المستأجر:</label>
                         <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractTenant} onChange={(e) => setNewContractTenant(e.target.value)} required />
                       </div>
+                      {/* الحقل الجديد: رقم عقد إيجار */}
+                      <div>
+                        <label className="block mb-2 font-semibold text-slate-300">رقم عقد إيجار (إلزامي):</label>
+                        <input type="text" placeholder="مثال: 12345678" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractEjarNumber} onChange={(e) => setNewContractEjarNumber(e.target.value)} required />
+                      </div>
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">الإيجار السنوي:</label>
                         <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractRent} onChange={(e) => setNewContractRent(e.target.value)} required />
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4 md:col-span-2">
                         <div>
                           <label className="block mb-2 font-semibold text-slate-300">بداية العقد:</label>
                           <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={newContractStart} onChange={(e) => setNewContractStart(e.target.value)} required />
@@ -667,11 +681,10 @@ export default function ShubramiSystem() {
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractShop} onChange={(e) => {
                           const shop = shopsDB.find(s => s.shopNumber === e.target.value);
                           if(shop) {
-                            setEditContractShop(shop.shopNumber); setEditContractStatus(shop.status); setEditContractTenant(shop.tenant); setEditContractRent(shop.annualRent); setEditContractStart(shop.startDate); setEditContractEnd(shop.endDate);
+                            setEditContractShop(shop.shopNumber); setEditContractStatus(shop.status); setEditContractTenant(shop.tenant); setEditContractEjarNumber(shop.ejarNumber); setEditContractRent(shop.annualRent); setEditContractStart(shop.startDate); setEditContractEnd(shop.endDate);
                           }
                         }} required>
                           <option value="">-- اختر المحل المؤجر --</option>
-                          {/* التعديل هنا: الفلترة تظهر فقط العقود السارية، أو المنتهية التي المتبقي منها 0 */}
                           {shopsDB.filter(s => s.status === "مؤجر" && (!isContractExpired(s.endDate) || (s.annualRent - s.collected) <= 0)).map(s => <option key={s.shopNumber} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
                         </select>
                       </div>
@@ -686,6 +699,10 @@ export default function ShubramiSystem() {
                       <div>
                         <label className="block mb-2 font-semibold text-slate-300">المستأجر:</label>
                         <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
+                      </div>
+                      <div>
+                         <label className="block mb-2 font-semibold text-slate-300">رقم عقد إيجار:</label>
+                         <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white disabled:opacity-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} disabled={editContractStatus !== "مؤجر"} />
                       </div>
                       <div>
                          <label className="block mb-2 font-semibold text-slate-300">الإيجار السنوي:</label>
@@ -720,6 +737,7 @@ export default function ShubramiSystem() {
                         <tr>
                           <th className="p-4">رقم المحل</th>
                           <th className="p-4">المستأجر</th>
+                          <th className="p-4 text-blue-300">رقم عقد إيجار</th>
                           <th className="p-4">الإيجار السنوي</th>
                           <th className="p-4">البداية</th>
                           <th className="p-4">النهاية</th>
@@ -733,6 +751,7 @@ export default function ShubramiSystem() {
                           <tr key={s.shopNumber} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                             <td className="p-4 font-bold text-white">{s.shopNumber}</td>
                             <td className="p-4">{s.tenant}</td>
+                            <td className="p-4 font-bold text-blue-300">{s.ejarNumber}</td>
                             <td className="p-4">{s.annualRent.toLocaleString()} ريال</td>
                             <td className="p-4">{s.startDate}</td>
                             <td className="p-4">{s.endDate}</td>
@@ -747,7 +766,7 @@ export default function ShubramiSystem() {
                         ))}
                         {rentedShopsList.length > 0 && (
                           <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
-                            <td className="p-4" colSpan="2">المجموع الكلي</td>
+                            <td className="p-4" colSpan="3">المجموع الكلي</td>
                             <td className="p-4 text-slate-200">{totalRentSum.toLocaleString()} ريال</td>
                             <td className="p-4" colSpan="2"></td>
                             <td className="p-4 text-green-400">{totalCollectedSum.toLocaleString()} ريال</td>
