@@ -1,66 +1,48 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-
-// ==================== تهيئة البيانات الأولية للـ 166 محل ====================
-const initialShops = Array.from({ length: 166 }, (_, i) => ({
-  id: `row-${i + 1}`, 
-  shopNumber: `محل ${i + 1}`,
-  area: 60,
-  status: "شاغر",
-  tenant: "-",
-  ejarNumber: "-", 
-  annualRent: 15000,
-  startDate: "-",
-  endDate: "-",
-  collected: 0
-}));
-
-// مستخدمين افتراضيين للتجربة
-const initialUsers = [
-  { id: "u-1", username: "admin", password: "123", name: "مدير النظام", role: "مدير" },
-  { id: "u-2", username: "emp", password: "123", name: "موظف التحصيل", role: "موظف" }
-];
+// استيراد اتصال Supabase
+import { supabase } from './supabaseClient';
 
 export default function ShubramiSystem() {
+  // حالات تحميل البيانات من السحابة
+  const [loading, setLoading] = useState(true);
+
   // ==================== إدارة حالة النظام والمستخدمين (State) ====================
-  // 1. المصادقة (Auth)
-  const [usersDB, setUsersDB] = useState(initialUsers);
+  const [usersDB, setUsersDB] = useState([]);
   const [currentUser, setCurrentUser] = useState(null); 
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [authError, setAuthError] = useState("");
 
-  // 2. إدارة المستخدمين (للأدمن)
+  // إدارة المستخدمين (للأدمن)
   const [newUserName, setNewUserName] = useState("");
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState("موظف");
 
-  // 3. إدارة التبويبات
+  // إدارة التبويبات
   const [activeSubTab, setActiveSubTab] = useState("contracts");
   const [contractSubTab, setContractSubTab] = useState("new");
   const [paymentSubTab, setPaymentSubTab] = useState("new");
   const [debtSubTab, setDebtSubTab] = useState("pay");
 
-  // قواعد البيانات المؤقتة
-  const [shopsDB, setShopsDB] = useState(initialShops);
+  // قواعد البيانات السحابية
+  const [shopsDB, setShopsDB] = useState([]);
   const [transactionsDB, setTransactionsDB] = useState([]);
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
 
-  // متغيرات الفرز والبحث (للعقود)
+  // متغيرات الفرز والبحث
   const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
   const [filterContractYear, setFilterContractYear] = useState("الكل"); 
   const [searchContract, setSearchContract] = useState(""); 
   
-  // فلاتر جدول السندات ولوحة المؤشرات
   const [dashboardYear, setDashboardYear] = useState("الكل");
   const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
   const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
   const [searchReceipt, setSearchReceipt] = useState(""); 
 
   // المتغيرات للنماذج
-  // 1. عقد جديد
   const [newContractShop, setNewContractShop] = useState("");
   const [newContractTenant, setNewContractTenant] = useState("");
   const [newContractEjarNumber, setNewContractEjarNumber] = useState(""); 
@@ -68,7 +50,6 @@ export default function ShubramiSystem() {
   const [newContractStart, setNewContractStart] = useState("");
   const [newContractEnd, setNewContractEnd] = useState("");
 
-  // 2. تحديث وتجديد العقد
   const [editContractId, setEditContractId] = useState("");
   const [editContractShop, setEditContractShop] = useState("");
   const [editContractStatus, setEditContractStatus] = useState("مؤجر");
@@ -78,18 +59,15 @@ export default function ShubramiSystem() {
   const [editContractStart, setEditContractStart] = useState("");
   const [editContractEnd, setEditContractEnd] = useState("");
 
-  // 3. دفعة جديدة
   const [newPayShop, setNewPayShop] = useState("");
   const [newPayMethod, setNewPayMethod] = useState("نقد");
   const [newPayTarget, setNewPayTarget] = useState(1000);
   const [newPayAmount, setNewPayAmount] = useState(500);
 
-  // 4. تحديث دفعة
   const [updatePayReceipt, setUpdatePayReceipt] = useState("");
   const [updatePayMethod, setUpdatePayMethod] = useState("نقد");
   const [updatePayAmount, setUpdatePayAmount] = useState(0);
 
-  // 5. المديونيات
   const [debtYear, setDebtYear] = useState("");
   const [debtTenant, setDebtTenant] = useState("");
   const [debtDetails, setDebtDetails] = useState("");
@@ -99,13 +77,72 @@ export default function ShubramiSystem() {
   const [payDebtAmount, setPayDebtAmount] = useState("");
   const [payDebtMethod, setPayDebtMethod] = useState("نقد");
 
-  // 6. المصروفات
   const [expDate, setExpDate] = useState("");
   const [expCat, setExpCat] = useState("");
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
 
-  // ==================== دوال المصادقة والمستخدمين ====================
+  // ==================== جلب وتزامن البيانات من السحابة ====================
+  const fetchAllData = async () => {
+    try {
+      setLoading(true);
+
+      // 1. جلب المحلات وتوليدها تلقائياً إن كانت فارغة
+      let { data: shops, error: shopsErr } = await supabase.from('shops').select('*');
+      if (shops && shops.length === 0) {
+        const generatedShops = Array.from({ length: 166 }, (_, i) => ({
+          id: `row-${i + 1}`, 
+          shopNumber: `محل ${i + 1}`,
+          area: 60,
+          status: "شاغر",
+          tenant: "-",
+          ejarNumber: "-", 
+          annualRent: 15000,
+          startDate: "-",
+          endDate: "-",
+          collected: 0
+        }));
+        await supabase.from('shops').insert(generatedShops);
+        const { data: updatedShops } = await supabase.from('shops').select('*');
+        shops = updatedShops;
+      }
+      setShopsDB(shops || []);
+
+      // 2. جلب المستخدمين وتوليد الأدمن والافتراضي إن كان فارغاً
+      let { data: users } = await supabase.from('users').select('*');
+      if (users && users.length === 0) {
+        const initialUsers = [
+          { id: "u-1", username: "admin", password: "123", name: "مدير النظام", role: "مدير" },
+          { id: "u-2", username: "emp", password: "123", name: "موظف التحصيل", role: "موظف" }
+        ];
+        await supabase.from('users').insert(initialUsers);
+        const { data: updatedUsers } = await supabase.from('users').select('*');
+        users = updatedUsers;
+      }
+      setUsersDB(users || []);
+
+      // 3. جلب السندات والمديونيات والمصروفات
+      const { data: txs } = await supabase.from('transactions').select('*');
+      setTransactionsDB(txs || []);
+
+      const { data: debts } = await supabase.from('debts').select('*');
+      setDebtsDB(debts || []);
+
+      const { data: exps } = await supabase.from('expenses').select('*');
+      setExpensesDB(exps || []);
+
+    } catch (err) {
+      console.error("Error connecting to database:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllData();
+  }, []);
+
+  // ==================== دوال المصادقة والمستخدمين السحابية ====================
   const handleLogin = (e) => {
     e.preventDefault();
     const user = usersDB.find(u => u.username === loginUser && u.password === loginPass);
@@ -124,7 +161,7 @@ export default function ShubramiSystem() {
     setLoginPass("");
   };
 
-  const handleAddUser = (e) => {
+  const handleAddUser = async (e) => {
     e.preventDefault();
     if (usersDB.find(u => u.username === newUserUsername)) {
       return alert("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.");
@@ -136,15 +173,22 @@ export default function ShubramiSystem() {
       name: newUserName,
       role: newUserRole
     };
-    setUsersDB([...usersDB, newUser]);
-    setNewUserName(""); setNewUserUsername(""); setNewUserPassword("");
-    alert("تم إضافة المستخدم بنجاح.");
+
+    const { error } = await supabase.from('users').insert([newUser]);
+    if (!error) {
+      setUsersDB([...usersDB, newUser]);
+      setNewUserName(""); setNewUserUsername(""); setNewUserPassword("");
+      alert("تم إضافة المستخدم بنجاح ومزامنته سحابياً.");
+    }
   };
 
-  const handleDeleteUser = (id) => {
+  const handleDeleteUser = async (id) => {
     if (id === currentUser.id) return alert("لا يمكنك حذف حسابك وأنت مسجل الدخول به!");
-    if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً؟")) {
-      setUsersDB(usersDB.filter(u => u.id !== id));
+    if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟")) {
+      const { error } = await supabase.from('users').delete().eq('id', id);
+      if (!error) {
+        setUsersDB(usersDB.filter(u => u.id !== id));
+      }
     }
   };
 
@@ -190,7 +234,6 @@ export default function ShubramiSystem() {
     const parts = String(t.id).split('-');
     return parts.length > 1 ? parts[1] : null;
   }))].filter(Boolean).sort((a, b) => b - a);
-
 
   // ==================== دوال الطباعة والتصدير ====================
   const printDebtsPDF = (data) => {
@@ -247,7 +290,6 @@ export default function ShubramiSystem() {
 
   const printRentedShopsPDF = (filteredData) => {
     if (filteredData.length === 0) return alert("لا توجد محلات في الفرز الحالي لطباعتها");
-    
     const sumRent = filteredData.reduce((sum, s) => sum + s.annualRent, 0);
     const sumCollected = filteredData.reduce((sum, s) => sum + s.collected, 0);
     const sumRemaining = sumRent - sumCollected;
@@ -340,7 +382,6 @@ export default function ShubramiSystem() {
 
   const printTablePDF = (data) => {
     if (data.length === 0) return alert("لا توجد بيانات لطباعتها في التقرير");
-    
     const sumTarget = data.reduce((s, t) => s + t.targetAmount, 0);
     const sumPaid = data.reduce((s, t) => s + t.paidAmount, 0);
     const sumRemaining = data.reduce((s, t) => s + t.remainingAmount, 0);
@@ -449,22 +490,30 @@ export default function ShubramiSystem() {
     printWindow.document.close();
   };
 
-  // ==================== معالجة النماذج ====================
-  const handleNewContract = (e) => {
+  // ==================== معالجة النماذج مع ربط ومزامنة السحابة ====================
+  const handleNewContract = async (e) => {
     e.preventDefault();
     if (!newContractShop || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تعبئة جميع البيانات بشكل صحيح، بما فيها رقم عقد إيجار");
     
-    setShopsDB(shopsDB.map(s => 
-      s.shopNumber === newContractShop 
-      ? { ...s, status: "مؤجر", tenant: newContractTenant, ejarNumber: newContractEjarNumber, annualRent: Number(newContractRent), startDate: newContractStart, endDate: newContractEnd }
-      : s
-    ));
-    setNewContractTenant("");
-    setNewContractEjarNumber("");
-    alert(`تم حفظ العقد للمحل ${newContractShop} بنجاح!`);
+    const updatedFields = {
+      status: "مؤجر",
+      tenant: newContractTenant,
+      ejarNumber: newContractEjarNumber,
+      annualRent: Number(newContractRent),
+      startDate: newContractStart,
+      endDate: newContractEnd
+    };
+
+    const { error } = await supabase.from('shops').update(updatedFields).eq('shopNumber', newContractShop);
+    if (!error) {
+      setShopsDB(shopsDB.map(s => s.shopNumber === newContractShop ? { ...s, ...updatedFields } : s));
+      setNewContractTenant("");
+      setNewContractEjarNumber("");
+      alert(`تم حفظ ومزامنة العقد للمحل ${newContractShop} بنجاح!`);
+    }
   };
 
-  const handleEditContract = (e) => {
+  const handleEditContract = async (e) => {
     e.preventDefault();
     if (!editContractId) return alert("الرجاء تحديد المحل أولاً");
 
@@ -474,18 +523,10 @@ export default function ShubramiSystem() {
     const isRenewal = isContractExpired(originalRow.endDate);
 
     if (isRenewal) {
-      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") {
-        return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد بالخانة المخصصة!");
-      }
-      if (editContractEjarNumber === originalRow.ejarNumber) {
-        return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً عن رقم العقد المنتهي السابق لحفظ التاريخ ماليًا!");
-      }
-      if (!editContractStart || !editContractEnd) {
-        return alert("خطأ: الرجاء إدخال تاريخ بداية ونهاية العقد الجديد!");
-      }
-      if (editContractStart === originalRow.startDate || editContractEnd === originalRow.endDate) {
-        return alert("خطأ مالي وتعاقدي: لتجديد هذا العقد، يلزم تعديل تواريخ البداية والنهاية لتتوافق مع المدة التعاقدية الجديدة!");
-      }
+      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد!");
+      if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
+      if (!editContractStart || !editContractEnd) return alert("خطأ: الرجاء إدخال تاريخ بداية ونهاية العقد الجديد!");
+      if (editContractStart === originalRow.startDate || editContractEnd === originalRow.endDate) return alert("خطأ: يلزم تعديل تواريخ البداية والنهاية للتجديد!");
 
       const newContractRow = {
         id: `row-${Date.now()}`, 
@@ -500,35 +541,38 @@ export default function ShubramiSystem() {
         collected: 0 
       };
 
-      setShopsDB([...shopsDB, newContractRow]);
-      alert(`🎉 تم تجديد العقد للمحل (${originalRow.shopNumber}) بنجاح! نزل الآن كصف جديد ورقم عقد مستقل، وتحول العقد القديم تلقائياً إلى أرشيف غير قابل للتعديل.`);
-      setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+      const { error } = await supabase.from('shops').insert([newContractRow]);
+      if (!error) {
+        setShopsDB([...shopsDB, newContractRow]);
+        alert(`🎉 تم تجديد العقد للمحل (${originalRow.shopNumber}) ومزامنته سحابياً بنجاح!`);
+        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+      }
     } else {
-      setShopsDB(shopsDB.map(s => 
-        s.id === editContractId 
-        ? { 
-            ...s, 
-            status: editContractStatus, 
-            tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", 
-            ejarNumber: editContractStatus === "مؤجر" ? editContractEjarNumber : "-", 
-            annualRent: editContractStatus === "مؤجر" ? Number(editContractRent) : 0, 
-            startDate: editContractStatus === "مؤجر" ? editContractStart : "-", 
-            endDate: editContractStatus === "مؤجر" ? editContractEnd : "-" 
-          }
-        : s
-      ));
-      alert("تم تحديث بيانات العقد الحالي بنجاح!");
+      const updatedFields = { 
+        status: editContractStatus, 
+        tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", 
+        ejarNumber: editContractStatus === "مؤجر" ? editContractEjarNumber : "-", 
+        annualRent: editContractStatus === "مؤجر" ? Number(editContractRent) : 0, 
+        startDate: editContractStatus === "مؤجر" ? editContractStart : "-", 
+        endDate: editContractStatus === "مؤجر" ? editContractEnd : "-" 
+      };
+
+      const { error } = await supabase.from('shops').update(updatedFields).eq('id', editContractId);
+      if (!error) {
+        setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, ...updatedFields } : s));
+        alert("تم تحديث بيانات العقد الحالي على السحابة بنجاح!");
+      }
     }
   };
 
-  const handleNewPayment = (e) => {
+  const handleNewPayment = async (e) => {
     e.preventDefault();
     if (!newPayShop) return;
     if (newPayAmount > newPayTarget) return alert("خطأ: المدفوع أكبر من المتفق عليه!");
     
     const shopData = shopsDB.find(s => s.shopNumber === newPayShop && !isContractExpired(s.endDate));
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
-    if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً من تبويب التحديث.`);
+    if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغлаقه أولاً.`);
 
     const remaining = newPayTarget - newPayAmount;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
@@ -545,12 +589,18 @@ export default function ShubramiSystem() {
       status: status
     };
 
-    setTransactionsDB([...transactionsDB, newTx]);
-    setShopsDB(shopsDB.map(s => (s.shopNumber === newPayShop && !isContractExpired(s.endDate)) ? { ...s, collected: s.collected + Number(newPayAmount) } : s));
-    alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند!" : "تم حفظ الدفعة وفتح سند معلق.");
+    const { error: txErr } = await supabase.from('transactions').insert([newTx]);
+    if (!txErr) {
+      const updatedCollected = (shopData ? shopData.collected : 0) + Number(newPayAmount);
+      await supabase.from('shops').update({ collected: updatedCollected }).eq('shopNumber', newPayShop).not('status', 'eq', 'شاغر');
+      
+      setTransactionsDB([...transactionsDB, newTx]);
+      setShopsDB(shopsDB.map(s => (s.shopNumber === newPayShop && !isContractExpired(s.endDate)) ? { ...s, collected: s.collected + Number(newPayAmount) } : s));
+      alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً!" : "تم حفظ الدفعة وفتح سند معلق.");
+    }
   };
 
-  const handleUpdatePayment = (e) => {
+  const handleUpdatePayment = async (e) => {
     e.preventDefault();
     if (!updatePayReceipt) return;
     const tx = transactionsDB.find(t => t.id === updatePayReceipt);
@@ -562,29 +612,44 @@ export default function ShubramiSystem() {
     const updatedStatus = updatedRemaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
     const newMethod = tx.method.includes(updatePayMethod) ? tx.method : `${tx.method} و ${updatePayMethod}`;
 
-    setTransactionsDB(transactionsDB.map(t => 
-      t.id === updatePayReceipt 
-      ? { ...t, paidAmount: updatedPaid, remainingAmount: updatedRemaining, status: updatedStatus, method: newMethod, updateDate: new Date().toISOString().split('T')[0] }
-      : t
-    ));
-    setShopsDB(shopsDB.map(s => s.shopNumber === tx.shop ? { ...s, collected: s.collected + Number(updatePayAmount) } : s));
-    alert("تم تحديث السند بنجاح!");
+    const updatedTx = { 
+      paidAmount: updatedPaid, 
+      remainingAmount: updatedRemaining, 
+      status: updatedStatus, 
+      method: newMethod, 
+      updateDate: new Date().toISOString().split('T')[0] 
+    };
+
+    const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', updatePayReceipt);
+    if (!txErr) {
+      const shopData = shopsDB.find(s => s.shopNumber === tx.shop);
+      await supabase.from('shops').update({ collected: (shopData ? shopData.collected : 0) + Number(updatePayAmount) }).eq('shopNumber', tx.shop);
+
+      setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
+      setShopsDB(shopsDB.map(s => s.shopNumber === tx.shop ? { ...s, collected: s.collected + Number(updatePayAmount) } : s));
+      alert("تم تحديث السند ومزامنة البيانات المحاسبية!");
+    }
   };
 
-  const handleDebt = (e) => {
+  const handleDebt = async (e) => {
     e.preventDefault();
-    setDebtsDB([...debtsDB, { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) }]);
-    setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
-    alert("تم إدراج المديونية السابقة بنجاح.");
+    const newDebt = { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) };
+    
+    const { error } = await supabase.from('debts').insert([newDebt]);
+    if (!error) {
+      setDebtsDB([...debtsDB, newDebt]);
+      setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
+      alert("تم إدراج المديونية السابقة في قاعدة البيانات السحابية.");
+    }
   };
 
-  const handleDebtPayment = (e) => {
+  const handleDebtPayment = async (e) => {
     e.preventDefault();
     if (!payDebtId) return;
     const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
     if (!targetDebt) return;
     const payAmt = Number(payDebtAmount);
-    if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية المتبقية!");
+    if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية!");
 
     const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
 
@@ -595,17 +660,18 @@ export default function ShubramiSystem() {
       const newMethod = existingTx.method.includes(payDebtMethod) ? existingTx.method : `${existingTx.method} و ${payDebtMethod}`;
 
       const updatedTx = {
-        ...existingTx,
         paidAmount: updatedPaid,
         remainingAmount: updatedRemaining,
         method: newMethod,
         updateDate: new Date().toISOString().split('T')[0],
         status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
       };
+
+      await supabase.from('transactions').update(updatedTx).eq('id', existingTx.id);
       const newTxDB = [...transactionsDB];
-      newTxDB[existingTxIndex] = updatedTx;
+      newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
       setTransactionsDB(newTxDB);
-    } else {
+    } {
       const newTx = {
         id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
         referenceId: targetDebt.id,
@@ -620,38 +686,38 @@ export default function ShubramiSystem() {
         method: payDebtMethod,
         status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
       };
+      await supabase.from('transactions').insert([newTx]);
       setTransactionsDB([...transactionsDB, newTx]);
     }
 
     if (targetDebt.isShopDebt) {
+      await supabase.from('shops').update({ collected: (shopsDB.find(s=>s.id===targetDebt.id)?.collected || 0) + payAmt }).eq('id', targetDebt.id);
       setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
     } else {
+      await supabase.from('debts').update({ amount: targetDebt.amount - payAmt }).eq('id', targetDebt.id);
       setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
     }
 
-    alert(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند بنجاح.");
+    alert("تم تسجيل السداد ومزامنته سحابياً بنجاح!");
     setPayDebtId(""); setPayDebtAmount("");
   };
 
-  const handleExpense = (e) => {
+  const handleExpense = async (e) => {
     e.preventDefault();
-    setExpensesDB([...expensesDB, { date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes }]);
-    setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
-    alert("تم تسجيل المصروف بنجاح.");
+    const newExpense = { id: `E-${Date.now()}`, date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes };
+    
+    const { error } = await supabase.from('expenses').insert([newExpense]);
+    if (!error) {
+      setExpensesDB([...expensesDB, newExpense]);
+      setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
+      alert("تم تسجيل وتوثيق المصروف سحابياً.");
+    }
   };
 
-  // ==================== الحسابات للوحة المؤشرات والفرز ====================
-  const filteredTxForDash = dashboardYear === "الكل" 
-      ? transactionsDB 
-      : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
-
-  const filteredExpForDash = dashboardYear === "الكل"
-      ? expensesDB
-      : expensesDB.filter(e => getYear(e.date) === dashboardYear);
-
-  const filteredDebtsForDash = dashboardYear === "الكل"
-      ? allOutstandingDebts
-      : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
+  // ==================== الحسابات والفرز والمؤشرات ====================
+  const filteredTxForDash = dashboardYear === "الكل" ? transactionsDB : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
+  const filteredExpForDash = dashboardYear === "الكل" ? expensesDB : expensesDB.filter(e => getYear(e.date) === dashboardYear);
+  const filteredDebtsForDash = dashboardYear === "الكل" ? allOutstandingDebts : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
 
   const dashTotalCollected = filteredTxForDash.reduce((sum, t) => sum + t.paidAmount, 0);
   const dashTotalExpenses = filteredExpForDash.reduce((sum, e) => sum + e.amount, 0);
@@ -704,7 +770,17 @@ export default function ShubramiSystem() {
   const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
   const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
 
-  // ==================== واجهة المستخدم (UI) ====================
+  // واجهة جاري تحميل البيانات عند البداية
+  if (loading) {
+    return (
+      <div dir="rtl" className="min-h-screen bg-slate-900 flex flex-col items-center justify-center font-tajawal text-white">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-orange-500 mb-4"></div>
+        <p className="text-xl font-bold">جاري جلب ومزامنة البيانات من السحابة...</p>
+      </div>
+    );
+  }
+
+  // واجهة تسجيل الدخول
   if (!currentUser) {
     return (
       <div dir="rtl" className="min-h-screen font-tajawal flex items-center justify-center relative bg-slate-900" 
@@ -727,7 +803,7 @@ export default function ShubramiSystem() {
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
               <label className="block text-slate-300 mb-2 font-semibold">اسم المستخدم</label>
-              <input type="text" required className="w-full bg-black/50 border border-white/20 rounded-xl p-3 text-white focus:border-orange-500 outline-none transition-colors" value={loginUser} onChange={e => setLoginUser(e.target.value)} />
+              <input type="text" mercantile-app="true" required className="w-full bg-black/50 border border-white/20 rounded-xl p-3 text-white focus:border-orange-500 outline-none transition-colors" value={loginUser} onChange={e => setLoginUser(e.target.value)} />
             </div>
             <div>
               <label className="block text-slate-300 mb-2 font-semibold">كلمة المرور</label>
@@ -780,7 +856,7 @@ export default function ShubramiSystem() {
                   </div>
                </div>
                <button onClick={handleLogout} className="bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2 rounded-xl font-bold hover:bg-red-500 hover:text-white transition-all text-sm">
-                  تسجيل الخروج 🚪
+                 تسجيل الخروج 🚪
                </button>
             </div>
 
@@ -943,7 +1019,7 @@ export default function ShubramiSystem() {
                       </div>
                       <div>
                          <label className="block mb-2 font-semibold text-slate-300">رقم عقد إيجار المحدث/الجديد:</label>
-                         <input type="text" placeholder={editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "أدخل رقم العقد الجديد هنا" : "رقم العقد الحالي"} className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} />
+                         <input type="text" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} />
                       </div>
                       <div>
                          <label className="block mb-2 font-semibold text-slate-300">الإيجار السنوي الجديد:</label>
@@ -1273,7 +1349,7 @@ export default function ShubramiSystem() {
                         </div>
                      </form>
                   )}
-                   
+                    
                    <hr className="my-10 border-white/10" />
                    
                    <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
@@ -1344,7 +1420,6 @@ export default function ShubramiSystem() {
                 </div>
               )}
 
-              {/* التبويب الخاص بـ إدارة المستخدمين (للمدير فقط) */}
               {activeSubTab === "users" && currentUser.role === "مدير" && (
                 <div className="animate-fade-in">
                   <div className="bg-black/40 p-6 rounded-2xl border border-white/10 mb-8">
