@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 // استيراد اتصال Supabase
-import { supabase } from './supabaseClient';
+import { supabase } from '../supabaseClient';
 
 export default function ShubramiSystem() {
   // حالات تحميل البيانات من السحابة
