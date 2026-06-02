@@ -184,7 +184,7 @@ export default function ShubramiSystem() {
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) return alert("لا يمكنك حذف حسابك وأنت مسجل الدخول به!");
-    if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟")) {
+    if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة?")) {
       const { error } = await supabase.from('users').delete().eq('id', id);
       if (!error) {
         setUsersDB(usersDB.filter(u => u.id !== id));
@@ -572,7 +572,7 @@ export default function ShubramiSystem() {
     
     const shopData = shopsDB.find(s => s.shopNumber === newPayShop && !isContractExpired(s.endDate));
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
-    if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغлаقه أولاً.`);
+    if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
 
     const remaining = newPayTarget - newPayAmount;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
@@ -654,6 +654,7 @@ export default function ShubramiSystem() {
     const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
 
     if (existingTxIndex >= 0) {
+      // 1. تحديث سند مديونية معلق وموجود مسبقاً
       const existingTx = transactionsDB[existingTxIndex];
       const updatedPaid = existingTx.paidAmount + payAmt;
       const updatedRemaining = existingTx.targetAmount - updatedPaid;
@@ -671,7 +672,8 @@ export default function ShubramiSystem() {
       const newTxDB = [...transactionsDB];
       newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
       setTransactionsDB(newTxDB);
-    } {
+    } else {
+      // 2. إصدار سند مديونية جديد كلياً (تم إصلاح الشرط هنا بإضافة else)
       const newTx = {
         id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
         referenceId: targetDebt.id,
@@ -690,15 +692,18 @@ export default function ShubramiSystem() {
       setTransactionsDB([...transactionsDB, newTx]);
     }
 
+    // 3. مزامنة القيمة المخصومة في السحابة والواجهة
     if (targetDebt.isShopDebt) {
-      await supabase.from('shops').update({ collected: (shopsDB.find(s=>s.id===targetDebt.id)?.collected || 0) + payAmt }).eq('id', targetDebt.id);
-      setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: s.collected + payAmt } : s));
+      const currentShop = shopsDB.find(s => s.id === targetDebt.id);
+      const newCollected = (currentShop?.collected || 0) + payAmt;
+      await supabase.from('shops').update({ collected: newCollected }).eq('id', targetDebt.id);
+      setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: newCollected } : s));
     } else {
       await supabase.from('debts').update({ amount: targetDebt.amount - payAmt }).eq('id', targetDebt.id);
       setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
     }
 
-    alert("تم تسجيل السداد ومزامنته سحابياً بنجاح!");
+    alert(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند سحابياً.");
     setPayDebtId(""); setPayDebtAmount("");
   };
 
