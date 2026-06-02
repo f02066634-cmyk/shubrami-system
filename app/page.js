@@ -1178,7 +1178,6 @@ export default function ShubramiSystem() {
                         <label className="block mb-2 font-semibold text-slate-300">اختر السند المفتوح:</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
                           <option value="">-- السندات المعلقة للعقود السارية --</option>
-                          {/* تعديل الفرز هنا ليظهر فقط السندات المفتوحة للعقود السارية ويستبعد المديونيات المعزولة */}
                           {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
                         </select>
                       </div>
@@ -1273,8 +1272,8 @@ export default function ShubramiSystem() {
                                   <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
                                 </td>
                                 <td className="p-4 text-center">
-                                  {/* السماح بطباعة السندات المغلقة والجزئية */}
-                                  {(t.status.includes('مغلق') || t.status.includes('جزئي')) && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
+                                  {/* التعديل هنا: منع طباعة السند إلا إذا كانت الحالة "مغلق" فقط */}
+                                  {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
                                 </td>
                               </tr>
                             ))}
