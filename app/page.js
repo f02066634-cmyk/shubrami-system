@@ -729,10 +729,25 @@ export default function ShubramiSystem() {
   const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
   const dashNetIncome = dashTotalCollected - dashTotalExpenses;
 
-  const statusCounts = shopsDB.reduce((acc, shop) => {
-    acc[shop.status] = (acc[shop.status] || 0) + 1;
-    return acc;
-  }, {});
+  // --- التعديل الجوهري هنا (استخراج حالة الـ 166 محل فقط) ---
+  const latestShopRecords = {};
+  shopsDB.forEach(shop => {
+    // نستخرج الرقم الزمني أو المسلسل من الآي دي لمعرفة أحدث حالة للمحل (الأكبر رقماً هو الأحدث)
+    const currentIdNum = parseInt(String(shop.id).replace(/\D/g, '')) || 0;
+    const existingIdNum = latestShopRecords[shop.shopNumber] 
+      ? (parseInt(String(latestShopRecords[shop.shopNumber].id).replace(/\D/g, '')) || 0) 
+      : -1;
+    
+    if (!latestShopRecords[shop.shopNumber] || currentIdNum > existingIdNum) {
+      latestShopRecords[shop.shopNumber] = shop;
+    }
+  });
+
+  const statusCounts = { "مؤجر": 0, "شاغر": 0, "تحت الصيانة": 0 };
+  Object.values(latestShopRecords).forEach(shop => {
+    statusCounts[shop.status] = (statusCounts[shop.status] || 0) + 1;
+  });
+  // --------------------------------------------------------
 
   const filteredRentedShops = shopsDB.filter(s => {
     if (s.status !== "مؤجر") return false;
