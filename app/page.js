@@ -36,7 +36,7 @@ export default function ShubramiSystem() {
   const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
   const [filterContractYear, setFilterContractYear] = useState("الكل"); 
   const [searchContract, setSearchContract] = useState(""); 
-  
+   
   const [dashboardYear, setDashboardYear] = useState("الكل");
   const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
   const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
@@ -184,7 +184,7 @@ export default function ShubramiSystem() {
 
   const handleDeleteUser = async (id) => {
     if (id === currentUser.id) return alert("لا يمكنك حذف حسابك وأنت مسجل الدخول به!");
-    if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة?")) {
+    if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟")) {
       const { error } = await supabase.from('users').delete().eq('id', id);
       if (!error) {
         setUsersDB(usersDB.filter(u => u.id !== id));
@@ -665,7 +665,7 @@ export default function ShubramiSystem() {
         remainingAmount: updatedRemaining,
         method: newMethod,
         updateDate: new Date().toISOString().split('T')[0],
-        status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
+        status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
       };
 
       await supabase.from('transactions').update(updatedTx).eq('id', existingTx.id);
@@ -673,7 +673,7 @@ export default function ShubramiSystem() {
       newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
       setTransactionsDB(newTxDB);
     } else {
-      // 2. إصدار سند مديونية جديد كلياً (تم إصلاح الشرط هنا بإضافة else)
+      // 2. إصدار سند مديونية جديد كلياً
       const newTx = {
         id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
         referenceId: targetDebt.id,
@@ -686,7 +686,7 @@ export default function ShubramiSystem() {
         paidAmount: payAmt,
         remainingAmount: targetDebt.amount - payAmt,
         method: payDebtMethod,
-        status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "مفتوح (سداد جزئي)"
+        status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
       };
       await supabase.from('transactions').insert([newTx]);
       setTransactionsDB([...transactionsDB, newTx]);
@@ -1177,8 +1177,9 @@ export default function ShubramiSystem() {
                       <div className="md:col-span-2">
                         <label className="block mb-2 font-semibold text-slate-300">اختر السند المفتوح:</label>
                         <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
-                          <option value="">-- السندات المعلقة --</option>
-                          {transactionsDB.filter(t => t.status.includes("مفتوح")).map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
+                          <option value="">-- السندات المعلقة للعقود السارية --</option>
+                          {/* تعديل الفرز هنا ليظهر فقط السندات المفتوحة للعقود السارية ويستبعد المديونيات المعزولة */}
+                          {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
                         </select>
                       </div>
                       {updatePayReceipt && (
@@ -1226,7 +1227,7 @@ export default function ShubramiSystem() {
                       <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
                         <option value="الكل">الكل (شامل)</option>
                         <option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option>
-                        <option value="مفتوح (سداد جزئي)">مفتوح (سداد جزئي)</option>
+                        <option value="سداد جزئي (مديونية)">سداد جزئي (مديونية)</option>
                         <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
                         <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
                       </select>
@@ -1272,7 +1273,8 @@ export default function ShubramiSystem() {
                                   <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
                                 </td>
                                 <td className="p-4 text-center">
-                                  {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
+                                  {/* السماح بطباعة السندات المغلقة والجزئية */}
+                                  {(t.status.includes('مغلق') || t.status.includes('جزئي')) && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
                                 </td>
                               </tr>
                             ))}
