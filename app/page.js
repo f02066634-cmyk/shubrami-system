@@ -303,6 +303,7 @@ export default function ShubramiSystem() {
               <thead>
                   <tr>
                       <th>رقم المحل</th>
+                      <th>المستأجر</th>
                       <th>مبلغ الدفعة القادمة</th>
                       <th>تاريخ الاستحقاق</th>
                       <th>إجمالي المحصل من المحل</th>
@@ -317,6 +318,7 @@ export default function ShubramiSystem() {
                       return `
                       <tr>
                           <td><b>${inst.shop}</b></td>
+                          <td>${shopData.tenant || "-"}</td>
                           <td class="text-orange">${inst.amount.toLocaleString()} ريال</td>
                           <td>${inst.date}</td>
                           <td class="text-green">${collected.toLocaleString()} ريال</td>
@@ -1016,18 +1018,21 @@ export default function ShubramiSystem() {
                   <span>🔔</span> تنبيهات النظام: دفعات مستحقة قريباً أو متأخرة!
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {installmentAlerts.map(alert => (
-                    <div key={alert.id} className="bg-black/50 border border-red-500/20 p-3 rounded-xl flex justify-between items-center">
-                       <div>
-                         <span className="font-bold text-white block">المحل: {alert.shop}</span>
-                         <span className="text-xs text-slate-400">تاريخ الاستحقاق: {alert.date}</span>
-                       </div>
-                       <div className="text-left">
-                         <span className="block text-orange-400 font-bold">{alert.amount.toLocaleString()} ريال</span>
-                         <span className="text-xs font-bold text-red-400">{alert.statusText}</span>
-                       </div>
-                    </div>
-                  ))}
+                  {installmentAlerts.map(alert => {
+                     const shopData = shopsDB.find(s => s.shopNumber === alert.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === alert.shop) || {};
+                     return (
+                      <div key={alert.id} className="bg-black/50 border border-red-500/20 p-3 rounded-xl flex justify-between items-center">
+                         <div>
+                           <span className="font-bold text-white block">المحل: {alert.shop} ({shopData.tenant || "-"})</span>
+                           <span className="text-xs text-slate-400">تاريخ الاستحقاق: {alert.date}</span>
+                         </div>
+                         <div className="text-left">
+                           <span className="block text-orange-400 font-bold">{alert.amount.toLocaleString()} ريال</span>
+                           <span className="text-xs font-bold text-red-400">{alert.statusText}</span>
+                         </div>
+                      </div>
+                     );
+                  })}
                 </div>
               </div>
             )}
@@ -1368,9 +1373,14 @@ export default function ShubramiSystem() {
                        <form onSubmit={handleNewInstallment} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 bg-white/5 p-6 rounded-2xl border border-white/10">
                           <div>
                             <label className="block mb-2 font-semibold text-slate-300">تحديد المحل:</label>
+                            {/* التعديل هنا: الفلتر الآن يعرض فقط المحلات اللي عقدها "مؤجر" و "ساري" */}
                             <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
-                              <option value="">-- اختر المحل --</option>
-                              {shopsDB.filter(s => s.status === "مؤجر").map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber}</option>)}
+                              <option value="">-- اختر المحل (العقود السارية فقط) --</option>
+                              {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => (
+                                <option key={s.id} value={s.shopNumber}>
+                                  {s.shopNumber} - {s.tenant}
+                                </option>
+                              ))}
                             </select>
                           </div>
                           <div>
@@ -1395,7 +1405,9 @@ export default function ShubramiSystem() {
                          <table className="w-full text-right text-slate-200">
                            <thead className="bg-black/60 text-white border-b border-white/10">
                              <tr>
+                               {/* التعديل هنا: إضافة عمود المستأجر */}
                                <th className="p-4">رقم المحل</th>
+                               <th className="p-4 text-orange-200">المستأجر</th>
                                <th className="p-4 text-orange-300">مبلغ الدفعة القادمة</th>
                                <th className="p-4 text-blue-300">تاريخ الاستحقاق</th>
                                <th className="p-4 text-green-400">التحصيل الكلي</th>
@@ -1405,7 +1417,7 @@ export default function ShubramiSystem() {
                            </thead>
                            <tbody>
                              {installmentsDB.length === 0 ? (
-                               <tr><td colSpan="6" className="p-6 text-center text-slate-400 font-bold">لا توجد دفعات مجدولة حالياً.</td></tr>
+                               <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">لا توجد دفعات مجدولة حالياً.</td></tr>
                              ) : (
                                installmentsDB.map(inst => {
                                  const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
@@ -1414,6 +1426,8 @@ export default function ShubramiSystem() {
                                  return (
                                    <tr key={inst.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                      <td className="p-4 font-bold">{inst.shop}</td>
+                                     {/* التعديل هنا: عرض اسم المستأجر */}
+                                     <td className="p-4 font-semibold text-slate-300">{shopData.tenant || "-"}</td>
                                      <td className="p-4 font-bold text-orange-400">{inst.amount.toLocaleString()} ريال</td>
                                      <td className="p-4 font-bold">{inst.date}</td>
                                      <td className="p-4 text-green-400">{collected.toLocaleString()} ريال</td>
