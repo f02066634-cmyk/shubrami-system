@@ -31,6 +31,7 @@ export default function ShubramiSystem() {
   const [transactionsDB, setTransactionsDB] = useState([]);
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
+  const [installmentsDB, setInstallmentsDB] = useState([]); // جدول الدفعات القادمة المستحقة
 
   // متغيرات الفرز والبحث
   const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
@@ -82,6 +83,11 @@ export default function ShubramiSystem() {
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
 
+  // متغيرات الدفعات المستحقة
+  const [instShop, setInstShop] = useState("");
+  const [instAmount, setInstAmount] = useState("");
+  const [instDate, setInstDate] = useState("");
+
   // ==================== جلب وتزامن البيانات من السحابة ====================
   const fetchAllData = async () => {
     try {
@@ -121,7 +127,7 @@ export default function ShubramiSystem() {
       }
       setUsersDB(users || []);
 
-      // 3. جلب السندات والمديونيات والمصروفات
+      // 3. جلب السندات والمديونيات والمصروفات والدفعات المجدولة
       const { data: txs } = await supabase.from('transactions').select('*');
       setTransactionsDB(txs || []);
 
@@ -130,6 +136,14 @@ export default function ShubramiSystem() {
 
       const { data: exps } = await supabase.from('expenses').select('*');
       setExpensesDB(exps || []);
+
+      try {
+        const { data: insts } = await supabase.from('installments').select('*');
+        setInstallmentsDB(insts || []);
+      } catch (instErr) {
+        console.log("جدول installments غير موجود بعد أو به مشكلة، يرجى إنشاؤه.");
+        setInstallmentsDB([]);
+      }
 
     } catch (err) {
       console.error("Error connecting to database:", err);
@@ -192,7 +206,7 @@ export default function ShubramiSystem() {
     }
   };
 
-  // ==================== دوال المساعدة ====================
+  // ==================== دوال المساعدة ونظام التنبيهات ====================
   const isContractExpired = (endDate) => {
     if (!endDate || endDate === "-") return false;
     const today = new Date();
@@ -206,6 +220,30 @@ export default function ShubramiSystem() {
     const str = String(dateStr);
     return str.includes("-") ? str.split("-")[0] : str;
   };
+
+  // تجهيز إشعارات التذكير بالدفعات (يوم قبل، نفس اليوم، أو متأخرة)
+  const todayDateObj = new Date();
+  todayDateObj.setHours(0, 0, 0, 0);
+  const tomorrowDateObj = new Date();
+  tomorrowDateObj.setDate(tomorrowDateObj.getDate() + 1);
+  tomorrowDateObj.setHours(0, 0, 0, 0);
+
+  const installmentAlerts = installmentsDB.filter(inst => {
+    if (!inst.date) return false;
+    const instDateObj = new Date(inst.date);
+    instDateObj.setHours(0, 0, 0, 0);
+    
+    // يظهر التنبيه إذا كان التاريخ غداً، أو اليوم، أو قديم (متأخر)
+    return instDateObj <= tomorrowDateObj;
+  }).map(inst => {
+    const instDateObj = new Date(inst.date);
+    instDateObj.setHours(0, 0, 0, 0);
+    let statusText = "";
+    if (instDateObj.getTime() === tomorrowDateObj.getTime()) statusText = "مستحقة غداً ⏳";
+    else if (instDateObj.getTime() === todayDateObj.getTime()) statusText = "مستحقة اليوم 🔴";
+    else statusText = "متأخرة السداد ⚠️";
+    return { ...inst, statusText };
+  });
 
   const expiredShopsDebts = shopsDB
     .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected)
@@ -236,6 +274,65 @@ export default function ShubramiSystem() {
   }))].filter(Boolean).sort((a, b) => b - a);
 
   // ==================== دوال الطباعة والتصدير ====================
+  const printInstallmentsPDF = (data) => {
+    if (data.length === 0) return alert("لا توجد دفعات مجدولة للطباعة حالياً");
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl">
+      <head>
+          <title>جدول استحقاق الدفعات القادمة</title>
+          <style>
+              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; background-color: white; }
+              h2 { text-align: center; color: #f97316; margin-bottom: 5px; }
+              h4 { text-align: center; color: #666; margin-top: 5px; margin-bottom: 25px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+              th, td { border: 1px solid #cbd5e1; padding: 12px 10px; text-align: center; font-size: 14px; }
+              th { background-color: #1e293b; color: white; font-weight: bold; }
+              tr:nth-child(even) { background-color: #f8fafc; }
+              .text-green { color: #16a34a; font-weight: bold; }
+              .text-red { color: #dc2626; font-weight: bold; }
+              .text-orange { color: #ea580c; font-weight: bold; }
+              .btn { display: block; padding: 14px; background-color: #f97316; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);}
+              @media print { .btn { display: none !important; } body { padding: 0; } }
+          </style>
+      </head>
+      <body>
+          <h2>📅 جدول استحقاق الدفعات القادمة - أسواق الشبرمي</h2>
+          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م</h4>
+          <table>
+              <thead>
+                  <tr>
+                      <th>رقم المحل</th>
+                      <th>مبلغ الدفعة القادمة</th>
+                      <th>تاريخ الاستحقاق</th>
+                      <th>إجمالي المحصل من المحل</th>
+                      <th>إجمالي المتبقي على المحل</th>
+                  </tr>
+              </thead>
+              <tbody>
+                  ${data.map(inst => {
+                      const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
+                      const collected = shopData.collected || 0;
+                      const remaining = (shopData.annualRent || 0) - collected;
+                      return `
+                      <tr>
+                          <td><b>${inst.shop}</b></td>
+                          <td class="text-orange">${inst.amount.toLocaleString()} ريال</td>
+                          <td>${inst.date}</td>
+                          <td class="text-green">${collected.toLocaleString()} ريال</td>
+                          <td class="text-red">${remaining.toLocaleString()} ريال</td>
+                      </tr>
+                      `;
+                  }).join('')}
+              </tbody>
+          </table>
+          <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const printDebtsPDF = (data) => {
     if (data.length === 0) return alert("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً");
     const printWindow = window.open('', '_blank');
@@ -491,6 +588,36 @@ export default function ShubramiSystem() {
   };
 
   // ==================== معالجة النماذج مع ربط ومزامنة السحابة ====================
+  const handleNewInstallment = async (e) => {
+    e.preventDefault();
+    if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
+
+    const newInst = {
+      id: `INST-${Date.now()}`,
+      shop: instShop,
+      amount: Number(instAmount),
+      date: instDate
+    };
+
+    const { error } = await supabase.from('installments').insert([newInst]);
+    if (!error) {
+      setInstallmentsDB([...installmentsDB, newInst]);
+      setInstShop(""); setInstAmount(""); setInstDate("");
+      alert("تمت جدولة استحقاق الدفعة القادمة بنجاح!");
+    } else {
+      alert("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟");
+    }
+  };
+
+  const handleDeleteInstallment = async (id) => {
+    if (window.confirm("هل أنت متأكد من حذف هذه الدفعة المجدولة (سواء تم تحصيلها أو إلغاؤها)؟")) {
+      const { error } = await supabase.from('installments').delete().eq('id', id);
+      if (!error) {
+        setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
+      }
+    }
+  };
+
   const handleNewContract = async (e) => {
     e.preventDefault();
     if (!newContractShop || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تعبئة جميع البيانات بشكل صحيح، بما فيها رقم عقد إيجار");
@@ -729,10 +856,8 @@ export default function ShubramiSystem() {
   const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
   const dashNetIncome = dashTotalCollected - dashTotalExpenses;
 
-  // --- التعديل الجوهري هنا (استخراج حالة الـ 166 محل فقط) ---
   const latestShopRecords = {};
   shopsDB.forEach(shop => {
-    // نستخرج الرقم الزمني أو المسلسل من الآي دي لمعرفة أحدث حالة للمحل (الأكبر رقماً هو الأحدث)
     const currentIdNum = parseInt(String(shop.id).replace(/\D/g, '')) || 0;
     const existingIdNum = latestShopRecords[shop.shopNumber] 
       ? (parseInt(String(latestShopRecords[shop.shopNumber].id).replace(/\D/g, '')) || 0) 
@@ -747,7 +872,6 @@ export default function ShubramiSystem() {
   Object.values(latestShopRecords).forEach(shop => {
     statusCounts[shop.status] = (statusCounts[shop.status] || 0) + 1;
   });
-  // --------------------------------------------------------
 
   const filteredRentedShops = shopsDB.filter(s => {
     if (s.status !== "مؤجر") return false;
@@ -884,6 +1008,29 @@ export default function ShubramiSystem() {
               <h1 className="text-4xl md:text-5xl font-extrabold text-white mb-3 tracking-wide drop-shadow-md">🏢 نظام إدارة وتحصيل أسواق الشبرمي</h1>
               <div className="h-1.5 w-32 bg-gradient-to-r from-orange-500 to-orange-400 mx-auto rounded-full shadow-lg"></div>
             </div>
+
+            {/* شريط الإشعارات والتنبيهات المضافة للدفعات */}
+            {installmentAlerts.length > 0 && (
+              <div className="bg-red-500/10 border-2 border-red-500/50 p-5 rounded-2xl mb-8 shadow-2xl backdrop-blur-md animate-fade-in">
+                <h3 className="text-red-400 font-extrabold mb-3 flex items-center gap-2 text-xl">
+                  <span>🔔</span> تنبيهات النظام: دفعات مستحقة قريباً أو متأخرة!
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {installmentAlerts.map(alert => (
+                    <div key={alert.id} className="bg-black/50 border border-red-500/20 p-3 rounded-xl flex justify-between items-center">
+                       <div>
+                         <span className="font-bold text-white block">المحل: {alert.shop}</span>
+                         <span className="text-xs text-slate-400">تاريخ الاستحقاق: {alert.date}</span>
+                       </div>
+                       <div className="text-left">
+                         <span className="block text-orange-400 font-bold">{alert.amount.toLocaleString()} ريال</span>
+                         <span className="text-xs font-bold text-red-400">{alert.statusText}</span>
+                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-6 mb-12">
               <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
@@ -1155,9 +1302,10 @@ export default function ShubramiSystem() {
 
               {activeSubTab === "payments" && (
                 <div className="animate-fade-in">
-                   <div className="flex gap-6 mb-8 border-b border-white/10 pb-2">
+                   <div className="flex gap-6 mb-8 border-b border-white/10 pb-2 flex-wrap">
                     <button onClick={() => setPaymentSubTab("new")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "new" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🆕 إنشاء دفعة جديدة</button>
                     <button onClick={() => setPaymentSubTab("update")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "update" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🔄 إغلاق السندات المفتوحة</button>
+                    <button onClick={() => setPaymentSubTab("installment")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "installment" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>📅 استحقاق الدفعة القادمة</button>
                   </div>
 
                   {paymentSubTab === "new" && (
@@ -1212,6 +1360,75 @@ export default function ShubramiSystem() {
                         </>
                       )}
                      </form>
+                  )}
+
+                  {/* تبويب الدفعات المستحقة القادمة */}
+                  {paymentSubTab === "installment" && (
+                     <div>
+                       <form onSubmit={handleNewInstallment} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 bg-white/5 p-6 rounded-2xl border border-white/10">
+                          <div>
+                            <label className="block mb-2 font-semibold text-slate-300">تحديد المحل:</label>
+                            <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
+                              <option value="">-- اختر المحل --</option>
+                              {shopsDB.filter(s => s.status === "مؤجر").map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block mb-2 font-semibold text-slate-300">مبلغ الدفعة القادمة:</label>
+                            <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instAmount} onChange={(e) => setInstAmount(e.target.value)} required />
+                          </div>
+                          <div>
+                            <label className="block mb-2 font-semibold text-slate-300">تاريخ الاستحقاق (سيعمل التنبيه قبله بيوم):</label>
+                            <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instDate} onChange={(e) => setInstDate(e.target.value)} required />
+                          </div>
+                          <button type="submit" className="md:col-span-3 mt-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-3.5 rounded-xl text-lg shadow-lg">📅 حفظ وتفعيل الجدولة</button>
+                       </form>
+
+                       <hr className="my-10 border-white/10" />
+
+                       <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
+                          <h3 className="text-xl font-bold text-white">📋 جدول استحقاق الدفعات القادمة</h3>
+                          <button onClick={() => printInstallmentsPDF(installmentsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة جدول الاستحقاقات PDF</button>
+                       </div>
+
+                       <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
+                         <table className="w-full text-right text-slate-200">
+                           <thead className="bg-black/60 text-white border-b border-white/10">
+                             <tr>
+                               <th className="p-4">رقم المحل</th>
+                               <th className="p-4 text-orange-300">مبلغ الدفعة القادمة</th>
+                               <th className="p-4 text-blue-300">تاريخ الاستحقاق</th>
+                               <th className="p-4 text-green-400">التحصيل الكلي</th>
+                               <th className="p-4 text-red-400">المتبقي على المحل</th>
+                               <th className="p-4 text-center">الإجراء</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {installmentsDB.length === 0 ? (
+                               <tr><td colSpan="6" className="p-6 text-center text-slate-400 font-bold">لا توجد دفعات مجدولة حالياً.</td></tr>
+                             ) : (
+                               installmentsDB.map(inst => {
+                                 const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
+                                 const collected = shopData.collected || 0;
+                                 const remaining = (shopData.annualRent || 0) - collected;
+                                 return (
+                                   <tr key={inst.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                     <td className="p-4 font-bold">{inst.shop}</td>
+                                     <td className="p-4 font-bold text-orange-400">{inst.amount.toLocaleString()} ريال</td>
+                                     <td className="p-4 font-bold">{inst.date}</td>
+                                     <td className="p-4 text-green-400">{collected.toLocaleString()} ريال</td>
+                                     <td className="p-4 text-red-400 font-bold">{remaining.toLocaleString()} ريال</td>
+                                     <td className="p-4 text-center">
+                                       <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-500 hover:text-white transition-all">إلغاء / تم التحصيل</button>
+                                     </td>
+                                   </tr>
+                                 );
+                               })
+                             )}
+                           </tbody>
+                         </table>
+                       </div>
+                     </div>
                   )}
 
                   <hr className="my-10 border-white/10" />
