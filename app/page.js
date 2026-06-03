@@ -31,7 +31,7 @@ export default function ShubramiSystem() {
   const [transactionsDB, setTransactionsDB] = useState([]);
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
-  const [installmentsDB, setInstallmentsDB] = useState([]); // جدول الدفعات القادمة المستحقة
+  const [installmentsDB, setInstallmentsDB] = useState([]); 
 
   // متغيرات الفرز والبحث
   const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
@@ -93,8 +93,7 @@ export default function ShubramiSystem() {
     try {
       setLoading(true);
 
-      // 1. جلب المحلات وتوليدها تلقائياً إن كانت فارغة
-      let { data: shops, error: shopsErr } = await supabase.from('shops').select('*');
+      let { data: shops } = await supabase.from('shops').select('*');
       if (shops && shops.length === 0) {
         const generatedShops = Array.from({ length: 166 }, (_, i) => ({
           id: `row-${i + 1}`, 
@@ -114,7 +113,6 @@ export default function ShubramiSystem() {
       }
       setShopsDB(shops || []);
 
-      // 2. جلب المستخدمين وتوليد الأدمن والافتراضي إن كان فارغاً
       let { data: users } = await supabase.from('users').select('*');
       if (users && users.length === 0) {
         const initialUsers = [
@@ -127,7 +125,6 @@ export default function ShubramiSystem() {
       }
       setUsersDB(users || []);
 
-      // 3. جلب السندات والمديونيات والمصروفات والدفعات المجدولة
       const { data: txs } = await supabase.from('transactions').select('*');
       setTransactionsDB(txs || []);
 
@@ -221,7 +218,6 @@ export default function ShubramiSystem() {
     return str.includes("-") ? str.split("-")[0] : str;
   };
 
-  // تجهيز إشعارات التذكير بالدفعات (يوم قبل، نفس اليوم، أو متأخرة)
   const todayDateObj = new Date();
   todayDateObj.setHours(0, 0, 0, 0);
   const tomorrowDateObj = new Date();
@@ -232,8 +228,6 @@ export default function ShubramiSystem() {
     if (!inst.date) return false;
     const instDateObj = new Date(inst.date);
     instDateObj.setHours(0, 0, 0, 0);
-    
-    // يظهر التنبيه إذا كان التاريخ غداً، أو اليوم، أو قديم (متأخر)
     return instDateObj <= tomorrowDateObj;
   }).map(inst => {
     const instDateObj = new Date(inst.date);
@@ -272,6 +266,22 @@ export default function ShubramiSystem() {
     const parts = String(t.id).split('-');
     return parts.length > 1 ? parts[1] : null;
   }))].filter(Boolean).sort((a, b) => b - a);
+
+  // ==================== النقل لصفحة السداد (ميزة جديدة) ====================
+  const handleTransferToPayment = (shopNumber, amount, instId) => {
+    // توجيه وتعبئة البيانات تلقائياً
+    setActiveSubTab("payments");
+    setPaymentSubTab("new");
+    setNewPayShop(shopNumber);
+    setNewPayTarget(amount);
+    setNewPayAmount(amount);
+    
+    // الصعود لأعلى الصفحة برفق
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
+    // إرسال تنبيه للمستخدم بحذف الجدولة لاحقاً أو حذفها تلقائياً (هنا نكتفي بنقله للنموذج)
+    // ويمكنك لاحقاً حذف الجدولة عند إصدار السند فعلياً.
+  };
 
   // ==================== دوال الطباعة والتصدير ====================
   const printInstallmentsPDF = (data) => {
@@ -612,7 +622,7 @@ export default function ShubramiSystem() {
   };
 
   const handleDeleteInstallment = async (id) => {
-    if (window.confirm("هل أنت متأكد من حذف هذه الدفعة المجدولة (سواء تم تحصيلها أو إلغاؤها)؟")) {
+    if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
       const { error } = await supabase.from('installments').delete().eq('id', id);
       if (!error) {
         setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
@@ -783,7 +793,6 @@ export default function ShubramiSystem() {
     const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
 
     if (existingTxIndex >= 0) {
-      // 1. تحديث سند مديونية معلق وموجود مسبقاً
       const existingTx = transactionsDB[existingTxIndex];
       const updatedPaid = existingTx.paidAmount + payAmt;
       const updatedRemaining = existingTx.targetAmount - updatedPaid;
@@ -802,7 +811,6 @@ export default function ShubramiSystem() {
       newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
       setTransactionsDB(newTxDB);
     } else {
-      // 2. إصدار سند مديونية جديد كلياً
       const newTx = {
         id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
         referenceId: targetDebt.id,
@@ -821,7 +829,6 @@ export default function ShubramiSystem() {
       setTransactionsDB([...transactionsDB, newTx]);
     }
 
-    // 3. مزامنة القيمة المخصومة في السحابة والواجهة
     if (targetDebt.isShopDebt) {
       const currentShop = shopsDB.find(s => s.id === targetDebt.id);
       const newCollected = (currentShop?.collected || 0) + payAmt;
@@ -916,7 +923,6 @@ export default function ShubramiSystem() {
   const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
   const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
 
-  // واجهة جاري تحميل البيانات عند البداية
   if (loading) {
     return (
       <div dir="rtl" className="min-h-screen bg-slate-900 flex flex-col items-center justify-center font-tajawal text-white">
@@ -926,7 +932,6 @@ export default function ShubramiSystem() {
     );
   }
 
-  // واجهة تسجيل الدخول
   if (!currentUser) {
     return (
       <div dir="rtl" className="min-h-screen font-tajawal flex items-center justify-center relative bg-slate-900" 
@@ -1011,7 +1016,6 @@ export default function ShubramiSystem() {
               <div className="h-1.5 w-32 bg-gradient-to-r from-orange-500 to-orange-400 mx-auto rounded-full shadow-lg"></div>
             </div>
 
-            {/* شريط الإشعارات والتنبيهات المضافة للدفعات */}
             {installmentAlerts.length > 0 && (
               <div className="bg-red-500/10 border-2 border-red-500/50 p-5 rounded-2xl mb-8 shadow-2xl backdrop-blur-md animate-fade-in">
                 <h3 className="text-red-400 font-extrabold mb-3 flex items-center gap-2 text-xl">
@@ -1373,7 +1377,6 @@ export default function ShubramiSystem() {
                        <form onSubmit={handleNewInstallment} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 bg-white/5 p-6 rounded-2xl border border-white/10">
                           <div>
                             <label className="block mb-2 font-semibold text-slate-300">تحديد المحل:</label>
-                            {/* التعديل هنا: الفلتر الآن يعرض فقط المحلات اللي عقدها "مؤجر" و "ساري" */}
                             <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
                               <option value="">-- اختر المحل (العقود السارية فقط) --</option>
                               {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => (
@@ -1405,7 +1408,6 @@ export default function ShubramiSystem() {
                          <table className="w-full text-right text-slate-200">
                            <thead className="bg-black/60 text-white border-b border-white/10">
                              <tr>
-                               {/* التعديل هنا: إضافة عمود المستأجر */}
                                <th className="p-4">رقم المحل</th>
                                <th className="p-4 text-orange-200">المستأجر</th>
                                <th className="p-4 text-orange-300">مبلغ الدفعة القادمة</th>
@@ -1423,17 +1425,36 @@ export default function ShubramiSystem() {
                                  const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
                                  const collected = shopData.collected || 0;
                                  const remaining = (shopData.annualRent || 0) - collected;
+                                 
+                                 // التحقق من تاريخ الاستحقاق لتغيير الزر
+                                 const instDateObj = new Date(inst.date);
+                                 instDateObj.setHours(0, 0, 0, 0);
+                                 const isDueOrOverdue = instDateObj <= todayDateObj;
+
                                  return (
                                    <tr key={inst.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                      <td className="p-4 font-bold">{inst.shop}</td>
-                                     {/* التعديل هنا: عرض اسم المستأجر */}
                                      <td className="p-4 font-semibold text-slate-300">{shopData.tenant || "-"}</td>
                                      <td className="p-4 font-bold text-orange-400">{inst.amount.toLocaleString()} ريال</td>
                                      <td className="p-4 font-bold">{inst.date}</td>
                                      <td className="p-4 text-green-400">{collected.toLocaleString()} ريال</td>
                                      <td className="p-4 text-red-400 font-bold">{remaining.toLocaleString()} ريال</td>
                                      <td className="p-4 text-center">
-                                       <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-500 hover:text-white transition-all">إلغاء / تم التحصيل</button>
+                                       {/* تعديل الزر بناءً على التنبيه والتاريخ */}
+                                       {isDueOrOverdue ? (
+                                         <div className="flex flex-col gap-2">
+                                           <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-bold hover:bg-green-500 hover:text-white transition-all shadow-md">
+                                             💸 إنشاء دفعة جديدة
+                                           </button>
+                                           <button onClick={() => handleDeleteInstallment(inst.id)} className="text-slate-400 hover:text-red-400 text-[10px] font-bold transition-colors underline">
+                                             حذف الجدولة
+                                           </button>
+                                         </div>
+                                       ) : (
+                                         <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
+                                           إلغاء الجدولة
+                                         </button>
+                                       )}
                                      </td>
                                    </tr>
                                  );
@@ -1518,7 +1539,6 @@ export default function ShubramiSystem() {
                                   <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
                                 </td>
                                 <td className="p-4 text-center">
-                                  {/* التعديل هنا: منع طباعة السند إلا إذا كانت الحالة "مغلق" فقط */}
                                   {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
                                 </td>
                               </tr>
