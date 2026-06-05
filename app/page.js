@@ -90,6 +90,9 @@ export default function ShubramiSystem() {
   const [instShop, setInstShop] = useState("");
   const [instAmount, setInstAmount] = useState("");
   const [instDate, setInstDate] = useState("");
+  
+  // (مهم) متغير لتتبع رقم التنبيه/الجدولة ليتم حذفه تلقائياً بعد السداد
+  const [payingInstId, setPayingInstId] = useState("");
 
   // ==================== جلب وتزامن البيانات من السحابة ====================
   const fetchAllData = async () => {
@@ -270,14 +273,15 @@ export default function ShubramiSystem() {
     return parts.length > 1 ? parts[1] : null;
   }))].filter(Boolean).sort((a, b) => b - a);
 
-  // ==================== النقل لصفحة السداد ====================
+  // ==================== النقل لصفحة السداد (مع التتبع للحذف) ====================
   const handleTransferToPayment = (shopNumber, amount, instId) => {
-    setShowNotifications(false); // إغلاق نافذة التنبيهات عند النقل
+    setShowNotifications(false); 
     setActiveSubTab("payments");
     setPaymentSubTab("new");
     setNewPayShop(shopNumber);
     setNewPayTarget(amount);
     setNewPayAmount(amount);
+    setPayingInstId(instId); // نحفظ المعرف علشان نحذفه بعد ما ينجح السداد
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -621,6 +625,7 @@ export default function ShubramiSystem() {
 
   const handleDeleteInstallment = async (id) => {
     if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
+      // الحذف هنا مقتصر فقط على جدول الجدولة والتنبيهات (installments)
       const { error } = await supabase.from('installments').delete().eq('id', id);
       if (!error) {
         setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
@@ -705,6 +710,9 @@ export default function ShubramiSystem() {
     }
   };
 
+  // -------------------------------------------------------------
+  // دالة الدفع مع ميزة الحذف التلقائي من جدول التنبيهات (فقط)
+  // -------------------------------------------------------------
   const handleNewPayment = async (e) => {
     e.preventDefault();
     if (!newPayShop) return;
@@ -723,6 +731,8 @@ export default function ShubramiSystem() {
 
     const remaining = newPayTarget - newPayAmount;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
+    
+    // إنشاء السند ليتم إدراجه في (أرشيف السندات) ولن يُحذف منه ابداً
     const newTx = {
       id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
       startDate: new Date().toISOString().split('T')[0],
@@ -737,14 +747,28 @@ export default function ShubramiSystem() {
     };
 
     const { error: txErr } = await supabase.from('transactions').insert([newTx]);
+    
     if (!txErr) {
       const updatedCollected = activeShop.collected + Number(newPayAmount);
       await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
       
-      setTransactionsDB([...transactionsDB, newTx]);
+      // ===== الإجراء الجديد: الحذف التلقائي من التنبيهات وجدول الجدولة حصراً =====
+      const instToDelete = payingInstId 
+          ? installmentsDB.find(i => i.id === payingInstId)
+          : installmentsDB.find(i => i.shop === activeShop.shopNumber);
+
+      if (instToDelete) {
+         // يحذف فقط من جدول installments (وليس transactions)
+         await supabase.from('installments').delete().eq('id', instToDelete.id);
+         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
+      }
+      setPayingInstId(""); // تفريغ الذاكرة
+      // =========================================================================
+
+      setTransactionsDB([...transactionsDB, newTx]); // إضافة السند الجديد للأرشيف
       setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
       
-      alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً!" : "تم حفظ الدفعة وفتح سند معلق.");
+      alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.");
     }
   };
 
@@ -783,8 +807,15 @@ export default function ShubramiSystem() {
         setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
       }
 
+      // الحذف التلقائي من التنبيهات في حال تم إكمال سداد السند المفتوح
+      const instToDelete = installmentsDB.find(i => i.shop === tx.shop);
+      if (instToDelete) {
+         await supabase.from('installments').delete().eq('id', instToDelete.id);
+         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
+      }
+
       setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
-      alert("تم تحديث السند ومزامنة البيانات المحاسبية!");
+      alert("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.");
     }
   };
 
