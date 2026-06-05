@@ -14,6 +14,9 @@ export default function ShubramiSystem() {
   const [loginPass, setLoginPass] = useState("");
   const [authError, setAuthError] = useState("");
 
+  // نافذة التنبيهات المنبثقة
+  const [showNotifications, setShowNotifications] = useState(false);
+
   // إدارة المستخدمين (للأدمن)
   const [newUserName, setNewUserName] = useState("");
   const [newUserUsername, setNewUserUsername] = useState("");
@@ -269,6 +272,7 @@ export default function ShubramiSystem() {
 
   // ==================== النقل لصفحة السداد ====================
   const handleTransferToPayment = (shopNumber, amount, instId) => {
+    setShowNotifications(false); // إغلاق نافذة التنبيهات عند النقل
     setActiveSubTab("payments");
     setPaymentSubTab("new");
     setNewPayShop(shopNumber);
@@ -701,9 +705,6 @@ export default function ShubramiSystem() {
     }
   };
 
-  // ---------------------------------------------------------
-  // تحديث دالة إضافة دفعة جديدة لمنع تجاوز الإيجار السنوي
-  // ---------------------------------------------------------
   const handleNewPayment = async (e) => {
     e.preventDefault();
     if (!newPayShop) return;
@@ -712,7 +713,6 @@ export default function ShubramiSystem() {
     const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
     if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا المحل لتسجيل الدفعة عليه.");
 
-    // حاجز الحماية الجديد: التأكد من أن المبلغ المدفوع لا يجعل المحصل يتجاوز الإيجار السنوي
     if (activeShop.collected + Number(newPayAmount) > activeShop.annualRent) {
       const actualRemaining = activeShop.annualRent - activeShop.collected;
       return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
@@ -748,9 +748,6 @@ export default function ShubramiSystem() {
     }
   };
 
-  // ---------------------------------------------------------
-  // تحديث دالة إغلاق وتحديث الدفعات لمنع التجاوز أيضاً
-  // ---------------------------------------------------------
   const handleUpdatePayment = async (e) => {
     e.preventDefault();
     if (!updatePayReceipt) return;
@@ -760,7 +757,6 @@ export default function ShubramiSystem() {
 
     const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
     
-    // حاجز الحماية الجديد للتحديث
     if (activeShop && (activeShop.collected + Number(updatePayAmount) > activeShop.annualRent)) {
         const actualRemaining = activeShop.annualRent - activeShop.collected;
         return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
@@ -1007,8 +1003,56 @@ export default function ShubramiSystem() {
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
         .font-tajawal { font-family: 'Tajawal', sans-serif; }
         select option { background-color: #1e293b; color: white; }
+        /* لتنسيق سكرول البوب أب */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.4); }
       `}} />
       
+      {/* نافذة التنبيهات المنبثقة (Modal) */}
+      {showNotifications && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+            <div className="bg-slate-900 border border-white/10 p-6 rounded-3xl shadow-2xl w-full max-w-3xl relative">
+                <button onClick={() => setShowNotifications(false)} className="absolute top-4 left-5 text-slate-400 hover:text-red-400 text-3xl font-bold transition-colors">&times;</button>
+                <h3 className="text-red-400 font-extrabold mb-6 flex items-center gap-2 text-2xl border-b border-white/10 pb-4">
+                  <span>🔔</span> التنبيهات: دفعات مستحقة قريباً أو متأخرة
+                </h3>
+                
+                {installmentAlerts.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto custom-scrollbar p-1">
+                    {installmentAlerts.map(alert => {
+                        const shopData = shopsDB.find(s => s.shopNumber === alert.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === alert.shop) || {};
+                        return (
+                        <div key={alert.id} className="bg-black/50 border border-red-500/30 p-4 rounded-xl flex flex-col justify-between hover:bg-white/5 transition-colors">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <span className="font-bold text-white block text-lg">المحل: {alert.shop}</span>
+                                <span className="text-sm text-slate-400">{shopData.tenant || "-"}</span>
+                              </div>
+                              <div className="text-left">
+                                <span className="block text-orange-400 font-bold text-lg">{alert.amount.toLocaleString()} ريال</span>
+                                <span className="text-xs font-bold text-red-400 bg-red-500/10 px-2 py-1 rounded-md mt-1 inline-block">{alert.statusText}</span>
+                              </div>
+                            </div>
+                            <div className="text-xs text-slate-500 mt-2 border-t border-white/5 pt-2 flex justify-between items-center">
+                               <span>تاريخ الاستحقاق: <b className="text-slate-300">{alert.date}</b></span>
+                               <button onClick={() => handleTransferToPayment(alert.shop, alert.amount, alert.id)} className="text-blue-400 hover:text-blue-300 font-bold underline">سداد الآن</button>
+                            </div>
+                        </div>
+                        );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-10">
+                    <p className="text-5xl mb-4">🎉</p>
+                    <p className="text-slate-300 font-bold text-lg">لا توجد تنبيهات أو دفعات متأخرة حالياً.</p>
+                  </div>
+                )}
+            </div>
+        </div>
+      )}
+
       <div dir="rtl" className="min-h-screen font-tajawal text-slate-100 flex flex-col justify-between relative"
            style={{
              backgroundImage: "url('https://images.unsplash.com/photo-1512453979438-51f69a5e31a0?q=80&w=2000&auto=format&fit=crop')",
@@ -1019,15 +1063,33 @@ export default function ShubramiSystem() {
         <div className="relative z-10 p-4 md:p-8 flex flex-col min-h-screen justify-between">
           <div>
             <div className="flex justify-between items-center bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 mb-8 shadow-lg flex-wrap gap-4">
-               <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-full flex items-center justify-center text-xl font-bold shadow-inner">
-                    {currentUser.name.charAt(0)}
+               
+               <div className="flex items-center gap-6">
+                  {/* بيانات المستخدم */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-full flex items-center justify-center text-xl font-bold shadow-inner">
+                      {currentUser.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-white font-bold">{currentUser.name}</p>
+                      <p className="text-xs text-orange-400 font-semibold">الصلاحية: {currentUser.role}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-white font-bold">{currentUser.name}</p>
-                    <p className="text-xs text-orange-400 font-semibold">الصلاحية: {currentUser.role}</p>
+                  
+                  {/* جرس التنبيهات المدمج */}
+                  <div className="relative border-r border-white/20 pr-6">
+                    <button onClick={() => setShowNotifications(true)} className="relative p-2 bg-white/5 hover:bg-white/10 rounded-full transition-all text-2xl flex items-center justify-center h-12 w-12">
+                      🔔
+                      {installmentAlerts.length > 0 && (
+                        <span className="absolute top-0 right-0 flex h-4 w-4">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-black"></span>
+                        </span>
+                      )}
+                    </button>
                   </div>
                </div>
+
                <button onClick={handleLogout} className="bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2 rounded-xl font-bold hover:bg-red-500 hover:text-white transition-all text-sm">
                  تسجيل الخروج 🚪
                </button>
@@ -1037,31 +1099,6 @@ export default function ShubramiSystem() {
               <h1 className="text-4xl md:text-5xl font-extrabold text-white mb-3 tracking-wide drop-shadow-md">🏢 نظام إدارة وتحصيل أسواق الشبرمي</h1>
               <div className="h-1.5 w-32 bg-gradient-to-r from-orange-500 to-orange-400 mx-auto rounded-full shadow-lg"></div>
             </div>
-
-            {installmentAlerts.length > 0 && (
-              <div className="bg-red-500/10 border-2 border-red-500/50 p-5 rounded-2xl mb-8 shadow-2xl backdrop-blur-md animate-fade-in">
-                <h3 className="text-red-400 font-extrabold mb-3 flex items-center gap-2 text-xl">
-                  <span>🔔</span> تنبيهات النظام: دفعات مستحقة قريباً أو متأخرة!
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {installmentAlerts.map(alert => {
-                     const shopData = shopsDB.find(s => s.shopNumber === alert.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === alert.shop) || {};
-                     return (
-                      <div key={alert.id} className="bg-black/50 border border-red-500/20 p-3 rounded-xl flex justify-between items-center">
-                         <div>
-                           <span className="font-bold text-white block">المحل: {alert.shop} ({shopData.tenant || "-"})</span>
-                           <span className="text-xs text-slate-400">تاريخ الاستحقاق: {alert.date}</span>
-                         </div>
-                         <div className="text-left">
-                           <span className="block text-orange-400 font-bold">{alert.amount.toLocaleString()} ريال</span>
-                           <span className="text-xs font-bold text-red-400">{alert.statusText}</span>
-                         </div>
-                      </div>
-                     );
-                  })}
-                </div>
-              </div>
-            )}
 
             <div className="space-y-6 mb-12">
               <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
