@@ -267,20 +267,14 @@ export default function ShubramiSystem() {
     return parts.length > 1 ? parts[1] : null;
   }))].filter(Boolean).sort((a, b) => b - a);
 
-  // ==================== النقل لصفحة السداد (ميزة جديدة) ====================
+  // ==================== النقل لصفحة السداد (ميزة الدفعات المستحقة) ====================
   const handleTransferToPayment = (shopNumber, amount, instId) => {
-    // توجيه وتعبئة البيانات تلقائياً
     setActiveSubTab("payments");
     setPaymentSubTab("new");
     setNewPayShop(shopNumber);
     setNewPayTarget(amount);
     setNewPayAmount(amount);
-    
-    // الصعود لأعلى الصفحة برفق
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    
-    // إرسال تنبيه للمستخدم بحذف الجدولة لاحقاً أو حذفها تلقائياً (هنا نكتفي بنقله للنموذج)
-    // ويمكنك لاحقاً حذف الجدولة عند إصدار السند فعلياً.
   };
 
   // ==================== دوال الطباعة والتصدير ====================
@@ -599,7 +593,7 @@ export default function ShubramiSystem() {
     printWindow.document.close();
   };
 
-  // ==================== معالجة النماذج مع ربط ومزامنة السحابة ====================
+  // ==================== معالجة النماذج مع تأمين ربط البيانات ====================
   const handleNewInstallment = async (e) => {
     e.preventDefault();
     if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
@@ -643,9 +637,13 @@ export default function ShubramiSystem() {
       endDate: newContractEnd
     };
 
-    const { error } = await supabase.from('shops').update(updatedFields).eq('shopNumber', newContractShop);
+    // التحديث عبر المعرف (ID) للمحل الشاغر حصراً لمنع تحديث سجلات أخرى بالخطأ
+    const targetShop = shopsDB.find(s => s.shopNumber === newContractShop && s.status !== "مؤجر");
+    if (!targetShop) return alert("خطأ: لم يتم العثور على المحل الشاغر المطلوب.");
+
+    const { error } = await supabase.from('shops').update(updatedFields).eq('id', targetShop.id);
     if (!error) {
-      setShopsDB(shopsDB.map(s => s.shopNumber === newContractShop ? { ...s, ...updatedFields } : s));
+      setShopsDB(shopsDB.map(s => s.id === targetShop.id ? { ...s, ...updatedFields } : s));
       setNewContractTenant("");
       setNewContractEjarNumber("");
       alert(`تم حفظ ومزامنة العقد للمحل ${newContractShop} بنجاح!`);
@@ -709,7 +707,10 @@ export default function ShubramiSystem() {
     if (!newPayShop) return;
     if (newPayAmount > newPayTarget) return alert("خطأ: المدفوع أكبر من المتفق عليه!");
     
-    const shopData = shopsDB.find(s => s.shopNumber === newPayShop && !isContractExpired(s.endDate));
+    // التأمين هنا: البحث حصراً عن العقد "الساري" و "المؤجر"
+    const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
+    if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا المحل لتسجيل الدفعة عليه.");
+
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
     if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
 
@@ -720,7 +721,7 @@ export default function ShubramiSystem() {
       startDate: new Date().toISOString().split('T')[0],
       updateDate: new Date().toISOString().split('T')[0],
       shop: newPayShop,
-      tenant: shopData ? shopData.tenant : "-",
+      tenant: activeShop.tenant,
       targetAmount: Number(newPayTarget),
       paidAmount: Number(newPayAmount),
       remainingAmount: remaining,
@@ -730,11 +731,13 @@ export default function ShubramiSystem() {
 
     const { error: txErr } = await supabase.from('transactions').insert([newTx]);
     if (!txErr) {
-      const updatedCollected = (shopData ? shopData.collected : 0) + Number(newPayAmount);
-      await supabase.from('shops').update({ collected: updatedCollected }).eq('shopNumber', newPayShop).not('status', 'eq', 'شاغر');
+      const updatedCollected = activeShop.collected + Number(newPayAmount);
+      // التأمين هنا: التحديث برقم الـ ID الحصري للعقد الساري وليس برقم المحل العام
+      await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
       
       setTransactionsDB([...transactionsDB, newTx]);
-      setShopsDB(shopsDB.map(s => (s.shopNumber === newPayShop && !isContractExpired(s.endDate)) ? { ...s, collected: s.collected + Number(newPayAmount) } : s));
+      setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
+      
       alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً!" : "تم حفظ الدفعة وفتح سند معلق.");
     }
   };
@@ -761,11 +764,17 @@ export default function ShubramiSystem() {
 
     const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', updatePayReceipt);
     if (!txErr) {
-      const shopData = shopsDB.find(s => s.shopNumber === tx.shop);
-      await supabase.from('shops').update({ collected: (shopData ? shopData.collected : 0) + Number(updatePayAmount) }).eq('shopNumber', tx.shop);
+      // التأمين هنا: جلب العقد الساري فقط للتحديث
+      const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
+      
+      if (activeShop) {
+        const updatedCollected = activeShop.collected + Number(updatePayAmount);
+        // التحديث باستخدام معرف العقد الساري (ID)
+        await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
+        setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
+      }
 
       setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
-      setShopsDB(shopsDB.map(s => s.shopNumber === tx.shop ? { ...s, collected: s.collected + Number(updatePayAmount) } : s));
       alert("تم تحديث السند ومزامنة البيانات المحاسبية!");
     }
   };
@@ -1426,7 +1435,6 @@ export default function ShubramiSystem() {
                                  const collected = shopData.collected || 0;
                                  const remaining = (shopData.annualRent || 0) - collected;
                                  
-                                 // التحقق من تاريخ الاستحقاق لتغيير الزر
                                  const instDateObj = new Date(inst.date);
                                  instDateObj.setHours(0, 0, 0, 0);
                                  const isDueOrOverdue = instDateObj <= todayDateObj;
@@ -1440,7 +1448,6 @@ export default function ShubramiSystem() {
                                      <td className="p-4 text-green-400">{collected.toLocaleString()} ريال</td>
                                      <td className="p-4 text-red-400 font-bold">{remaining.toLocaleString()} ريال</td>
                                      <td className="p-4 text-center">
-                                       {/* تعديل الزر بناءً على التنبيه والتاريخ */}
                                        {isDueOrOverdue ? (
                                          <div className="flex flex-col gap-2">
                                            <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-bold hover:bg-green-500 hover:text-white transition-all shadow-md">
