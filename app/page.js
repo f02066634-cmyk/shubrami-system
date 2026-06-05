@@ -267,7 +267,7 @@ export default function ShubramiSystem() {
     return parts.length > 1 ? parts[1] : null;
   }))].filter(Boolean).sort((a, b) => b - a);
 
-  // ==================== النقل لصفحة السداد (ميزة الدفعات المستحقة) ====================
+  // ==================== النقل لصفحة السداد ====================
   const handleTransferToPayment = (shopNumber, amount, instId) => {
     setActiveSubTab("payments");
     setPaymentSubTab("new");
@@ -637,7 +637,6 @@ export default function ShubramiSystem() {
       endDate: newContractEnd
     };
 
-    // التحديث عبر المعرف (ID) للمحل الشاغر حصراً لمنع تحديث سجلات أخرى بالخطأ
     const targetShop = shopsDB.find(s => s.shopNumber === newContractShop && s.status !== "مؤجر");
     if (!targetShop) return alert("خطأ: لم يتم العثور على المحل الشاغر المطلوب.");
 
@@ -702,14 +701,22 @@ export default function ShubramiSystem() {
     }
   };
 
+  // ---------------------------------------------------------
+  // تحديث دالة إضافة دفعة جديدة لمنع تجاوز الإيجار السنوي
+  // ---------------------------------------------------------
   const handleNewPayment = async (e) => {
     e.preventDefault();
     if (!newPayShop) return;
-    if (newPayAmount > newPayTarget) return alert("خطأ: المدفوع أكبر من المتفق عليه!");
+    if (newPayAmount > newPayTarget) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
     
-    // التأمين هنا: البحث حصراً عن العقد "الساري" و "المؤجر"
     const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
     if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا المحل لتسجيل الدفعة عليه.");
+
+    // حاجز الحماية الجديد: التأكد من أن المبلغ المدفوع لا يجعل المحصل يتجاوز الإيجار السنوي
+    if (activeShop.collected + Number(newPayAmount) > activeShop.annualRent) {
+      const actualRemaining = activeShop.annualRent - activeShop.collected;
+      return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
+    }
 
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
     if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
@@ -732,7 +739,6 @@ export default function ShubramiSystem() {
     const { error: txErr } = await supabase.from('transactions').insert([newTx]);
     if (!txErr) {
       const updatedCollected = activeShop.collected + Number(newPayAmount);
-      // التأمين هنا: التحديث برقم الـ ID الحصري للعقد الساري وليس برقم المحل العام
       await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
       
       setTransactionsDB([...transactionsDB, newTx]);
@@ -742,12 +748,23 @@ export default function ShubramiSystem() {
     }
   };
 
+  // ---------------------------------------------------------
+  // تحديث دالة إغلاق وتحديث الدفعات لمنع التجاوز أيضاً
+  // ---------------------------------------------------------
   const handleUpdatePayment = async (e) => {
     e.preventDefault();
     if (!updatePayReceipt) return;
     const tx = transactionsDB.find(t => t.id === updatePayReceipt);
     if (!tx) return;
-    if (Number(updatePayAmount) > tx.remainingAmount) return alert("خطأ: المدفوع أكبر من المتبقي!");
+    if (Number(updatePayAmount) > tx.remainingAmount) return alert("خطأ: المدفوع أكبر من المتبقي في هذا السند!");
+
+    const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
+    
+    // حاجز الحماية الجديد للتحديث
+    if (activeShop && (activeShop.collected + Number(updatePayAmount) > activeShop.annualRent)) {
+        const actualRemaining = activeShop.annualRent - activeShop.collected;
+        return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
+    }
 
     const updatedPaid = tx.paidAmount + Number(updatePayAmount);
     const updatedRemaining = tx.targetAmount - updatedPaid;
@@ -764,12 +781,8 @@ export default function ShubramiSystem() {
 
     const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', updatePayReceipt);
     if (!txErr) {
-      // التأمين هنا: جلب العقد الساري فقط للتحديث
-      const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
-      
       if (activeShop) {
         const updatedCollected = activeShop.collected + Number(updatePayAmount);
-        // التحديث باستخدام معرف العقد الساري (ID)
         await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
         setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
       }
