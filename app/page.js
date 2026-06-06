@@ -3,6 +3,331 @@ import React, { useState, useEffect } from 'react';
 // استيراد اتصال Supabase
 import { supabase } from '../supabaseClient';
 
+// ==================== مكوّن لوحة المؤشرات (مستقل) ====================
+const DashboardIndicators = ({
+  dashboardYear, setDashboardYear, dashboardAvailableYears,
+  dashTotalCollected, dashTotalExpenses, dashNetIncome, dashTotalDebts,
+  statusCounts
+}) => {
+  return (
+    <div className="space-y-6 mb-12">
+      <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
+         <h3 className="text-xl font-bold text-white">📊 لوحة المؤشرات المالية للإدارة</h3>
+         <div className="flex items-center gap-3 bg-black/40 p-2 px-4 rounded-xl border border-white/5 shadow-inner">
+            <label className="font-semibold text-slate-300 text-sm">تحديد السنة المالية للمؤشرات:</label>
+            <select className="rounded-lg border border-white/20 p-1.5 bg-black/60 text-white outline-none font-bold min-w-[100px]" value={dashboardYear} onChange={(e) => setDashboardYear(e.target.value)}>
+              <option value="الكل">الكل (شامل)</option>
+              {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+           <div className="absolute inset-0 bg-gradient-to-t from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+           <h4 className="text-slate-300 font-bold mb-2">إجمالي التحصيلات</h4>
+           <p className="text-3xl font-extrabold text-blue-400">{dashTotalCollected.toLocaleString()} ريال</p>
+        </div>
+        <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+           <div className="absolute inset-0 bg-gradient-to-t from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+           <h4 className="text-slate-300 font-bold mb-2">إجمالي المصروفات</h4>
+           <p className="text-3xl font-extrabold text-orange-400">{dashTotalExpenses.toLocaleString()} ريال</p>
+        </div>
+        <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+           <div className="absolute inset-0 bg-gradient-to-t from-green-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+           <h4 className="text-slate-300 font-bold mb-2">صافي الدخل</h4>
+           <p className="text-3xl font-extrabold text-green-400">{dashNetIncome.toLocaleString()} ريال</p>
+        </div>
+        <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
+           <div className="absolute inset-0 bg-gradient-to-t from-red-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+           <h4 className="text-slate-300 font-bold mb-2">الديون المستحقة المعلقة</h4>
+           <p className="text-3xl font-extrabold text-red-400">{dashTotalDebts.toLocaleString()} ريال</p>
+        </div>
+      </div>
+
+      <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 mt-6">
+        <h3 className="text-xl font-bold text-white mb-6 text-center">🏢 حالة المحلات العقارية الفورية (166 محل)</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-center">
+          <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
+            <p className="text-slate-400 mb-1 font-semibold">مؤجر</p>
+            <p className="text-3xl font-bold text-green-400">{statusCounts["مؤجر"] || 0}</p>
+          </div>
+          <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
+            <p className="text-slate-400 mb-1 font-semibold">شاغر</p>
+            <p className="text-3xl font-bold text-red-400">{statusCounts["شاغر"] || 0}</p>
+          </div>
+          <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
+            <p className="text-slate-400 mb-1 font-semibold">تحت الصيانة</p>
+            <p className="text-3xl font-bold text-yellow-400">{statusCounts["تحت الصيانة"] || 0}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== مكوّن قسم التحصيل المالي وسندات القبض (مستقل) ====================
+const FinancialCollection = ({
+  paymentSubTab, setPaymentSubTab,
+  newPayShop, setNewPayShop, newPayMethod, setNewPayMethod, newPayTarget, setNewPayTarget, newPayAmount, setNewPayAmount,
+  updatePayReceipt, setUpdatePayReceipt, updatePayMethod, setUpdatePayMethod, updatePayAmount, setUpdatePayAmount,
+  instShop, setInstShop, instAmount, setInstAmount, instDate, setInstDate,
+  handleNewPayment, handleUpdatePayment, handleNewInstallment, handleDeleteInstallment, handleTransferToPayment,
+  shopsDB, transactionsDB, installmentsDB, isContractExpired, todayDateObj,
+  searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears,
+  filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum,
+  printReceipt, printTablePDF, exportToCSV
+}) => {
+  return (
+    <div className="animate-fade-in">
+      <div className="flex gap-6 mb-8 border-b border-white/10 pb-2 flex-wrap">
+        <button onClick={() => setPaymentSubTab("new")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "new" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🆕 إنشاء دفعة جديدة</button>
+        <button onClick={() => setPaymentSubTab("update")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "update" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🔄 إغلاق السندات المفتوحة</button>
+        <button onClick={() => setPaymentSubTab("installment")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "installment" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>📅 استحقاق الدفعة القادمة</button>
+      </div>
+
+      {paymentSubTab === "new" && (
+        <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block mb-2 font-semibold text-slate-300">اختر المحل (العقود السارية فقط):</label>
+            <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
+              <option value="">-- المحلات المؤجرة --</option>
+              {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block mb-2 font-semibold text-slate-300">طريقة الدفع:</label>
+            <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
+              <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
+            </select>
+          </div>
+          <div>
+            <label className="block mb-2 font-semibold text-slate-300">المبلغ الكلي للدفعة:</label>
+            <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayTarget} onChange={(e) => setNewPayTarget(e.target.value)} required />
+          </div>
+          <div>
+            <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
+            <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required />
+          </div>
+          <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">➕ حفظ وإصدار السند</button>
+        </form>
+      )}
+
+      {paymentSubTab === "update" && (
+        <form onSubmit={handleUpdatePayment} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="md:col-span-2">
+            <label className="block mb-2 font-semibold text-slate-300">اختر السند المفتوح:</label>
+            <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
+              <option value="">-- السندات المعلقة للعقود السارية --</option>
+              {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
+            </select>
+          </div>
+          {updatePayReceipt && (
+            <>
+              <div>
+                <label className="block mb-2 font-semibold text-slate-300">طريقة الدفع للمتبقي:</label>
+                <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
+                  <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
+                </select>
+              </div>
+              <div>
+                <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
+                <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required />
+              </div>
+              <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">🔄 اعتماد وإغلاق</button>
+            </>
+          )}
+        </form>
+      )}
+
+      {paymentSubTab === "installment" && (
+        <div>
+          <form onSubmit={handleNewInstallment} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 bg-white/5 p-6 rounded-2xl border border-white/10">
+            <div>
+              <label className="block mb-2 font-semibold text-slate-300">تحديد المحل:</label>
+              <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
+                <option value="">-- اختر المحل (العقود السارية فقط) --</option>
+                {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => (
+                  <option key={s.id} value={s.shopNumber}>
+                    {s.shopNumber} - {s.tenant}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block mb-2 font-semibold text-slate-300">مبلغ الدفعة القادمة:</label>
+              <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instAmount} onChange={(e) => setInstAmount(e.target.value)} required />
+            </div>
+            <div>
+              <label className="block mb-2 font-semibold text-slate-300">تاريخ الاستحقاق (سيعمل التنبيه قبله بيوم):</label>
+              <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instDate} onChange={(e) => setInstDate(e.target.value)} required />
+            </div>
+            <button type="submit" className="md:col-span-3 mt-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-3.5 rounded-xl text-lg shadow-lg">📅 حفظ وتفعيل الجدولة</button>
+          </form>
+
+          <hr className="my-10 border-white/10" />
+
+          <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
+            <h3 className="text-xl font-bold text-white">📋 جدول استحقاق الدفعات القادمة</h3>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
+            <table className="w-full text-right text-slate-200">
+              <thead className="bg-black/60 text-white border-b border-white/10">
+                <tr>
+                  <th className="p-4">رقم المحل</th>
+                  <th className="p-4 text-orange-200">المستأجر</th>
+                  <th className="p-4 text-orange-300">مبلغ الدفعة القادمة</th>
+                  <th className="p-4 text-blue-300">تاريخ الاستحقاق</th>
+                  <th className="p-4 text-green-400">التحصيل الكلي</th>
+                  <th className="p-4 text-red-400">المتبقي على المحل</th>
+                  <th className="p-4 text-center">الإجراء</th>
+                </tr>
+              </thead>
+              <tbody>
+                {installmentsDB.length === 0 ? (
+                  <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">لا توجد دفعات مجدولة حالياً.</td></tr>
+                ) : (
+                  installmentsDB.map(inst => {
+                    const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
+                    const collected = shopData.collected || 0;
+                    const remaining = (shopData.annualRent || 0) - collected;
+                    
+                    const instDateObj = new Date(inst.date);
+                    instDateObj.setHours(0, 0, 0, 0);
+                    const isDueOrOverdue = instDateObj <= todayDateObj;
+
+                    return (
+                      <tr key={inst.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <td className="p-4 font-bold">{inst.shop}</td>
+                        <td className="p-4 font-semibold text-slate-300">{shopData.tenant || "-"}</td>
+                        <td className="p-4 font-bold text-orange-400">{inst.amount.toLocaleString()} ريال</td>
+                        <td className="p-4 font-bold">{inst.date}</td>
+                        <td className="p-4 text-green-400">{collected.toLocaleString()} ريال</td>
+                        <td className="p-4 text-red-400 font-bold">{remaining.toLocaleString()} ريال</td>
+                        <td className="p-4 text-center">
+                          {isDueOrOverdue ? (
+                            <div className="flex flex-col gap-2">
+                              <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-bold hover:bg-green-500 hover:text-white transition-all shadow-md">
+                                💸 إنشاء دفعة جديدة
+                              </button>
+                              <button onClick={() => handleDeleteInstallment(inst.id)} className="text-slate-400 hover:text-red-400 text-[10px] font-bold transition-colors underline">
+                                حذف الجدولة
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
+                              إلغاء الجدولة
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <hr className="my-10 border-white/10" />
+      
+      <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
+        <h3 className="text-xl font-bold text-white">📋 أرشيف وحالة السندات الشامل</h3>
+        <div className="flex gap-3">
+          <button onClick={() => printTablePDF(filteredTransactions)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
+          <button onClick={() => exportToCSV(filteredTransactions, "ارشيف_السندات.csv")} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📥 تحميل Excel</button>
+        </div>
+      </div>
+
+      <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
+        <div className="flex-1 min-w-[250px]">
+          <label className="block mb-2 font-semibold text-slate-300 text-sm">🔍 بحث سريع (السند، المحل، المستأجر):</label>
+          <input 
+            type="text" 
+            placeholder="اكتب للبحث..." 
+            className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none focus:border-orange-500 transition-colors" 
+            value={searchReceipt} 
+            onChange={(e) => setSearchReceipt(e.target.value)} 
+          />
+        </div>
+
+        <div className="flex-1 min-w-[200px]">
+          <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند الدقيقة:</label>
+          <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
+            <option value="الكل">الكل (شامل)</option>
+            <option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option>
+            <option value="سداد جزئي (مديونية)">سداد جزئي (مديونية)</option>
+            <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
+            <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
+          </select>
+        </div>
+        
+        <div className="flex-1 min-w-[200px]">
+          <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بسنة الإصدار:</label>
+          <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptYear} onChange={(e) => setFilterReceiptYear(e.target.value)}>
+            <option value="الكل">كل السنوات</option>
+            {receiptYears.map(year => (
+                <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      
+      <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
+        <table className="w-full text-right text-slate-200 text-sm">
+          <thead className="bg-black/60 text-white border-b border-white/10">
+            <tr>
+              <th className="p-4">السند</th>
+              <th className="p-4">المحل</th>
+              <th className="p-4 text-orange-200">المستأجر</th>
+              <th className="p-4">المطلوب</th>
+              <th className="p-4">المدفوع</th>
+              <th className="p-4">المتبقي</th>
+              <th className="p-4">الحالة</th>
+              <th className="p-4 text-center">الإجراء</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTransactions.length > 0 ? (
+              <>
+                {filteredTransactions.map((t) => (
+                  <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                    <td className="p-4 font-bold text-white">{t.id}</td>
+                    <td className="p-4">{t.shop}</td>
+                    <td className="p-4 font-semibold text-slate-300">{t.tenant}</td>
+                    <td className="p-4">{t.targetAmount.toLocaleString()} ريال</td>
+                    <td className="p-4 text-green-400">{t.paidAmount.toLocaleString()} ريال</td>
+                    <td className="p-4 text-red-400">{t.remainingAmount.toLocaleString()} ريال</td>
+                    <td className="p-4">
+                      <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
+                    </td>
+                    <td className="p-4 text-center">
+                      {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
+                    <td className="p-4" colSpan="3">مجموع نتائج البحث والفرز الحالية</td>
+                    <td className="p-4 text-slate-200">{filteredTxTargetSum.toLocaleString()} ريال</td>
+                    <td className="p-4 text-green-400">{filteredTxPaidSum.toLocaleString()} ريال</td>
+                    <td className="p-4 text-red-400">{filteredTxRemainingSum.toLocaleString()} ريال</td>
+                    <td className="p-4" colSpan="2"></td>
+                </tr>
+              </>
+            ) : (
+              <tr><td colSpan="8" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز أو البحث.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+
+// ==================== المكوّن الرئيسي للمشروع ====================
 export default function ShubramiSystem() {
   // حالات تحميل البيانات من السحابة
   const [loading, setLoading] = useState(true);
@@ -281,7 +606,7 @@ export default function ShubramiSystem() {
     setNewPayShop(shopNumber);
     setNewPayTarget(amount);
     setNewPayAmount(amount);
-    setPayingInstId(instId); // نحفظ المعرف علشان نحذفه بعد ما ينجح السداد
+    setPayingInstId(instId); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -625,7 +950,6 @@ export default function ShubramiSystem() {
 
   const handleDeleteInstallment = async (id) => {
     if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
-      // الحذف هنا مقتصر فقط على جدول الجدولة والتنبيهات (installments)
       const { error } = await supabase.from('installments').delete().eq('id', id);
       if (!error) {
         setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
@@ -1096,29 +1420,29 @@ export default function ShubramiSystem() {
             <div className="flex justify-between items-center bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 mb-8 shadow-lg flex-wrap gap-4">
                
                <div className="flex items-center gap-6">
-                  {/* بيانات المستخدم */}
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-full flex items-center justify-center text-xl font-bold shadow-inner">
-                      {currentUser.name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-white font-bold">{currentUser.name}</p>
-                      <p className="text-xs text-orange-400 font-semibold">الصلاحية: {currentUser.role}</p>
-                    </div>
-                  </div>
-                  
-                  {/* جرس التنبيهات المدمج */}
-                  <div className="relative border-r border-white/20 pr-6">
-                    <button onClick={() => setShowNotifications(true)} className="relative p-2 bg-white/5 hover:bg-white/10 rounded-full transition-all text-2xl flex items-center justify-center h-12 w-12">
-                      🔔
-                      {installmentAlerts.length > 0 && (
-                        <span className="absolute top-0 right-0 flex h-4 w-4">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-black"></span>
-                        </span>
-                      )}
-                    </button>
-                  </div>
+                 {/* بيانات المستخدم */}
+                 <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-orange-400 rounded-full flex items-center justify-center text-xl font-bold shadow-inner">
+                     {currentUser.name.charAt(0)}
+                   </div>
+                   <div>
+                     <p className="text-white font-bold">{currentUser.name}</p>
+                     <p className="text-xs text-orange-400 font-semibold">الصلاحية: {currentUser.role}</p>
+                   </div>
+                 </div>
+                 
+                 {/* جرس التنبيهات المدمج */}
+                 <div className="relative border-r border-white/20 pr-6">
+                   <button onClick={() => setShowNotifications(true)} className="relative p-2 bg-white/5 hover:bg-white/10 rounded-full transition-all text-2xl flex items-center justify-center h-12 w-12">
+                     🔔
+                     {installmentAlerts.length > 0 && (
+                       <span className="absolute top-0 right-0 flex h-4 w-4">
+                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                         <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border-2 border-black"></span>
+                       </span>
+                     )}
+                   </button>
+                 </div>
                </div>
 
                <button onClick={handleLogout} className="bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2 rounded-xl font-bold hover:bg-red-500 hover:text-white transition-all text-sm">
@@ -1131,62 +1455,20 @@ export default function ShubramiSystem() {
               <div className="h-1.5 w-32 bg-gradient-to-r from-orange-500 to-orange-400 mx-auto rounded-full shadow-lg"></div>
             </div>
 
-            <div className="space-y-6 mb-12">
-              <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
-                 <h3 className="text-xl font-bold text-white">📊 لوحة المؤشرات المالية للإدارة</h3>
-                 <div className="flex items-center gap-3 bg-black/40 p-2 px-4 rounded-xl border border-white/5 shadow-inner">
-                    <label className="font-semibold text-slate-300 text-sm">تحديد السنة المالية للمؤشرات:</label>
-                    <select className="rounded-lg border border-white/20 p-1.5 bg-black/60 text-white outline-none font-bold min-w-[100px]" value={dashboardYear} onChange={(e) => setDashboardYear(e.target.value)}>
-                      <option value="الكل">الكل (شامل)</option>
-                      {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
-                   <div className="absolute inset-0 bg-gradient-to-t from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                   <h4 className="text-slate-300 font-bold mb-2">إجمالي التحصيلات</h4>
-                   <p className="text-3xl font-extrabold text-blue-400">{dashTotalCollected.toLocaleString()} ريال</p>
-                </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
-                   <div className="absolute inset-0 bg-gradient-to-t from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                   <h4 className="text-slate-300 font-bold mb-2">إجمالي المصروفات</h4>
-                   <p className="text-3xl font-extrabold text-orange-400">{dashTotalExpenses.toLocaleString()} ريال</p>
-                </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
-                   <div className="absolute inset-0 bg-gradient-to-t from-green-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                   <h4 className="text-slate-300 font-bold mb-2">صافي الدخل</h4>
-                   <p className="text-3xl font-extrabold text-green-400">{dashNetIncome.toLocaleString()} ريال</p>
-                </div>
-                <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 text-center relative overflow-hidden group">
-                   <div className="absolute inset-0 bg-gradient-to-t from-red-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                   <h4 className="text-slate-300 font-bold mb-2">الديون المستحقة المعلقة</h4>
-                   <p className="text-3xl font-extrabold text-red-400">{dashTotalDebts.toLocaleString()} ريال</p>
-                </div>
-              </div>
-
-              <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 mt-6">
-                <h3 className="text-xl font-bold text-white mb-6 text-center">🏢 حالة المحلات العقارية الفورية (166 محل)</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-center">
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
-                    <p className="text-slate-400 mb-1 font-semibold">مؤجر</p>
-                    <p className="text-3xl font-bold text-green-400">{statusCounts["مؤجر"] || 0}</p>
-                  </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
-                    <p className="text-slate-400 mb-1 font-semibold">شاغر</p>
-                    <p className="text-3xl font-bold text-red-400">{statusCounts["شاغر"] || 0}</p>
-                  </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
-                    <p className="text-slate-400 mb-1 font-semibold">تحت الصيانة</p>
-                    <p className="text-3xl font-bold text-yellow-400">{statusCounts["تحت الصيانة"] || 0}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* استخدام المكون المنفصل للوحة المؤشرات */}
+            <DashboardIndicators 
+              dashboardYear={dashboardYear}
+              setDashboardYear={setDashboardYear}
+              dashboardAvailableYears={dashboardAvailableYears}
+              dashTotalCollected={dashTotalCollected}
+              dashTotalExpenses={dashTotalExpenses}
+              dashNetIncome={dashNetIncome}
+              dashTotalDebts={dashTotalDebts}
+              statusCounts={statusCounts}
+            />
 
             <div className="bg-black/30 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/10">
-              <h2 className="text-2xl font-bold text-white mb-6 border-b border-white/10 pb-4">📥 عمليات التحصيل وإدارة البيانات</h2>
+              <h2 className="text-2xl font-bold text-white mb-6 border-b border-white/10 pb-4">📥 عمليات التشغيل وإدارة البيانات</h2>
               
               <div className="flex flex-wrap gap-2 mb-8 bg-black/40 p-2 rounded-2xl">
                 {visibleTabs.map(tab => (
@@ -1399,253 +1681,42 @@ export default function ShubramiSystem() {
                 </div>
               )}
 
+              {/* استخدام المكون المنفصل للتحصيل المالي */}
               {activeSubTab === "payments" && (
-                <div className="animate-fade-in">
-                   <div className="flex gap-6 mb-8 border-b border-white/10 pb-2 flex-wrap">
-                    <button onClick={() => setPaymentSubTab("new")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "new" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🆕 إنشاء دفعة جديدة</button>
-                    <button onClick={() => setPaymentSubTab("update")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "update" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>🔄 إغلاق السندات المفتوحة</button>
-                    <button onClick={() => setPaymentSubTab("installment")} className={`px-4 py-2 font-bold transition-colors ${paymentSubTab === "installment" ? "text-orange-400 border-b-2 border-orange-400" : "text-slate-400 hover:text-white"}`}>📅 استحقاق الدفعة القادمة</button>
-                  </div>
-
-                  {paymentSubTab === "new" && (
-                    <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block mb-2 font-semibold text-slate-300">اختر المحل (العقود السارية فقط):</label>
-                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
-                          <option value="">-- المحلات المؤجرة --</option>
-                          {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block mb-2 font-semibold text-slate-300">طريقة الدفع:</label>
-                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
-                          <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block mb-2 font-semibold text-slate-300">المبلغ الكلي للدفعة:</label>
-                        <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayTarget} onChange={(e) => setNewPayTarget(e.target.value)} required />
-                      </div>
-                      <div>
-                        <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
-                        <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required />
-                      </div>
-                      <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">➕ حفظ وإصدار السند</button>
-                    </form>
-                  )}
-
-                  {paymentSubTab === "update" && (
-                     <form onSubmit={handleUpdatePayment} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="md:col-span-2">
-                        <label className="block mb-2 font-semibold text-slate-300">اختر السند المفتوح:</label>
-                        <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
-                          <option value="">-- السندات المعلقة للعقود السارية --</option>
-                          {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
-                        </select>
-                      </div>
-                      {updatePayReceipt && (
-                        <>
-                          <div>
-                            <label className="block mb-2 font-semibold text-slate-300">طريقة الدفع للمتبقي:</label>
-                            <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
-                              <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block mb-2 font-semibold text-slate-300">المبلغ المدفوع (الآن):</label>
-                            <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required />
-                          </div>
-                          <button type="submit" className="md:col-span-2 mt-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-3.5 rounded-xl text-lg">🔄 اعتماد وإغلاق</button>
-                        </>
-                      )}
-                     </form>
-                  )}
-
-                  {/* تبويب الدفعات المستحقة القادمة */}
-                  {paymentSubTab === "installment" && (
-                     <div>
-                       <form onSubmit={handleNewInstallment} className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 bg-white/5 p-6 rounded-2xl border border-white/10">
-                          <div>
-                            <label className="block mb-2 font-semibold text-slate-300">تحديد المحل:</label>
-                            <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
-                              <option value="">-- اختر المحل (العقود السارية فقط) --</option>
-                              {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => (
-                                <option key={s.id} value={s.shopNumber}>
-                                  {s.shopNumber} - {s.tenant}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block mb-2 font-semibold text-slate-300">مبلغ الدفعة القادمة:</label>
-                            <input type="number" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instAmount} onChange={(e) => setInstAmount(e.target.value)} required />
-                          </div>
-                          <div>
-                            <label className="block mb-2 font-semibold text-slate-300">تاريخ الاستحقاق (سيعمل التنبيه قبله بيوم):</label>
-                            <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instDate} onChange={(e) => setInstDate(e.target.value)} required />
-                          </div>
-                          <button type="submit" className="md:col-span-3 mt-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-3.5 rounded-xl text-lg shadow-lg">📅 حفظ وتفعيل الجدولة</button>
-                       </form>
-
-                       <hr className="my-10 border-white/10" />
-
-                       <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
-                          <h3 className="text-xl font-bold text-white">📋 جدول استحقاق الدفعات القادمة</h3>
-                          <button onClick={() => printInstallmentsPDF(installmentsDB)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة جدول الاستحقاقات PDF</button>
-                       </div>
-
-                       <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
-                         <table className="w-full text-right text-slate-200">
-                           <thead className="bg-black/60 text-white border-b border-white/10">
-                             <tr>
-                               <th className="p-4">رقم المحل</th>
-                               <th className="p-4 text-orange-200">المستأجر</th>
-                               <th className="p-4 text-orange-300">مبلغ الدفعة القادمة</th>
-                               <th className="p-4 text-blue-300">تاريخ الاستحقاق</th>
-                               <th className="p-4 text-green-400">التحصيل الكلي</th>
-                               <th className="p-4 text-red-400">المتبقي على المحل</th>
-                               <th className="p-4 text-center">الإجراء</th>
-                             </tr>
-                           </thead>
-                           <tbody>
-                             {installmentsDB.length === 0 ? (
-                               <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">لا توجد دفعات مجدولة حالياً.</td></tr>
-                             ) : (
-                               installmentsDB.map(inst => {
-                                 const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
-                                 const collected = shopData.collected || 0;
-                                 const remaining = (shopData.annualRent || 0) - collected;
-                                 
-                                 const instDateObj = new Date(inst.date);
-                                 instDateObj.setHours(0, 0, 0, 0);
-                                 const isDueOrOverdue = instDateObj <= todayDateObj;
-
-                                 return (
-                                   <tr key={inst.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                     <td className="p-4 font-bold">{inst.shop}</td>
-                                     <td className="p-4 font-semibold text-slate-300">{shopData.tenant || "-"}</td>
-                                     <td className="p-4 font-bold text-orange-400">{inst.amount.toLocaleString()} ريال</td>
-                                     <td className="p-4 font-bold">{inst.date}</td>
-                                     <td className="p-4 text-green-400">{collected.toLocaleString()} ريال</td>
-                                     <td className="p-4 text-red-400 font-bold">{remaining.toLocaleString()} ريال</td>
-                                     <td className="p-4 text-center">
-                                       {isDueOrOverdue ? (
-                                         <div className="flex flex-col gap-2">
-                                           <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-2 rounded-lg text-xs font-bold hover:bg-green-500 hover:text-white transition-all shadow-md">
-                                             💸 إنشاء دفعة جديدة
-                                           </button>
-                                           <button onClick={() => handleDeleteInstallment(inst.id)} className="text-slate-400 hover:text-red-400 text-[10px] font-bold transition-colors underline">
-                                             حذف الجدولة
-                                           </button>
-                                         </div>
-                                       ) : (
-                                         <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
-                                           إلغاء الجدولة
-                                         </button>
-                                       )}
-                                     </td>
-                                   </tr>
-                                 );
-                               })
-                             )}
-                           </tbody>
-                         </table>
-                       </div>
-                     </div>
-                  )}
-
-                  <hr className="my-10 border-white/10" />
-                  
-                  <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
-                     <h3 className="text-xl font-bold text-white">📋 أرشيف وحالة السندات الشامل</h3>
-                     <div className="flex gap-3">
-                        <button onClick={() => printTablePDF(filteredTransactions)} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📄 طباعة الجدول PDF</button>
-                        <button onClick={() => exportToCSV(filteredTransactions, "ارشيف_السندات.csv")} className="bg-white/10 border border-white/20 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-white/20 transition-all">📥 تحميل Excel</button>
-                     </div>
-                  </div>
-
-                  <div className="flex gap-4 mb-4 bg-black/40 p-4 rounded-xl border border-white/10 flex-wrap">
-                    <div className="flex-1 min-w-[250px]">
-                      <label className="block mb-2 font-semibold text-slate-300 text-sm">🔍 بحث سريع (السند، المحل، المستأجر):</label>
-                      <input 
-                        type="text" 
-                        placeholder="اكتب للبحث..." 
-                        className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none focus:border-orange-500 transition-colors" 
-                        value={searchReceipt} 
-                        onChange={(e) => setSearchReceipt(e.target.value)} 
-                      />
-                    </div>
-
-                    <div className="flex-1 min-w-[200px]">
-                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بحالة السند الدقيقة:</label>
-                      <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
-                        <option value="الكل">الكل (شامل)</option>
-                        <option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option>
-                        <option value="سداد جزئي (مديونية)">سداد جزئي (مديونية)</option>
-                        <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
-                        <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
-                      </select>
-                    </div>
-                    
-                    <div className="flex-1 min-w-[200px]">
-                      <label className="block mb-2 font-semibold text-slate-300 text-sm">فرز بسنة الإصدار:</label>
-                      <select className="w-full rounded-lg border border-white/20 p-2 bg-black/60 text-white outline-none" value={filterReceiptYear} onChange={(e) => setFilterReceiptYear(e.target.value)}>
-                        <option value="الكل">كل السنوات</option>
-                        {receiptYears.map(year => (
-                           <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  
-                  <div className="overflow-x-auto rounded-2xl border border-white/10 shadow-sm bg-black/20 backdrop-blur-md">
-                    <table className="w-full text-right text-slate-200 text-sm">
-                      <thead className="bg-black/60 text-white border-b border-white/10">
-                        <tr>
-                          <th className="p-4">السند</th>
-                          <th className="p-4">المحل</th>
-                          <th className="p-4 text-orange-200">المستأجر</th>
-                          <th className="p-4">المطلوب</th>
-                          <th className="p-4">المدفوع</th>
-                          <th className="p-4">المتبقي</th>
-                          <th className="p-4">الحالة</th>
-                          <th className="p-4 text-center">الإجراء</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredTransactions.length > 0 ? (
-                          <>
-                            {filteredTransactions.map((t) => (
-                              <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                <td className="p-4 font-bold text-white">{t.id}</td>
-                                <td className="p-4">{t.shop}</td>
-                                <td className="p-4 font-semibold text-slate-300">{t.tenant}</td>
-                                <td className="p-4">{t.targetAmount.toLocaleString()} ريال</td>
-                                <td className="p-4 text-green-400">{t.paidAmount.toLocaleString()} ريال</td>
-                                <td className="p-4 text-red-400">{t.remainingAmount.toLocaleString()} ريال</td>
-                                <td className="p-4">
-                                  <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm ${t.status.includes('مغلق') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{t.status}</span>
-                                </td>
-                                <td className="p-4 text-center">
-                                  {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-1.5 rounded-lg hover:shadow-lg text-xs font-bold">🖨️ طباعة السند</button>}
-                                </td>
-                              </tr>
-                            ))}
-                            <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
-                                <td className="p-4" colSpan="3">مجموع نتائج البحث والفرز الحالية</td>
-                                <td className="p-4 text-slate-200">{filteredTxTargetSum.toLocaleString()} ريال</td>
-                                <td className="p-4 text-green-400">{filteredTxPaidSum.toLocaleString()} ريال</td>
-                                <td className="p-4 text-red-400">{filteredTxRemainingSum.toLocaleString()} ريال</td>
-                                <td className="p-4" colSpan="2"></td>
-                            </tr>
-                          </>
-                        ) : (
-                          <tr><td colSpan="8" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز أو البحث.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <FinancialCollection 
+                    paymentSubTab={paymentSubTab} setPaymentSubTab={setPaymentSubTab}
+                    newPayShop={newPayShop} setNewPayShop={setNewPayShop}
+                    newPayMethod={newPayMethod} setNewPayMethod={setNewPayMethod}
+                    newPayTarget={newPayTarget} setNewPayTarget={setNewPayTarget}
+                    newPayAmount={newPayAmount} setNewPayAmount={setNewPayAmount}
+                    updatePayReceipt={updatePayReceipt} setUpdatePayReceipt={setUpdatePayReceipt}
+                    updatePayMethod={updatePayMethod} setUpdatePayMethod={setUpdatePayMethod}
+                    updatePayAmount={updatePayAmount} setUpdatePayAmount={setUpdatePayAmount}
+                    instShop={instShop} setInstShop={setInstShop}
+                    instAmount={instAmount} setInstAmount={setInstAmount}
+                    instDate={instDate} setInstDate={setInstDate}
+                    handleNewPayment={handleNewPayment}
+                    handleUpdatePayment={handleUpdatePayment}
+                    handleNewInstallment={handleNewInstallment}
+                    handleDeleteInstallment={handleDeleteInstallment}
+                    handleTransferToPayment={handleTransferToPayment}
+                    shopsDB={shopsDB}
+                    transactionsDB={transactionsDB}
+                    installmentsDB={installmentsDB}
+                    isContractExpired={isContractExpired}
+                    todayDateObj={todayDateObj}
+                    searchReceipt={searchReceipt} setSearchReceipt={setSearchReceipt}
+                    filterReceiptStatus={filterReceiptStatus} setFilterReceiptStatus={setFilterReceiptStatus}
+                    filterReceiptYear={filterReceiptYear} setFilterReceiptYear={setFilterReceiptYear}
+                    receiptYears={receiptYears}
+                    filteredTransactions={filteredTransactions}
+                    filteredTxTargetSum={filteredTxTargetSum}
+                    filteredTxPaidSum={filteredTxPaidSum}
+                    filteredTxRemainingSum={filteredTxRemainingSum}
+                    printReceipt={printReceipt}
+                    printTablePDF={printTablePDF}
+                    exportToCSV={exportToCSV}
+                />
               )}
 
               {activeSubTab === "debts" && (
