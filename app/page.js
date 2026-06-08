@@ -897,29 +897,159 @@ export default function ShubramiSystem() {
       <head>
           <title>سند قبض - ${receipt.id}</title>
           <style>
-              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; text-align: right; padding: 40px; }
-              .card { border: 2px dashed #f97316; padding: 30px; border-radius: 10px; max-width: 550px; margin: auto; background-color: #f9f9f9; }
-              h2 { text-align: center; color: #1e293b; }
-              h4 { text-align: center; color: #555; }
-              hr { border: 1px solid #ddd; }
-              p { font-size: 16px; line-height: 1.8; }
-              .btn { display: block; padding: 14px; background-color: #f97316; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; margin-top: 20px;}
-              @media print { .btn { display: none !important; } }
+              body { 
+                  font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; 
+                  text-align: right; 
+                  background-color: #f4f7f9; 
+                  margin: 0; 
+                  padding: 40px; 
+              }
+              .receipt-container { 
+                  max-width: 650px; 
+                  margin: auto; 
+                  background: #ffffff; 
+                  border-radius: 12px; 
+                  box-shadow: 0 10px 30px rgba(0,0,0,0.08); 
+                  overflow: hidden; 
+                  border: 1px solid #e2e8f0;
+              }
+              .receipt-header { 
+                  background-color: #1e293b; 
+                  color: #ffffff; 
+                  padding: 30px 20px; 
+                  text-align: center; 
+                  border-bottom: 5px solid #f97316; 
+              }
+              .receipt-header h2 { 
+                  margin: 0; 
+                  font-size: 28px; 
+                  font-weight: 800; 
+                  letter-spacing: 0.5px; 
+              }
+              .receipt-header h4 { 
+                  margin: 10px 0 0; 
+                  font-size: 14px; 
+                  font-weight: 400; 
+                  color: #cbd5e1; 
+              }
+              .receipt-body { 
+                  padding: 40px 40px 20px; 
+              }
+              .info-row { 
+                  display: flex; 
+                  justify-content: space-between; 
+                  align-items: center; 
+                  border-bottom: 1px dashed #e2e8f0; 
+                  padding: 18px 0; 
+              }
+              .info-row:last-child { 
+                  border-bottom: none; 
+              }
+              .info-label { 
+                  font-size: 16px; 
+                  color: #64748b; 
+                  font-weight: 700; 
+              }
+              .info-value { 
+                  font-size: 18px; 
+                  color: #0f172a; 
+                  font-weight: 800; 
+                  text-align: left; 
+              }
+              .amount-highlight { 
+                  color: #f97316; 
+                  font-size: 22px; 
+              }
+              .signatures-section { 
+                  display: flex; 
+                  justify-content: space-between; 
+                  padding: 20px 50px 50px; 
+              }
+              .signature-box { 
+                  text-align: center; 
+                  width: 35%; 
+              }
+              .signature-box p { 
+                  font-size: 16px; 
+                  color: #475569; 
+                  font-weight: 700; 
+                  margin-bottom: 50px; 
+              }
+              .signature-line { 
+                  border-bottom: 2px solid #cbd5e1; 
+                  width: 100%; 
+              }
+              .print-btn { 
+                  display: block; 
+                  width: calc(100% - 80px); 
+                  max-width: 650px;
+                  margin: 30px auto 0; 
+                  padding: 16px; 
+                  background-color: #f97316; 
+                  color: white; 
+                  border: none; 
+                  border-radius: 8px; 
+                  cursor: pointer; 
+                  font-size: 18px; 
+                  font-weight: bold; 
+                  text-align: center;
+                  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);
+                  transition: background-color 0.3s ease;
+              }
+              .print-btn:hover {
+                  background-color: #ea580c;
+              }
+              @media print { 
+                  body { background-color: #ffffff; padding: 0; } 
+                  .receipt-container { box-shadow: none; border: 2px solid #1e293b; border-radius: 0; }
+                  .print-btn { display: none !important; } 
+              }
           </style>
       </head>
       <body>
-          <div class="card">
-              <h2>🧾 سند قبض مالي رسمي - أسواق الشبرمي</h2>
-              <h4>رقم السند الموحد: ${receipt.id}</h4>
-              <hr>
-              <p><strong>تاريخ الإغلاق والاعتماد:</strong> ${receipt.updateDate} م</p>
-              <p><strong>وصلنا من السيد/ة:</strong> ${receipt.tenant} ( المستأجر لـ ${receipt.shop} )</p>
-              <p><strong>إجمالي مبلغ الدفعة المكتملة:</strong> <b style='color:#f97316; font-size:18px;'>${receipt.targetAmount.toLocaleString()} ريال سعودي</b></p>
-              <p><strong>طريقة الدفع والاستلام:</strong> ${receipt.method}</p>
-              <br><br>
-              <p style='text-align: left; font-weight:bold;'>توقيع المسؤول المالي والمحصل: .....................</p>
-              <button class="btn" onclick="window.print()">🖨️ اضغط هنا لطباعة السند فوراً</button>
+          <div class="receipt-container">
+              <div class="receipt-header">
+                  <h2>سند قبض - أسواق الشبرمي</h2>
+                  <h4>رقم السند الموحد: ${receipt.id}</h4>
+              </div>
+              
+              <div class="receipt-body">
+                  <div class="info-row">
+                      <span class="info-label">تاريخ الإغلاق والاعتماد:</span>
+                      <span class="info-value">${receipt.updateDate} م</span>
+                  </div>
+                  <div class="info-row">
+                      <span class="info-label">استلمنا من المكرم:</span>
+                      <span class="info-value">
+                          ${receipt.tenant} 
+                          <span style="font-size: 13px; color: #64748b; font-weight: 600; display: block; text-align: left; margin-top: 4px;">
+                              (المستأجر لـ ${receipt.shop})
+                          </span>
+                      </span>
+                  </div>
+                  <div class="info-row">
+                      <span class="info-label">مبلغ وقدره فقط:</span>
+                      <span class="info-value amount-highlight">${receipt.targetAmount.toLocaleString()} ريال سعودي</span>
+                  </div>
+                  <div class="info-row">
+                      <span class="info-label">طريقة الدفع والاستلام:</span>
+                      <span class="info-value">${receipt.method}</span>
+                  </div>
+              </div>
+
+              <div class="signatures-section">
+                  <div class="signature-box">
+                      <p>المحاسب العام</p>
+                      <div class="signature-line"></div>
+                  </div>
+                  <div class="signature-box">
+                      <p>المحصل المالي</p>
+                      <div class="signature-line"></div>
+                  </div>
+              </div>
           </div>
+          
+          <button class="print-btn" onclick="window.print()">🖨️ اضغط هنا لطباعة السند فوراً</button>
       </body>
       </html>
     `);
