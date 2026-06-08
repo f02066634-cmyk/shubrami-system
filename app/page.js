@@ -1040,12 +1040,17 @@ export default function ShubramiSystem() {
   const handleNewPayment = async (e) => {
     e.preventDefault();
     if (!newPayShop) return;
-    if (newPayAmount > newPayTarget) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
+    
+    // الحل هنا: تحويل القيم إلى أرقام فعلية لتجنب خطأ المقارنة النصية
+    const targetNum = Number(newPayTarget);
+    const amountNum = Number(newPayAmount);
+
+    if (amountNum > targetNum) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
     
     const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
     if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا المحل لتسجيل الدفعة عليه.");
 
-    if (activeShop.collected + Number(newPayAmount) > activeShop.annualRent) {
+    if (activeShop.collected + amountNum > activeShop.annualRent) {
       const actualRemaining = activeShop.annualRent - activeShop.collected;
       return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
     }
@@ -1053,18 +1058,17 @@ export default function ShubramiSystem() {
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
     if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
 
-    const remaining = newPayTarget - newPayAmount;
+    const remaining = targetNum - amountNum;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
     
-    // إنشاء السند ليتم إدراجه في (أرشيف السندات) ولن يُحذف منه ابداً
     const newTx = {
       id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
       startDate: new Date().toISOString().split('T')[0],
       updateDate: new Date().toISOString().split('T')[0],
       shop: newPayShop,
       tenant: activeShop.tenant,
-      targetAmount: Number(newPayTarget),
-      paidAmount: Number(newPayAmount),
+      targetAmount: targetNum,
+      paidAmount: amountNum,
       remainingAmount: remaining,
       method: newPayMethod,
       status: status
@@ -1073,23 +1077,20 @@ export default function ShubramiSystem() {
     const { error: txErr } = await supabase.from('transactions').insert([newTx]);
     
     if (!txErr) {
-      const updatedCollected = activeShop.collected + Number(newPayAmount);
+      const updatedCollected = activeShop.collected + amountNum;
       await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
       
-      // ===== الإجراء الجديد: الحذف التلقائي من التنبيهات وجدول الجدولة حصراً =====
       const instToDelete = payingInstId 
           ? installmentsDB.find(i => i.id === payingInstId)
           : installmentsDB.find(i => i.shop === activeShop.shopNumber);
 
       if (instToDelete) {
-         // يحذف فقط من جدول installments (وليس transactions)
          await supabase.from('installments').delete().eq('id', instToDelete.id);
          setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
       }
-      setPayingInstId(""); // تفريغ الذاكرة
-      // =========================================================================
+      setPayingInstId(""); 
 
-      setTransactionsDB([...transactionsDB, newTx]); // إضافة السند الجديد للأرشيف
+      setTransactionsDB([...transactionsDB, newTx]); 
       setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
       
       alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.");
