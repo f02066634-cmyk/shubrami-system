@@ -10,7 +10,7 @@ const DashboardIndicators = ({
   statusCounts
 }) => {
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 mb-12 animate-fade-in">
       <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
          <h3 className="text-xl font-bold text-white">📊 لوحة المؤشرات المالية للإدارة</h3>
          <div className="flex items-center gap-3 bg-black/40 p-2 px-4 rounded-xl border border-white/5 shadow-inner">
@@ -281,6 +281,7 @@ const FinancialCollection = ({
           <thead className="bg-black/60 text-white border-b border-white/10">
             <tr>
               <th className="p-4">السند</th>
+              <th className="p-4 text-orange-400">تاريخ الإغلاق والاعتماد</th>
               <th className="p-4">المحل</th>
               <th className="p-4 text-orange-200">المستأجر</th>
               <th className="p-4">المطلوب</th>
@@ -296,6 +297,7 @@ const FinancialCollection = ({
                 {filteredTransactions.map((t) => (
                   <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                     <td className="p-4 font-bold text-white">{t.id}</td>
+                    <td className="p-4 text-slate-300">{t.updateDate} م</td>
                     <td className="p-4">{t.shop}</td>
                     <td className="p-4 font-semibold text-slate-300">{t.tenant}</td>
                     <td className="p-4">{t.targetAmount.toLocaleString()} ريال</td>
@@ -310,7 +312,7 @@ const FinancialCollection = ({
                   </tr>
                 ))}
                 <tr className="bg-black/50 font-bold border-t-2 border-white/20 text-white">
-                    <td className="p-4" colSpan="3">مجموع نتائج البحث والفرز الحالية</td>
+                    <td className="p-4" colSpan="4">مجموع نتائج البحث والفرز الحالية</td>
                     <td className="p-4 text-slate-200">{filteredTxTargetSum.toLocaleString()} ريال</td>
                     <td className="p-4 text-green-400">{filteredTxPaidSum.toLocaleString()} ريال</td>
                     <td className="p-4 text-red-400">{filteredTxRemainingSum.toLocaleString()} ريال</td>
@@ -318,7 +320,7 @@ const FinancialCollection = ({
                 </tr>
               </>
             ) : (
-              <tr><td colSpan="8" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز أو البحث.</td></tr>
+              <tr><td colSpan="9" className="p-6 text-center text-slate-400 font-bold">لا توجد سندات تطابق خيارات الفرز أو البحث.</td></tr>
             )}
           </tbody>
         </table>
@@ -492,7 +494,7 @@ export default function ShubramiSystem() {
     if (user) {
       setCurrentUser(user);
       setAuthError("");
-      setActiveTab("dashboard"); // توجيه مباشر للوحة المؤشرات بعد الدخول
+      setActiveTab("dashboard"); 
     } else {
       setAuthError("اسم المستخدم أو كلمة المرور غير صحيحة");
     }
@@ -602,7 +604,7 @@ export default function ShubramiSystem() {
   // ==================== النقل لصفحة السداد (مع التتبع للحذف) ====================
   const handleTransferToPayment = (shopNumber, amount, instId) => {
     setShowNotifications(false); 
-    setActiveTab("payments"); // تم التعديل لتوجيه القائمة الجانبية
+    setActiveTab("payments"); 
     setPaymentSubTab("new");
     setNewPayShop(shopNumber);
     setNewPayTarget(amount);
@@ -937,9 +939,9 @@ export default function ShubramiSystem() {
               }
               .info-row { 
                   display: flex; 
-                  justify-content: flex-start; /* هنا التعديل لتقريب العناصر */
+                  justify-content: flex-start; 
                   align-items: flex-start; 
-                  gap: 12px; /* مسافة بسيطة بين العنوان والقيمة */
+                  gap: 12px; 
                   border-bottom: 1px dashed #e2e8f0; 
                   padding: 18px 0; 
               }
@@ -949,8 +951,8 @@ export default function ShubramiSystem() {
               .info-label { 
                   font-size: 16px; 
                   color: #64748b; 
-                  font-weight: 700;
-                  white-space: nowrap; /* منع انكسار السطر للعنوان */
+                  font-weight: 700; 
+                  white-space: nowrap;
               }
               .info-value { 
                   font-size: 18px; 
@@ -1082,7 +1084,7 @@ export default function ShubramiSystem() {
 
   const handleDeleteInstallment = async (id) => {
     if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
-      const { error } = await supabase.from('installments').delete().eq('id', id);
+      const { error = null } = await supabase.from('installments').delete().eq('id', id);
       if (!error) {
         setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
       }
@@ -1537,7 +1539,7 @@ export default function ShubramiSystem() {
         </div>
       )}
 
-      {/* الهيكل الجديد: تخطيط الصفحة مع القائمة الجانبية (Sidebar Layout) مع المحافظة على التصميم الداكن */}
+      {/* الهيكل الأساسي: تخطيط الصفحة مع القائمة الجانبية (Sidebar Layout) */}
       <div dir="rtl" className="flex h-screen overflow-hidden font-tajawal text-slate-100 bg-slate-900 relative"
            style={{
              backgroundImage: "url('https://images.unsplash.com/photo-1512453979438-51f69a5e31a0?q=80&w=2000&auto=format&fit=crop')",
@@ -1601,7 +1603,7 @@ export default function ShubramiSystem() {
                </div>
             </header>
 
-            {/* مساحة العرض الخاصة بكل تبويب (Scrollable Content Area) */}
+            {/* مساحة العرض الخاصة بكل تبويب */}
             <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
                
                {/* ----------------- لوحة المؤشرات ----------------- */}
@@ -1835,7 +1837,7 @@ export default function ShubramiSystem() {
                         updatePayAmount={updatePayAmount} setUpdatePayAmount={setUpdatePayAmount}
                         instShop={instShop} setInstShop={setInstShop}
                         instAmount={instAmount} setInstAmount={setInstAmount}
-                        instDate={instDate} setInstDate={setInstDate}
+                        instDate={instDate} setInstDate={instDate}
                         handleNewPayment={handleNewPayment}
                         handleUpdatePayment={handleUpdatePayment}
                         handleNewInstallment={handleNewInstallment}
