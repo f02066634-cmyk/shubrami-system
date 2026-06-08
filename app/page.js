@@ -937,8 +937,9 @@ export default function ShubramiSystem() {
               }
               .info-row { 
                   display: flex; 
-                  justify-content: space-between; 
-                  align-items: center; 
+                  justify-content: flex-start; /* هنا التعديل لتقريب العناصر */
+                  align-items: flex-start; 
+                  gap: 12px; /* مسافة بسيطة بين العنوان والقيمة */
                   border-bottom: 1px dashed #e2e8f0; 
                   padding: 18px 0; 
               }
@@ -948,13 +949,14 @@ export default function ShubramiSystem() {
               .info-label { 
                   font-size: 16px; 
                   color: #64748b; 
-                  font-weight: 700; 
+                  font-weight: 700;
+                  white-space: nowrap; /* منع انكسار السطر للعنوان */
               }
               .info-value { 
                   font-size: 18px; 
                   color: #0f172a; 
                   font-weight: 800; 
-                  text-align: left; 
+                  text-align: right; 
               }
               .amount-highlight { 
                   color: #f97316; 
@@ -1022,7 +1024,7 @@ export default function ShubramiSystem() {
                       <span class="info-label">استلمنا من المكرم:</span>
                       <span class="info-value">
                           ${receipt.tenant} 
-                          <span style="font-size: 13px; color: #64748b; font-weight: 600; display: block; text-align: left; margin-top: 4px;">
+                          <span style="font-size: 13px; color: #64748b; font-weight: 600; display: block; text-align: right; margin-top: 4px;">
                               (المستأجر لـ ${receipt.shop})
                           </span>
                       </span>
