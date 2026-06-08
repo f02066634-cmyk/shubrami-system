@@ -852,6 +852,7 @@ export default function ShubramiSystem() {
               <thead>
                   <tr>
                       <th>رقم السند</th>
+                      <th>تاريخ الإغلاق والاعتماد</th>
                       <th>رقم المحل</th>
                       <th>المستأجر</th>
                       <th>المبلغ المطلوب</th>
@@ -865,6 +866,7 @@ export default function ShubramiSystem() {
                   ${data.map(t => `
                       <tr>
                           <td><b>${t.id}</b></td>
+                          <td>${t.updateDate} م</td>
                           <td>${t.shop}</td>
                           <td>${t.tenant}</td>
                           <td>${t.targetAmount.toLocaleString()} ريال</td>
@@ -877,7 +879,7 @@ export default function ShubramiSystem() {
                       </tr>
                   `).join('')}
                   <tr style="background-color: #e2e8f0; font-weight: bold; border-top: 2px solid #94a3b8;">
-                      <td colspan="3">المجموع الكلي</td>
+                      <td colspan="4">المجموع الكلي</td>
                       <td>${sumTarget.toLocaleString()} ريال</td>
                       <td class="text-green">${sumPaid.toLocaleString()} ريال</td>
                       <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
