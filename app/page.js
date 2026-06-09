@@ -7,8 +7,21 @@ import { supabase } from '../supabaseClient';
 const DashboardIndicators = ({
   dashboardYear, setDashboardYear, dashboardAvailableYears,
   dashTotalCollected, dashTotalExpenses, dashNetIncome, dashTotalDebts,
-  statusCounts
+  statusCounts, shopsDB
 }) => {
+  
+  // حساب العقود التي ستنتهي خلال 60 يوم
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const upcomingExpirations = shopsDB.filter(s => {
+    if (s.status !== "مؤجر" || !s.endDate || s.endDate === "-") return false;
+    const end = new Date(s.endDate);
+    const diffTime = end - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 60; 
+  }).sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+
   return (
     <div className="space-y-6 mb-12 animate-fade-in">
       <div className="flex justify-between items-center bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex-wrap gap-4">
@@ -45,20 +58,75 @@ const DashboardIndicators = ({
         </div>
       </div>
 
-      <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 mt-6">
-        <h3 className="text-xl font-bold text-white mb-6 text-center">🏢 حالة المحلات العقارية الفورية (166 محل)</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-center">
-          <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
-            <p className="text-slate-400 mb-1 font-semibold">مؤجر</p>
-            <p className="text-3xl font-bold text-green-400">{statusCounts["مؤجر"] || 0}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+        {/* حالة المحلات الفورية */}
+        <div className="md:col-span-1 bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 flex flex-col justify-center">
+          <h3 className="text-lg font-bold text-white mb-6 text-center">🏢 حالة المحلات (166 محل)</h3>
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-between items-center p-3 bg-black/40 rounded-xl border border-white/5">
+              <span className="text-slate-300 font-semibold">مؤجر</span>
+              <span className="text-xl font-bold text-green-400">{statusCounts["مؤجر"] || 0}</span>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-black/40 rounded-xl border border-white/5">
+              <span className="text-slate-300 font-semibold">شاغر</span>
+              <span className="text-xl font-bold text-red-400">{statusCounts["شاغر"] || 0}</span>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-black/40 rounded-xl border border-white/5">
+              <span className="text-slate-300 font-semibold">تحت الصيانة</span>
+              <span className="text-xl font-bold text-yellow-400">{statusCounts["تحت الصيانة"] || 0}</span>
+            </div>
           </div>
-          <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
-            <p className="text-slate-400 mb-1 font-semibold">شاغر</p>
-            <p className="text-3xl font-bold text-red-400">{statusCounts["شاغر"] || 0}</p>
+        </div>
+
+        {/* تنبيهات المحلات المهددة بالإخلاء */}
+        <div className="md:col-span-2 bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 flex flex-col">
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="text-lg font-bold text-white flex items-center gap-2">
+               <span>⚠️</span> عقود تنتهي خلال 60 يوم
+             </h3>
+             <span className="bg-red-500/20 text-red-400 px-3 py-1 rounded-lg text-sm font-bold border border-red-500/30">
+               {upcomingExpirations.length} محلات
+             </span>
           </div>
-          <div className="p-4 bg-black/40 rounded-2xl border border-white/5 shadow-inner">
-            <p className="text-slate-400 mb-1 font-semibold">تحت الصيانة</p>
-            <p className="text-3xl font-bold text-yellow-400">{statusCounts["تحت الصيانة"] || 0}</p>
+          
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {upcomingExpirations.length > 0 ? (
+              <div className="overflow-x-auto rounded-xl border border-white/10 shadow-sm bg-black/20 custom-scrollbar flex-1">
+                <table className="w-full text-right text-slate-200 text-sm">
+                  <thead className="bg-black/60 text-white border-b border-white/10">
+                    <tr>
+                      <th className="p-3">رقم المحل</th>
+                      <th className="p-3">المستأجر</th>
+                      <th className="p-3">نهاية العقد</th>
+                      <th className="p-3">المتبقي (أيام)</th>
+                      <th className="p-3 text-red-300">مديونية الإيجار</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upcomingExpirations.map(shop => {
+                      const end = new Date(shop.endDate);
+                      const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+                      const remainingRent = shop.annualRent - shop.collected;
+                      
+                      return (
+                        <tr key={shop.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                          <td className="p-3 font-bold text-white">{shop.shopNumber}</td>
+                          <td className="p-3 text-slate-300 truncate max-w-[120px]" title={shop.tenant}>{shop.tenant}</td>
+                          <td className="p-3">{shop.endDate}</td>
+                          <td className="p-3 font-bold text-orange-400">{diffDays} يوم</td>
+                          <td className="p-3 font-bold text-red-400">{remainingRent.toLocaleString()} ريال</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black/20 rounded-xl border border-white/5">
+                <p className="text-4xl mb-2">🎉</p>
+                <p className="text-slate-400 font-bold">لا توجد عقود تنتهي قريباً.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -345,7 +413,7 @@ export default function ShubramiSystem() {
   // نافذة التنبيهات المنبثقة
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // إدارة التبويبات (تم تحويل activeSubTab إلى activeTab لتعمل مع القائمة الجانبية)
+  // إدارة التبويبات 
   const [activeTab, setActiveTab] = useState("dashboard");
   const [contractSubTab, setContractSubTab] = useState("new");
   const [paymentSubTab, setPaymentSubTab] = useState("new");
@@ -1619,6 +1687,7 @@ export default function ShubramiSystem() {
                     dashNetIncome={dashNetIncome}
                     dashTotalDebts={dashTotalDebts}
                     statusCounts={statusCounts}
+                    shopsDB={shopsDB} 
                   />
                )}
 
@@ -1839,7 +1908,7 @@ export default function ShubramiSystem() {
                         updatePayAmount={updatePayAmount} setUpdatePayAmount={setUpdatePayAmount}
                         instShop={instShop} setInstShop={setInstShop}
                         instAmount={instAmount} setInstAmount={setInstAmount}
-                        instDate={instDate} setInstDate={instDate}
+                        instDate={instDate} setInstDate={setInstDate}
                         handleNewPayment={handleNewPayment}
                         handleUpdatePayment={handleUpdatePayment}
                         handleNewInstallment={handleNewInstallment}
