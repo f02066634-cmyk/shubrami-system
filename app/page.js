@@ -208,7 +208,14 @@ const FinancialCollection = ({
             <label className="block mb-2 font-semibold text-slate-300">اختر المحل (العقود السارية فقط):</label>
             <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white focus:border-orange-500 outline-none" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
               <option value="">-- المحلات المؤجرة --</option>
-              {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber} - {s.tenant}</option>)}
+              {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => {
+                const isFullyPaid = s.collected >= s.annualRent;
+                return (
+                  <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
+                    {s.shopNumber} - {s.tenant} {isFullyPaid ? "(مسدد بالكامل 🚫)" : ""}
+                  </option>
+                );
+              })}
             </select>
           </div>
           <div>
@@ -263,11 +270,14 @@ const FinancialCollection = ({
                 <label className="block mb-2 font-semibold text-slate-300">تحديد المحل:</label>
                 <select className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
                   <option value="">-- اختر المحل (العقود السارية فقط) --</option>
-                  {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => (
-                    <option key={s.id} value={s.shopNumber}>
-                      {s.shopNumber} - {s.tenant}
-                    </option>
-                  ))}
+                  {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => {
+                    const isFullyPaid = s.collected >= s.annualRent;
+                    return (
+                      <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
+                        {s.shopNumber} - {s.tenant} {isFullyPaid ? "(مسدد بالكامل 🚫)" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div>
@@ -1298,6 +1308,10 @@ export default function ShubramiSystem() {
     const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
     if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا المحل لتسجيل الدفعة عليه.");
 
+    if (activeShop.collected >= activeShop.annualRent) {
+      return alert("هذا العقد مسدد بالكامل ولا يمكن تسجيل دفعات إضافية عليه!");
+    }
+
     if (activeShop.collected + amountNum > activeShop.annualRent) {
       const actualRemaining = activeShop.annualRent - activeShop.collected;
       return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
@@ -1917,7 +1931,13 @@ export default function ShubramiSystem() {
                              <td className="p-4">{s.startDate}</td>
                              <td className="p-4">{s.endDate}</td>
                              <td className="p-4 text-green-400 font-bold">{s.collected.toLocaleString()} ريال</td>
-                             <td className="p-4 text-red-400 font-bold">{(s.annualRent - s.collected).toLocaleString()} ريال</td>
+                             <td className="p-4">
+                               {s.annualRent - s.collected <= 0 ? (
+                                 <span className="bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap">✔️ مسدد بالكامل</span>
+                               ) : (
+                                 <span className="text-red-400 font-bold">{(s.annualRent - s.collected).toLocaleString()} ريال</span>
+                               )}
+                             </td>
                              <td className="p-4">
                                {isContractExpired(s.endDate) 
                                  ? <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm whitespace-nowrap">⚠️ منتهي</span> 
