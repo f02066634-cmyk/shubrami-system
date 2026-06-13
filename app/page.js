@@ -7,13 +7,13 @@ import { supabase } from '../supabaseClient';
 const DashboardIndicators = ({
   dashboardYear, setDashboardYear, dashboardAvailableYears,
   dashTotalCollected, dashTotalExpenses, dashNetIncome, dashTotalDebts,
-  statusCounts, shopsDB
+  statusCounts, shopsDB, installmentsDB
 }) => {
   
-  // حساب العقود التي ستنتهي خلال 60 يوم
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // حساب العقود التي ستنتهي خلال 60 يوم
   const upcomingExpirations = shopsDB.filter(s => {
     if (s.status !== "مؤجر" || !s.endDate || s.endDate === "-") return false;
     const end = new Date(s.endDate);
@@ -21,6 +21,31 @@ const DashboardIndicators = ({
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays >= 0 && diffDays <= 60; 
   }).sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+
+  // حساب التدفق النقدي (Cash Flow) من جدول الاستحقاقات
+  const next30Days = new Date(today);
+  next30Days.setDate(next30Days.getDate() + 30);
+
+  const next60Days = new Date(today);
+  next60Days.setDate(next60Days.getDate() + 60);
+
+  let overdueInstallments = 0;
+  let expected30Days = 0;
+  let expected31To60Days = 0;
+
+  installmentsDB.forEach(inst => {
+    if (!inst.date) return;
+    const instDate = new Date(inst.date);
+    instDate.setHours(0, 0, 0, 0);
+    
+    if (instDate < today) {
+      overdueInstallments += Number(inst.amount) || 0;
+    } else if (instDate >= today && instDate <= next30Days) {
+      expected30Days += Number(inst.amount) || 0;
+    } else if (instDate > next30Days && instDate <= next60Days) {
+      expected31To60Days += Number(inst.amount) || 0;
+    }
+  });
 
   return (
     <div className="space-y-6 mb-12 animate-fade-in">
@@ -56,6 +81,29 @@ const DashboardIndicators = ({
            <h4 className="text-slate-300 font-bold mb-2">الديون المستحقة المعلقة</h4>
            <p className="text-3xl font-extrabold text-red-400">{dashTotalDebts.toLocaleString()} ريال</p>
         </div>
+      </div>
+
+      {/* مؤشر توقعات التدفق النقدي الجديد */}
+      <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 mt-6">
+         <div className="flex justify-between items-center mb-6">
+           <h3 className="text-lg font-bold text-white flex items-center gap-2">
+             <span>📈</span> توقعات التدفق النقدي (بناءً على جدول الدفعات القادمة)
+           </h3>
+         </div>
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-black/40 p-5 rounded-2xl border border-red-500/30 flex flex-col justify-center items-center text-center">
+               <p className="text-slate-400 font-bold mb-2 text-sm">متأخرات مستحقة الدفع</p>
+               <p className="text-3xl font-extrabold text-red-400">{overdueInstallments.toLocaleString()} <span className="text-sm font-normal text-slate-500">ريال</span></p>
+            </div>
+            <div className="bg-black/40 p-5 rounded-2xl border border-green-500/30 flex flex-col justify-center items-center text-center">
+               <p className="text-slate-400 font-bold mb-2 text-sm">متوقع خلال 30 يوم</p>
+               <p className="text-3xl font-extrabold text-green-400">{expected30Days.toLocaleString()} <span className="text-sm font-normal text-slate-500">ريال</span></p>
+            </div>
+            <div className="bg-black/40 p-5 rounded-2xl border border-blue-500/30 flex flex-col justify-center items-center text-center">
+               <p className="text-slate-400 font-bold mb-2 text-sm">متوقع خلال 31 - 60 يوم</p>
+               <p className="text-3xl font-extrabold text-blue-400">{expected31To60Days.toLocaleString()} <span className="text-sm font-normal text-slate-500">ريال</span></p>
+            </div>
+         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
@@ -1687,7 +1735,8 @@ export default function ShubramiSystem() {
                     dashNetIncome={dashNetIncome}
                     dashTotalDebts={dashTotalDebts}
                     statusCounts={statusCounts}
-                    shopsDB={shopsDB} 
+                    shopsDB={shopsDB}
+                    installmentsDB={installmentsDB} 
                   />
                )}
 
@@ -1794,7 +1843,7 @@ export default function ShubramiSystem() {
                          </div>
                          <div>
                            <label className="block mb-2 font-semibold text-slate-300">نهاية العقد:</label>
-                           <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} />
+                           <input type="date" className="w-full rounded-xl border border-white/20 p-3 bg-black/40 text-white outline-none" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} required />
                          </div>
                        </div>
 
