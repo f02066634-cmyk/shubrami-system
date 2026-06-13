@@ -1300,12 +1300,11 @@ export default function ShubramiSystem() {
     if (!originalRow) return;
 
     const isRenewal = isContractExpired(originalRow.endDate);
-    const remainingBalance = originalRow.annualRent - originalRow.collected;
 
-    // حماية محاسبية: يمنع تجديد أو تعديل تواريخ/رقم عقد ساري وعليه مديونية
-    if (!isRenewal && remainingBalance > 0) {
-       if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
-           return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
+    // حماية إدارية ومحاسبية: يمنع تعديل بيانات/تواريخ عقد ساري نهائياً
+    if (!isRenewal && editContractStatus === "مؤجر") {
+       if (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent) {
+           return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات!\nإذا أردت إجراء تغيير جذري في العقد، يجب إنهاء العقد الحالي أو الانتظار حتى انتهائه.");
        }
     }
 
@@ -1347,7 +1346,7 @@ export default function ShubramiSystem() {
       const { error } = await supabase.from('shops').update(updatedFields).eq('id', editContractId);
       if (!error) {
         setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, ...updatedFields } : s));
-        alert("تم تحديث بيانات العقد الحالي على السحابة بنجاح!");
+        alert("تم تحديث حالة العقد على السحابة بنجاح!");
       }
     }
   };
@@ -1616,8 +1615,8 @@ export default function ShubramiSystem() {
 
   // حساب حالة القفل المالي للنموذج النشط حالياً
   const selectedEditShop = shopsDB.find(s => s.id === editContractId);
-  const isActiveWithDebt = selectedEditShop 
-      ? (!isContractExpired(selectedEditShop.endDate) && (selectedEditShop.annualRent - selectedEditShop.collected > 0))
+  const isActiveContract = selectedEditShop 
+      ? !isContractExpired(selectedEditShop.endDate)
       : false;
 
   if (loading) {
@@ -1891,39 +1890,39 @@ export default function ShubramiSystem() {
                          </div>
                        )}
 
-                       {isActiveWithDebt && (
+                       {isActiveContract && editContractStatus === "مؤجر" && (
                          <div className="md:col-span-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">🔒</span>
-                           <span>تنبيه مالي مهم: هذا العقد ساري وعليه مديونية إيجار. يمنع النظام تجديد أو تمديد التواريخ أو الأرقام حتى يتم تحصيل المبالغ المتبقية.</span>
+                           <span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية (الاسم، التواريخ، الرسوم، رقم العقد) لحماية استقرار السجلات. يمكنك فقط تغيير حالة المحل (كالإخلاء).</span>
                          </div>
                        )}
 
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المستأجر:</label>
-                         <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} />
+                         <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
                        </div>
                        <div>
                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم عقد إيجار المحدث/الجديد:</label>
-                          <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} disabled={isActiveWithDebt} />
+                          <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
                        </div>
                        <div>
                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإيجار السنوي الجديد:</label>
-                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={isActiveWithDebt} />
+                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
                        </div>
                        
                        <div className="grid grid-cols-2 gap-4 md:col-span-2">
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">بداية العقد:</label>
-                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} disabled={isActiveWithDebt} />
+                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
                          </div>
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">نهاية العقد:</label>
-                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} disabled={isActiveWithDebt} required />
+                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} required />
                          </div>
                        </div>
 
                        <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">
-                         {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث بيانات العقد الحالي"}
+                         {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث حالة العقد الحالي"}
                        </button>
                      </form>
                    )}
