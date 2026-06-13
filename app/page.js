@@ -13,7 +13,7 @@ const DashboardIndicators = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // حساب العقود التي ستنتهي خلال 60 يوم
+  // 1. حساب العقود التي ستنتهي خلال 60 يوم
   const upcomingExpirations = shopsDB.filter(s => {
     if (s.status !== "مؤجر" || !s.endDate || s.endDate === "-") return false;
     const end = new Date(s.endDate);
@@ -22,7 +22,7 @@ const DashboardIndicators = ({
     return diffDays >= 0 && diffDays <= 60; 
   }).sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 
-  // حساب التدفق النقدي (Cash Flow) من جدول الاستحقاقات
+  // 2. حساب التدفق النقدي (Cash Flow) من جدول الاستحقاقات
   const next30Days = new Date(today);
   next30Days.setDate(next30Days.getDate() + 30);
 
@@ -46,6 +46,23 @@ const DashboardIndicators = ({
       expected31To60Days += Number(inst.amount) || 0;
     }
   });
+
+  // 3. حساب كفاءة أداء التحصيل للعقود السارية
+  let fullyPaid = 0;
+  let partiallyPaid = 0;
+  let unpaid = 0;
+  const activeContracts = shopsDB.filter(s => s.status === "مؤجر");
+  
+  activeContracts.forEach(s => {
+    if (s.collected >= s.annualRent && s.annualRent > 0) fullyPaid++;
+    else if (s.collected > 0) partiallyPaid++;
+    else unpaid++;
+  });
+
+  // 4. حساب نسبة الإشغال
+  const totalShops = 166;
+  const rentedShopsCount = statusCounts["مؤجر"] || 0;
+  const occupancyRate = ((rentedShopsCount / totalShops) * 100).toFixed(1);
 
   return (
     <div className="space-y-6 mb-12 animate-fade-in">
@@ -83,7 +100,7 @@ const DashboardIndicators = ({
         </div>
       </div>
 
-      {/* مؤشر توقعات التدفق النقدي الجديد */}
+      {/* مؤشر توقعات التدفق النقدي */}
       <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 mt-6">
          <div className="flex justify-between items-center mb-6">
            <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -106,11 +123,55 @@ const DashboardIndicators = ({
          </div>
       </div>
 
+      {/* مؤشر أداء التحصيل */}
+      <div className="bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 mt-6">
+         <div className="flex justify-between items-center mb-6">
+           <h3 className="text-lg font-bold text-white flex items-center gap-2">
+             <span>🎯</span> كفاءة أداء التحصيل للعقود السارية ({activeContracts.length} عقد)
+           </h3>
+         </div>
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-black/40 p-4 rounded-xl border-l-4 border-green-500/50 flex justify-between items-center hover:bg-white/5 transition-colors">
+               <div>
+                  <p className="text-slate-400 font-bold text-sm">مسدد بالكامل</p>
+                  <p className="text-2xl font-extrabold text-green-400">{fullyPaid}</p>
+               </div>
+               <div className="text-3xl">✔️</div>
+            </div>
+            <div className="bg-black/40 p-4 rounded-xl border-l-4 border-yellow-500/50 flex justify-between items-center hover:bg-white/5 transition-colors">
+               <div>
+                  <p className="text-slate-400 font-bold text-sm">سداد جزئي</p>
+                  <p className="text-2xl font-extrabold text-yellow-400">{partiallyPaid}</p>
+               </div>
+               <div className="text-3xl">⏳</div>
+            </div>
+            <div className="bg-black/40 p-4 rounded-xl border-l-4 border-red-500/50 flex justify-between items-center hover:bg-white/5 transition-colors">
+               <div>
+                  <p className="text-slate-400 font-bold text-sm">لم يسدد (متأخر)</p>
+                  <p className="text-2xl font-extrabold text-red-400">{unpaid}</p>
+               </div>
+               <div className="text-3xl">⚠️</div>
+            </div>
+         </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-        {/* حالة المحلات الفورية */}
+        {/* حالة المحلات الفورية ونسبة الإشغال */}
         <div className="md:col-span-1 bg-white/5 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/10 flex flex-col justify-center">
-          <h3 className="text-lg font-bold text-white mb-6 text-center">🏢 حالة المحلات (166 محل)</h3>
-          <div className="flex flex-col gap-4">
+          <h3 className="text-lg font-bold text-white mb-4 text-center">🏢 حالة المحلات ومعدل الإشغال</h3>
+          
+          <div className="mb-6 px-2">
+            <div className="flex justify-between text-sm font-bold mb-2">
+               <span className="text-slate-300">نسبة الإشغال اللحظية</span>
+               <span className="text-blue-400">{occupancyRate}%</span>
+            </div>
+            <div className="w-full bg-black/60 rounded-full h-3 border border-white/5 overflow-hidden">
+               <div className="bg-gradient-to-r from-blue-600 to-blue-400 h-3 rounded-full transition-all duration-1000" style={{ width: `${occupancyRate}%` }}></div>
+            </div>
+            <p className="text-xs text-slate-500 mt-2 text-center">إجمالي المحلات: {totalShops} محل</p>
+          </div>
+
+          <div className="flex flex-col gap-3">
             <div className="flex justify-between items-center p-3 bg-black/40 rounded-xl border border-white/5">
               <span className="text-slate-300 font-semibold">مؤجر</span>
               <span className="text-xl font-bold text-green-400">{statusCounts["مؤجر"] || 0}</span>
