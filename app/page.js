@@ -244,7 +244,7 @@ const FinancialCollection = ({
   shopsDB, transactionsDB, installmentsDB, isContractExpired, todayDateObj,
   searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears,
   filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum,
-  printReceipt, printTablePDF, exportToCSV
+  printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF // تمت إضافة دالة الطباعة هنا لتمريرها بنجاح
 }) => {
   return (
     <div className="animate-fade-in text-sm">
@@ -1300,6 +1300,14 @@ export default function ShubramiSystem() {
     if (!originalRow) return;
 
     const isRenewal = isContractExpired(originalRow.endDate);
+    const remainingBalance = originalRow.annualRent - originalRow.collected;
+
+    // حماية محاسبية: يمنع تجديد أو تعديل تواريخ/رقم عقد ساري وعليه مديونية
+    if (!isRenewal && remainingBalance > 0) {
+       if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
+           return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
+       }
+    }
 
     // حماية إدارية ومحاسبية: يمنع تعديل بيانات/تواريخ عقد ساري نهائياً
     if (!isRenewal && editContractStatus === "مؤجر") {
@@ -2056,6 +2064,7 @@ export default function ShubramiSystem() {
                         printReceipt={printReceipt}
                         printTablePDF={printTablePDF}
                         exportToCSV={exportToCSV}
+                        printInstallmentsPDF={printInstallmentsPDF}
                     />
                  </div>
                )}
