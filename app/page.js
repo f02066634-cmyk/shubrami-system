@@ -244,7 +244,7 @@ const FinancialCollection = ({
   shopsDB, transactionsDB, installmentsDB, isContractExpired, todayDateObj,
   searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears,
   filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum,
-  printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF // تمت إضافة دالة الطباعة هنا لتمريرها بنجاح
+  printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF
 }) => {
   return (
     <div className="animate-fade-in text-sm">
@@ -1316,6 +1316,14 @@ export default function ShubramiSystem() {
        }
     }
 
+    // حماية إدارية إضافية: تنبيه وتأكيد عند تحويل عقد ساري إلى شاغر أو تحت الصيانة
+    if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
+       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك تغيير حالة المحل (${originalRow.shopNumber}) من "مؤجر" إلى "${editContractStatus}".\n\nهذا الإجراء سيؤدي إلى:\n1- إنهاء العقد الحالي فوراً.\n2- مسح بيانات المستأجر والتواريخ.\n3- إزالة العقد من (سجل العقود المؤجرة).\n\nهل أنت متأكد من رغبتك في الاستمرار وإخلاء المحل؟`;
+       if (!window.confirm(confirmMsg)) {
+         return; // إذا ضغط إلغاء، تتوقف العملية
+       }
+    }
+
     if (isRenewal) {
       if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد!");
       if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
@@ -1895,6 +1903,13 @@ export default function ShubramiSystem() {
                          <div className="md:col-span-2 p-3 bg-amber-100 text-amber-800 rounded-lg border border-amber-300 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">⚠️</span>
                            <span>النظام رصد أن هذا العقد منتهي. الحفظ الآن سيقوم بإنشاء دورة تعاقدية جديدة منفصلة لحفظ السجل المالي، ويشترط إدخال رقم عقد وتواريخ جديدة.</span>
+                         </div>
+                       )}
+
+                       {isActiveContract && editContractStatus !== "مؤجر" && (
+                         <div className="md:col-span-2 p-3 bg-orange-100 text-orange-800 rounded-lg border border-orange-300 text-xs font-bold flex items-center gap-2">
+                           <span className="text-lg">⚠️</span>
+                           <span>تحذير: تغيير حالة العقد إلى ({editContractStatus}) سيؤدي إلى إنهاء العقد الحالي وإزالته من سجل العقود المؤجرة. سيتم تصفية بيانات المستأجر والتواريخ لتبدأ دورة جديدة للمحل.</span>
                          </div>
                        )}
 
