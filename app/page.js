@@ -13,7 +13,6 @@ const DashboardIndicators = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // 1. حساب العقود التي ستنتهي خلال 60 يوم
   const upcomingExpirations = shopsDB.filter(s => {
     if (s.status !== "مؤجر" || !s.endDate || s.endDate === "-") return false;
     const end = new Date(s.endDate);
@@ -22,7 +21,6 @@ const DashboardIndicators = ({
     return diffDays >= 0 && diffDays <= 60; 
   }).sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 
-  // 2. حساب التدفق النقدي (Cash Flow)
   const next30Days = new Date(today);
   next30Days.setDate(next30Days.getDate() + 30);
 
@@ -47,7 +45,6 @@ const DashboardIndicators = ({
     }
   });
 
-  // 3. حساب كفاءة أداء التحصيل للعقود السارية
   let fullyPaid = 0;
   let partiallyPaid = 0;
   let unpaid = 0;
@@ -59,7 +56,6 @@ const DashboardIndicators = ({
     else unpaid++;
   });
 
-  // 4. حساب نسبة الإشغال
   const totalShops = 166;
   const rentedShopsCount = statusCounts["مؤجر"] || 0;
   const occupancyRate = ((rentedShopsCount / totalShops) * 100).toFixed(1);
@@ -502,42 +498,35 @@ const FinancialCollection = ({
   );
 };
 
-
 // ==================== المكوّن الرئيسي للمشروع ====================
 export default function ShubramiSystem() {
-  // حالات تحميل البيانات من السحابة
   const [loading, setLoading] = useState(true);
-
-  // ==================== إدارة حالة النظام والمستخدمين (State) ====================
   const [usersDB, setUsersDB] = useState([]);
   const [currentUser, setCurrentUser] = useState(null); 
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [authError, setAuthError] = useState("");
 
-  // نافذة التنبيهات المنبثقة
+  const [editingUser, setEditingUser] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // إدارة التبويبات 
   const [activeTab, setActiveTab] = useState("dashboard");
   const [contractSubTab, setContractSubTab] = useState("new");
   const [paymentSubTab, setPaymentSubTab] = useState("new");
   const [debtSubTab, setDebtSubTab] = useState("pay");
 
-  // إدارة المستخدمين (للأدمن)
   const [newUserName, setNewUserName] = useState("");
   const [newUserUsername, setNewUserUsername] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState("موظف");
+  const [newUserAllowedTabs, setNewUserAllowedTabs] = useState([]); 
 
-  // قواعد البيانات السحابية
   const [shopsDB, setShopsDB] = useState([]);
   const [transactionsDB, setTransactionsDB] = useState([]);
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
   const [installmentsDB, setInstallmentsDB] = useState([]); 
 
-  // متغيرات الفرز والبحث
   const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
   const [filterContractYear, setFilterContractYear] = useState("الكل"); 
   const [searchContract, setSearchContract] = useState(""); 
@@ -547,7 +536,6 @@ export default function ShubramiSystem() {
   const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
   const [searchReceipt, setSearchReceipt] = useState(""); 
 
-  // المتغيرات للنماذج
   const [newContractShop, setNewContractShop] = useState("");
   const [newContractTenant, setNewContractTenant] = useState("");
   const [newContractEjarNumber, setNewContractEjarNumber] = useState(""); 
@@ -587,15 +575,11 @@ export default function ShubramiSystem() {
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
 
-  // متغيرات الدفعات المستحقة
   const [instShop, setInstShop] = useState("");
   const [instAmount, setInstAmount] = useState("");
   const [instDate, setInstDate] = useState("");
-  
-  // (مهم) متغير لتتبع رقم التنبيه/الجدولة ليتم حذفه تلقائياً بعد السداد
   const [payingInstId, setPayingInstId] = useState("");
 
-  // ==================== جلب وتزامن البيانات من السحابة ====================
   const fetchAllData = async () => {
     try {
       setLoading(true);
@@ -623,8 +607,8 @@ export default function ShubramiSystem() {
       let { data: users } = await supabase.from('users').select('*');
       if (users && users.length === 0) {
         const initialUsers = [
-          { id: "u-1", username: "admin", password: "123", name: "مدير النظام", role: "مدير" },
-          { id: "u-2", username: "emp", password: "123", name: "موظف التحصيل", role: "موظف" }
+          { id: "u-1", username: "admin", password: "123", name: "مدير النظام", role: "مدير", allowedTabs: [] },
+          { id: "u-2", username: "emp", password: "123", name: "موظف التحصيل", role: "موظف", allowedTabs: ["payments", "debts"] }
         ];
         await supabase.from('users').insert(initialUsers);
         const { data: updatedUsers } = await supabase.from('users').select('*');
@@ -660,14 +644,31 @@ export default function ShubramiSystem() {
     fetchAllData();
   }, []);
 
-  // ==================== دوال المصادقة والمستخدمين السحابية ====================
+  const allTabs = [
+    { id: "dashboard", label: "📊 لوحة المؤشرات" },
+    { id: "contracts", label: "📝 إدارة العقود والمحلات" },
+    { id: "payments", label: "💰 التحصيل وسندات القبض" },
+    { id: "debts", label: "📂 مديونيات مستحقة" },
+    { id: "expenses", label: "🛠️ إدارة المصروفات" },
+    { id: "users", label: "👥 إدارة المستخدمين", adminOnly: true }
+  ];
+
   const handleLogin = (e) => {
     e.preventDefault();
     const user = usersDB.find(u => u.username === loginUser && u.password === loginPass);
     if (user) {
       setCurrentUser(user);
       setAuthError("");
-      setActiveTab("dashboard"); 
+      if (user.role === "مدير") {
+         setActiveTab("dashboard");
+      } else {
+         const allowed = user.allowedTabs || [];
+         if (allowed.length > 0) {
+             setActiveTab(allowed[0]); 
+         } else {
+             setActiveTab(""); 
+         }
+      }
     } else {
       setAuthError("اسم المستخدم أو كلمة المرور غير صحيحة");
     }
@@ -679,24 +680,56 @@ export default function ShubramiSystem() {
     setLoginPass("");
   };
 
+  const handleTabToggle = (tabId, isNewUser = true) => {
+    if (isNewUser) {
+      setNewUserAllowedTabs(prev => 
+        prev.includes(tabId) ? prev.filter(t => t !== tabId) : [...prev, tabId]
+      );
+    } else {
+      setEditingUser(prev => ({
+        ...prev,
+        allowedTabs: prev.allowedTabs?.includes(tabId) 
+          ? prev.allowedTabs.filter(t => t !== tabId) 
+          : [...(prev.allowedTabs || []), tabId]
+      }));
+    }
+  };
+
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (usersDB.find(u => u.username === newUserUsername)) {
       return alert("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.");
     }
+    if (newUserRole === "موظف" && newUserAllowedTabs.length === 0) {
+      return alert("يرجى تحديد شاشة واحدة على الأقل كصلاحية دخول للموظف.");
+    }
+
     const newUser = {
       id: `u-${Date.now()}`,
       username: newUserUsername,
       password: newUserPassword,
       name: newUserName,
-      role: newUserRole
+      role: newUserRole,
+      allowedTabs: newUserRole === "مدير" ? [] : newUserAllowedTabs 
     };
 
     const { error } = await supabase.from('users').insert([newUser]);
     if (!error) {
       setUsersDB([...usersDB, newUser]);
-      setNewUserName(""); setNewUserUsername(""); setNewUserPassword("");
-      alert("تم إضافة المستخدم بنجاح ومزامنته سحابياً.");
+      setNewUserName(""); setNewUserUsername(""); setNewUserPassword(""); setNewUserAllowedTabs([]);
+      alert("تم إضافة المستخدم بصلاحياته المحددة بنجاح.");
+    }
+  };
+
+  const handleSaveEditedPermissions = async () => {
+    if (!editingUser) return;
+    const { error } = await supabase.from('users').update({ allowedTabs: editingUser.allowedTabs }).eq('id', editingUser.id);
+    if (!error) {
+      setUsersDB(usersDB.map(u => u.id === editingUser.id ? editingUser : u));
+      setEditingUser(null);
+      alert("تم تحديث صلاحيات الموظف بنجاح!");
+    } else {
+      alert("حدث خطأ أثناء التحديث. هل تأكدت من إضافة عمود 'allowedTabs' (JSONB) لجدول users في Supabase؟");
     }
   };
 
@@ -710,7 +743,6 @@ export default function ShubramiSystem() {
     }
   };
 
-  // ==================== دوال المساعدة ونظام التنبيهات ====================
   const isContractExpired = (endDate) => {
     if (!endDate || endDate === "-") return false;
     const today = new Date();
@@ -774,7 +806,6 @@ export default function ShubramiSystem() {
     return parts.length > 1 ? parts[1] : null;
   }))].filter(Boolean).sort((a, b) => b - a);
 
-  // ==================== النقل لصفحة السداد (مع التتبع للحذف) ====================
   const handleTransferToPayment = (shopNumber, amount, instId) => {
     setShowNotifications(false); 
     setActiveTab("payments"); 
@@ -785,7 +816,6 @@ export default function ShubramiSystem() {
     setPayingInstId(instId); 
   };
 
-  // ==================== دوال الطباعة والتصدير ====================
   const printInstallmentsPDF = (data) => {
     if (data.length === 0) return alert("لا توجد دفعات مجدولة للطباعة حالياً");
     const printWindow = window.open('', '_blank');
@@ -1049,7 +1079,6 @@ export default function ShubramiSystem() {
     printWindow.document.close();
   };
 
-  // ... (نفس دالة exportToCSV الحالية)
   const exportToCSV = (data, filename) => {
     if (data.length === 0) return alert("لا توجد سجلات لتصديرها حالياً");
     const headers = ["رقم السند", "تاريخ البدء", "تاريخ التحديث", "رقم المحل", "المستأجر", "المبلغ الكلي المتفق عليه", "إجمالي المدفوع حتى الآن", "المبلغ المتبقي", "طريقة الدفع", "الحالة"].join(",");
@@ -1236,7 +1265,6 @@ export default function ShubramiSystem() {
     printWindow.document.close();
   };
 
-  // ==================== معالجة النماذج مع تأمين ربط البيانات ====================
   const handleNewInstallment = async (e) => {
     e.preventDefault();
     if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
@@ -1302,25 +1330,22 @@ export default function ShubramiSystem() {
     const isRenewal = isContractExpired(originalRow.endDate);
     const remainingBalance = originalRow.annualRent - originalRow.collected;
 
-    // حماية محاسبية: يمنع تجديد أو تعديل تواريخ/رقم عقد ساري وعليه مديونية
     if (!isRenewal && remainingBalance > 0) {
        if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
            return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
        }
     }
 
-    // حماية إدارية ومحاسبية: يمنع تعديل بيانات/تواريخ عقد ساري نهائياً
     if (!isRenewal && editContractStatus === "مؤجر") {
        if (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent) {
            return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات!\nإذا أردت إجراء تغيير جذري في العقد، يجب إنهاء العقد الحالي أو الانتظار حتى انتهائه.");
        }
     }
 
-    // حماية إدارية إضافية: تنبيه وتأكيد عند تحويل عقد ساري إلى شاغر أو تحت الصيانة
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
        const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك تغيير حالة المحل (${originalRow.shopNumber}) من "مؤجر" إلى "${editContractStatus}".\n\nهذا الإجراء سيؤدي إلى:\n1- إنهاء العقد الحالي فوراً.\n2- مسح بيانات المستأجر والتواريخ.\n3- إزالة العقد من (سجل العقود المؤجرة).\n\nهل أنت متأكد من رغبتك في الاستمرار وإخلاء المحل؟`;
        if (!window.confirm(confirmMsg)) {
-         return; // إذا ضغط إلغاء، تتوقف العملية
+         return; 
        }
     }
 
@@ -1561,7 +1586,6 @@ export default function ShubramiSystem() {
     }
   };
 
-  // ==================== الحسابات والفرز والمؤشرات ====================
   const filteredTxForDash = dashboardYear === "الكل" ? transactionsDB : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
   const filteredExpForDash = dashboardYear === "الكل" ? expensesDB : expensesDB.filter(e => getYear(e.date) === dashboardYear);
   const filteredDebtsForDash = dashboardYear === "الكل" ? allOutstandingDebts : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
@@ -1629,11 +1653,16 @@ export default function ShubramiSystem() {
   const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
   const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
 
-  // حساب حالة القفل المالي للنموذج النشط حالياً
   const selectedEditShop = shopsDB.find(s => s.id === editContractId);
   const isActiveContract = selectedEditShop 
       ? !isContractExpired(selectedEditShop.endDate)
       : false;
+
+  const visibleTabs = allTabs.filter(tab => {
+    if (currentUser?.role === "مدير") return true; 
+    if (tab.adminOnly) return false; 
+    return currentUser?.allowedTabs?.includes(tab.id); 
+  });
 
   if (loading) {
     return (
@@ -1678,30 +1707,17 @@ export default function ShubramiSystem() {
     );
   }
 
-  const allTabs = [
-    { id: "dashboard", label: "📊 لوحة المؤشرات" },
-    { id: "contracts", label: "📝 إدارة العقود والمحلات" },
-    { id: "payments", label: "💰 التحصيل وسندات القبض" },
-    { id: "debts", label: "📂 مديونيات مستحقة" },
-    { id: "expenses", label: "🛠️ إدارة المصروفات" },
-    { id: "users", label: "👥 إدارة المستخدمين", adminOnly: true }
-  ];
-
-  const visibleTabs = allTabs.filter(tab => !tab.adminOnly || currentUser.role === "مدير");
-
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
         .font-tajawal { font-family: 'Tajawal', sans-serif; }
-        /* لتنسيق سكرول البوب أب والتمرير الداخلي */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
       `}} />
       
-      {/* نافذة التنبيهات المنبثقة (Modal) */}
       {showNotifications && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
             <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-2xl relative">
@@ -1728,7 +1744,11 @@ export default function ShubramiSystem() {
                             </div>
                             <div className="text-xs text-slate-600 mt-2 border-t border-slate-300 pt-2 flex justify-between items-center">
                                <span>الاستحقاق: <b className="text-slate-800">{alert.date}</b></span>
-                               <button onClick={() => handleTransferToPayment(alert.shop, alert.amount, alert.id)} className="text-blue-700 hover:text-blue-900 font-bold underline text-xs">سداد الآن</button>
+                               {visibleTabs.some(t => t.id === "payments") ? (
+                                  <button onClick={() => handleTransferToPayment(alert.shop, alert.amount, alert.id)} className="text-blue-700 hover:text-blue-900 font-bold underline text-xs">سداد الآن</button>
+                               ) : (
+                                  <span className="text-slate-400 text-[10px]">(تتطلب صلاحية التحصيل)</span>
+                               )}
                             </div>
                         </div>
                         );
@@ -1744,12 +1764,38 @@ export default function ShubramiSystem() {
         </div>
       )}
 
-      {/* الهيكل الأساسي: تخطيط الصفحة مع القائمة الجانبية */}
+      {editingUser && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-md relative">
+               <button onClick={() => setEditingUser(null)} className="absolute top-4 left-5 text-slate-400 hover:text-red-500 text-2xl font-bold transition-colors">&times;</button>
+               <h3 className="text-slate-900 font-extrabold mb-2 flex items-center gap-2 text-lg">
+                 <span>⚙️</span> تعديل صلاحيات: {editingUser.name}
+               </h3>
+               <p className="text-xs text-slate-500 mb-5 border-b border-slate-200 pb-3">حدد الشاشات التي يُسمح للموظف بالوصول إليها وإدارتها.</p>
+               
+               <div className="flex flex-col gap-3 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                 {allTabs.filter(t => !t.adminOnly).map(tab => (
+                   <label key={tab.id} className="flex items-center gap-3 text-sm text-slate-800 cursor-pointer font-semibold p-2 hover:bg-white rounded transition-colors">
+                     <input
+                       type="checkbox"
+                       checked={(editingUser.allowedTabs || []).includes(tab.id)}
+                       onChange={() => handleTabToggle(tab.id, false)}
+                       className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-600"
+                     />
+                     {tab.label}
+                   </label>
+                 ))}
+               </div>
+               
+               <button onClick={handleSaveEditedPermissions} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">
+                  حفظ التعديلات
+               </button>
+            </div>
+         </div>
+      )}
+
       <div dir="rtl" className="flex h-screen overflow-hidden font-tajawal text-slate-900 bg-slate-100 relative">
-        
-        {/* 1. القائمة الجانبية (Sidebar) */}
         <aside className="relative z-10 w-64 bg-slate-50 border-l border-slate-300 flex flex-col shadow-md shrink-0">
-           
            <div className="p-6 text-center border-b border-slate-300">
               <div className="text-3xl mb-2 text-blue-700">🏢</div>
               <h1 className="text-lg font-extrabold text-slate-900 tracking-wide">أسواق الشبرمي</h1>
@@ -1766,12 +1812,16 @@ export default function ShubramiSystem() {
            </div>
 
            <nav className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar">
-              {visibleTabs.map(tab => (
+              {visibleTabs.length > 0 ? visibleTabs.map(tab => (
                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                         className={`w-full flex items-center text-right py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${activeTab === tab.id ? "bg-blue-100 text-blue-800 border-r-4 border-blue-700 shadow-sm" : "text-slate-700 hover:bg-slate-200 hover:text-blue-700 border-r-4 border-transparent"}`}>
                   {tab.label}
                 </button>
-              ))}
+              )) : (
+                 <div className="text-center mt-10 p-4 bg-red-50 rounded-lg border border-red-200 text-red-600 text-xs font-bold">
+                    لا تملك صلاحية للوصول لأي شاشة. راجع مدير النظام.
+                 </div>
+              )}
            </nav>
 
            <div className="p-4 border-t border-slate-300">
@@ -1781,13 +1831,10 @@ export default function ShubramiSystem() {
            </div>
         </aside>
 
-        {/* 2. المحتوى الرئيسي (Main Content) */}
         <main className="relative z-10 flex-1 flex flex-col h-screen overflow-hidden bg-transparent">
-            
-            {/* الشريط العلوي (Header) */}
             <header className="flex justify-between items-center px-6 py-4 border-b border-slate-300 bg-white shadow-sm shrink-0">
                <h2 className="text-xl font-extrabold text-slate-900">
-                   {visibleTabs.find(t => t.id === activeTab)?.label}
+                   {visibleTabs.find(t => t.id === activeTab)?.label || "بدون صلاحية"}
                </h2>
 
                <div className="relative">
@@ -1803,10 +1850,8 @@ export default function ShubramiSystem() {
                </div>
             </header>
 
-            {/* مساحة العرض الخاصة بكل تبويب */}
             <div className="flex-1 overflow-y-auto p-5 md:p-6 custom-scrollbar">
                
-               {/* ----------------- لوحة المؤشرات ----------------- */}
                {activeTab === "dashboard" && (
                   <DashboardIndicators 
                     dashboardYear={dashboardYear}
@@ -1822,7 +1867,6 @@ export default function ShubramiSystem() {
                   />
                )}
 
-               {/* ----------------- إدارة العقود والمحلات ----------------- */}
                {activeTab === "contracts" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
@@ -1916,7 +1960,7 @@ export default function ShubramiSystem() {
                        {isActiveContract && editContractStatus === "مؤجر" && (
                          <div className="md:col-span-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">🔒</span>
-                           <span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية (الاسم، التواريخ، الرسوم، رقم العقد) لحماية استقرار السجلات. يمكنك فقط تغيير حالة المحل (كالإخلاء).</span>
+                           <span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية لحماية استقرار السجلات. يمكنك فقط تغيير حالة المحل (كالإخلاء).</span>
                          </div>
                        )}
 
@@ -2043,7 +2087,6 @@ export default function ShubramiSystem() {
                  </div>
                )}
 
-               {/* ----------------- التحصيل وسندات القبض ----------------- */}
                {activeTab === "payments" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in">
                     <FinancialCollection 
@@ -2084,7 +2127,6 @@ export default function ShubramiSystem() {
                  </div>
                )}
 
-               {/* ----------------- مديونيات مستحقة ----------------- */}
                {activeTab === "debts" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
@@ -2179,7 +2221,6 @@ export default function ShubramiSystem() {
                  </div>
                )}
 
-               {/* ----------------- إدارة المصروفات ----------------- */}
                {activeTab === "expenses" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
                     <form onSubmit={handleExpense} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
@@ -2226,11 +2267,11 @@ export default function ShubramiSystem() {
                  </div>
                )}
 
-               {/* ----------------- إدارة المستخدمين والصلاحيات ----------------- */}
                {activeTab === "users" && currentUser.role === "مدير" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                   
                    <div className="bg-slate-100 p-5 rounded-xl border border-slate-300 mb-8">
-                      <h3 className="text-base font-bold text-slate-900 mb-4">➕ إضافة مستخدم جديد للنظام</h3>
+                      <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><span>➕</span> إضافة مستخدم جديد للنظام</h3>
                       <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الاسم الكامل:</label>
@@ -2246,22 +2287,45 @@ export default function ShubramiSystem() {
                          </div>
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الدور / الصلاحية:</label>
-                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)}>
-                             <option value="موظف">موظف (إدارة وعمليات فقط)</option>
-                             <option value="مدير">مدير (صلاحيات كاملة + إضافة مستخدمين)</option>
+                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newUserRole} onChange={(e) => {
+                               setNewUserRole(e.target.value);
+                               if(e.target.value === "مدير") setNewUserAllowedTabs([]);
+                           }}>
+                             <option value="موظف">موظف (محدد الصلاحيات)</option>
+                             <option value="مدير">مدير (صلاحيات كاملة مطلقة)</option>
                            </select>
                          </div>
+
+                         {newUserRole === "موظف" && (
+                           <div className="md:col-span-2 bg-white p-4 rounded-lg border border-slate-300 mt-2">
+                             <label className="block mb-3 font-semibold text-slate-800 text-xs border-b border-slate-100 pb-2">حدد الشاشات المسموحة لهذا الموظف:</label>
+                             <div className="flex flex-wrap gap-4">
+                               {allTabs.filter(t => !t.adminOnly).map(tab => (
+                                 <label key={tab.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50 p-1.5 rounded transition-colors">
+                                   <input
+                                     type="checkbox"
+                                     checked={newUserAllowedTabs.includes(tab.id)}
+                                     onChange={() => handleTabToggle(tab.id, true)}
+                                     className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-600"
+                                   />
+                                   {tab.label}
+                                 </label>
+                               ))}
+                             </div>
+                           </div>
+                         )}
+
                          <button type="submit" className="md:col-span-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm transition-colors mt-2 shadow-md">
                            حفظ المستخدم ومنح الصلاحية
                          </button>
                       </form>
                    </div>
 
-                   <h3 className="text-base font-bold text-slate-900 mb-4">👥 قائمة المستخدمين المسجلين</h3>
+                   <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><span>👥</span> قائمة المستخدمين المسجلين</h3>
                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3">الاسم الكامل</th><th className="p-3">اسم الدخول (Username)</th><th className="p-3">الصلاحية</th><th className="p-3 text-center">إجراءات</th></tr>
+                         <tr><th className="p-3">الاسم الكامل</th><th className="p-3">اسم الدخول</th><th className="p-3">الصلاحية</th><th className="p-3 text-center">إجراءات</th></tr>
                        </thead>
                        <tbody>
                          {usersDB.map(user => (
@@ -2275,7 +2339,12 @@ export default function ShubramiSystem() {
                              </td>
                              <td className="p-3 text-center">
                                {currentUser.id !== user.id ? (
-                                 <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-800 font-bold text-[10px] bg-red-100 border border-red-200 px-2 py-1 rounded transition-colors shadow-sm">إلغاء الوصول / حذف</button>
+                                 <div className="flex justify-center gap-2">
+                                   {user.role === "موظف" && (
+                                     <button onClick={() => setEditingUser(user)} className="text-blue-700 hover:text-blue-900 font-bold text-[10px] bg-blue-50 border border-blue-200 px-2 py-1 rounded transition-colors shadow-sm">تعديل الصلاحيات</button>
+                                   )}
+                                   <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-800 font-bold text-[10px] bg-red-50 border border-red-200 px-2 py-1 rounded transition-colors shadow-sm">حذف</button>
+                                 </div>
                                ) : (
                                  <span className="text-slate-500 text-[10px] font-bold">(أنت)</span>
                                )}
