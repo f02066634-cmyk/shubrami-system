@@ -1342,12 +1342,33 @@ export default function ShubramiSystem() {
        }
     }
 
+    // ================== الدرع المالي (المخالصة النهائية) ==================
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
+       
+       // 1. فحص المبالغ المتبقية
+       if (remainingBalance > 0) {
+          return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).\nيرجى سداد المبلغ بالكامل أو تسجيله في (إدراج مديونية يدوية) قبل إخلاء المحل لتصفية الحسابات.`);
+       }
+
+       // 2. فحص السندات المفتوحة
+       const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
+       if (openTx) {
+          return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nالمحل مرتبط بسند قبض معلق برقم (${openTx.id}).\nيرجى التوجه لقسم (التحصيل وسندات القبض) وإغلاق السند أولاً.`);
+       }
+
+       // 3. فحص الدفعات المجدولة
+       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
+       if (pendingInst) {
+          return alert(`🚫 منع إداري: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد استحقاق مجدول لهذا المحل بقيمة (${pendingInst.amount} ريال).\nيرجى التوجه لجدول (الاستحقاقات) وتأكيد سداده أو حذفه أولاً.`);
+       }
+
+       // 4. إذا عبرت كل الفحوصات المالية، تظهر رسالة التأكيد
        const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك تغيير حالة المحل (${originalRow.shopNumber}) من "مؤجر" إلى "${editContractStatus}".\n\nهذا الإجراء سيؤدي إلى:\n1- إنهاء العقد الحالي فوراً.\n2- مسح بيانات المستأجر والتواريخ.\n3- إزالة العقد من (سجل العقود المؤجرة).\n\nهل أنت متأكد من رغبتك في الاستمرار وإخلاء المحل؟`;
        if (!window.confirm(confirmMsg)) {
          return; 
        }
     }
+    // =====================================================================
 
     if (isRenewal) {
       if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد!");
@@ -1960,7 +1981,7 @@ export default function ShubramiSystem() {
                        {isActiveContract && editContractStatus === "مؤجر" && (
                          <div className="md:col-span-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">🔒</span>
-                           <span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية لحماية استقرار السجلات. يمكنك فقط تغيير حالة المحل (كالإخلاء).</span>
+                           <span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية (الاسم، التواريخ، الرسوم، رقم العقد) لحماية استقرار السجلات. يمكنك فقط تغيير حالة المحل (كالإخلاء).</span>
                          </div>
                        )}
 
