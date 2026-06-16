@@ -13,6 +13,9 @@ const DashboardIndicators = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // === 1. المؤشرات اللحظية (لا تتأثر بالسنة المالية) ===
+
+  // تنبيهات الإخلاء (لحظي)
   const upcomingExpirations = shopsDB.filter(s => {
     if (s.status !== "مؤجر" || !s.endDate || s.endDate === "-") return false;
     const end = new Date(s.endDate);
@@ -21,6 +24,7 @@ const DashboardIndicators = ({
     return diffDays >= 0 && diffDays <= 60; 
   }).sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 
+  // التدفق النقدي القادم (لحظي)
   const next30Days = new Date(today);
   next30Days.setDate(next30Days.getDate() + 30);
 
@@ -45,27 +49,41 @@ const DashboardIndicators = ({
     }
   });
 
+  // معدل الإشغال الفعلي (لحظي)
+  const totalShops = 166;
+  const rentedShopsCount = statusCounts["مؤجر"] || 0;
+  const occupancyRate = ((rentedShopsCount / totalShops) * 100).toFixed(1);
+
+  // === 2. المؤشرات التاريخية (تتأثر بفلتر السنة المالية) ===
+
+  // كفاءة أداء التحصيل (مرتبط بالسنة المالية)
   let fullyPaid = 0;
   let partiallyPaid = 0;
   let unpaid = 0;
-  const activeContracts = shopsDB.filter(s => s.status === "مؤجر");
   
-  activeContracts.forEach(s => {
+  const contractsToAnalyze = shopsDB.filter(s => {
+    if (dashboardYear === "الكل") {
+      return s.status === "مؤجر"; // إذا كان "الكل"، نعرض العقود السارية حالياً
+    } else {
+      // إذا اختار سنة، نجلب العقود التي تداخلت مع هذه السنة
+      const startY = s.startDate && s.startDate !== "-" ? s.startDate.split("-")[0] : null;
+      const endY = s.endDate && s.endDate !== "-" ? s.endDate.split("-")[0] : null;
+      return startY === dashboardYear || endY === dashboardYear;
+    }
+  });
+  
+  contractsToAnalyze.forEach(s => {
     if (s.collected >= s.annualRent && s.annualRent > 0) fullyPaid++;
     else if (s.collected > 0) partiallyPaid++;
     else unpaid++;
   });
-
-  const totalShops = 166;
-  const rentedShopsCount = statusCounts["مؤجر"] || 0;
-  const occupancyRate = ((rentedShopsCount / totalShops) * 100).toFixed(1);
 
   return (
     <div className="space-y-5 mb-10 animate-fade-in text-sm">
       <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-300 shadow-md flex-wrap gap-4">
          <h3 className="text-lg font-bold text-slate-900">📊 لوحة المؤشرات المالية</h3>
          <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-300">
-            <label className="font-semibold text-slate-700 text-xs">تحديد السنة المالية:</label>
+            <label className="font-semibold text-slate-700 text-xs">تحديد السنة المالية للمؤشرات:</label>
             <select className="rounded border border-slate-400 p-1 bg-white text-slate-900 outline-none font-bold min-w-[90px] text-xs" value={dashboardYear} onChange={(e) => setDashboardYear(e.target.value)}>
               <option value="الكل">الكل (شامل)</option>
               {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
@@ -95,29 +113,7 @@ const DashboardIndicators = ({
       <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 mt-4">
          <div className="flex justify-between items-center mb-4">
            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-             <span>📈</span> توقعات التدفق النقدي
-           </h3>
-         </div>
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متأخرات مستحقة الدفع</p>
-               <p className="text-xl font-extrabold text-red-600">{overdueInstallments.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 30 يوم</p>
-               <p className="text-xl font-extrabold text-teal-700">{expected30Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 31 - 60 يوم</p>
-               <p className="text-xl font-extrabold text-blue-700">{expected31To60Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
-            </div>
-         </div>
-      </div>
-
-      <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 mt-4">
-         <div className="flex justify-between items-center mb-4">
-           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-             <span>🎯</span> كفاءة أداء التحصيل ({activeContracts.length} عقد ساري)
+             <span>🎯</span> كفاءة أداء التحصيل {dashboardYear !== 'الكل' ? <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">(لسنة {dashboardYear})</span> : <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">(للعقود السارية حالياً)</span>}
            </h3>
          </div>
          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -145,13 +141,37 @@ const DashboardIndicators = ({
          </div>
       </div>
 
+      <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 mt-4">
+         <div className="flex justify-between items-center mb-4">
+           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+             <span>📈</span> توقعات التدفق النقدي <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">مؤشر لحظي</span>
+           </h3>
+         </div>
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
+               <p className="text-slate-600 font-bold mb-1 text-xs">متأخرات مستحقة الدفع</p>
+               <p className="text-xl font-extrabold text-red-600">{overdueInstallments.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+            </div>
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
+               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 30 يوم</p>
+               <p className="text-xl font-extrabold text-teal-700">{expected30Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+            </div>
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
+               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 31 - 60 يوم</p>
+               <p className="text-xl font-extrabold text-blue-700">{expected31To60Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+            </div>
+         </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
         <div className="md:col-span-1 bg-white p-5 rounded-xl shadow-md border border-slate-300 flex flex-col justify-center">
-          <h3 className="text-base font-bold text-slate-900 mb-3 text-center">🏢 الإشغال ({totalShops} محل)</h3>
+          <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center justify-center gap-2">
+            🏢 الإشغال ({totalShops} محل) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
+          </h3>
           
           <div className="mb-5 px-1">
             <div className="flex justify-between text-xs font-bold mb-1">
-               <span className="text-slate-600">نسبة الإشغال</span>
+               <span className="text-slate-600">نسبة الإشغال اللحظية</span>
                <span className="text-blue-700">{occupancyRate}%</span>
             </div>
             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden border border-slate-300">
@@ -178,7 +198,7 @@ const DashboardIndicators = ({
         <div className="md:col-span-2 bg-white p-5 rounded-xl shadow-md border border-slate-300 flex flex-col">
           <div className="flex justify-between items-center mb-4">
              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-               <span>⚠️</span> عقود تنتهي قريباً (60 يوم)
+               <span>⚠️</span> عقود تنتهي قريباً (60 يوم) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
              </h3>
              <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold border border-red-200">
                {upcomingExpirations.length} محلات
@@ -1342,33 +1362,27 @@ export default function ShubramiSystem() {
        }
     }
 
-    // ================== الدرع المالي (المخالصة النهائية) ==================
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
        
-       // 1. فحص المبالغ المتبقية
        if (remainingBalance > 0) {
           return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).\nيرجى سداد المبلغ بالكامل أو تسجيله في (إدراج مديونية يدوية) قبل إخلاء المحل لتصفية الحسابات.`);
        }
 
-       // 2. فحص السندات المفتوحة
        const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
        if (openTx) {
           return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nالمحل مرتبط بسند قبض معلق برقم (${openTx.id}).\nيرجى التوجه لقسم (التحصيل وسندات القبض) وإغلاق السند أولاً.`);
        }
 
-       // 3. فحص الدفعات المجدولة
        const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
        if (pendingInst) {
           return alert(`🚫 منع إداري: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد استحقاق مجدول لهذا المحل بقيمة (${pendingInst.amount} ريال).\nيرجى التوجه لجدول (الاستحقاقات) وتأكيد سداده أو حذفه أولاً.`);
        }
 
-       // 4. إذا عبرت كل الفحوصات المالية، تظهر رسالة التأكيد
        const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك تغيير حالة المحل (${originalRow.shopNumber}) من "مؤجر" إلى "${editContractStatus}".\n\nهذا الإجراء سيؤدي إلى:\n1- إنهاء العقد الحالي فوراً.\n2- مسح بيانات المستأجر والتواريخ.\n3- إزالة العقد من (سجل العقود المؤجرة).\n\nهل أنت متأكد من رغبتك في الاستمرار وإخلاء المحل؟`;
        if (!window.confirm(confirmMsg)) {
          return; 
        }
     }
-    // =====================================================================
 
     if (isRenewal) {
       if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد!");
@@ -1968,13 +1982,6 @@ export default function ShubramiSystem() {
                          <div className="md:col-span-2 p-3 bg-amber-100 text-amber-800 rounded-lg border border-amber-300 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">⚠️</span>
                            <span>النظام رصد أن هذا العقد منتهي. الحفظ الآن سيقوم بإنشاء دورة تعاقدية جديدة منفصلة لحفظ السجل المالي، ويشترط إدخال رقم عقد وتواريخ جديدة.</span>
-                         </div>
-                       )}
-
-                       {isActiveContract && editContractStatus !== "مؤجر" && (
-                         <div className="md:col-span-2 p-3 bg-orange-100 text-orange-800 rounded-lg border border-orange-300 text-xs font-bold flex items-center gap-2">
-                           <span className="text-lg">⚠️</span>
-                           <span>تحذير: تغيير حالة العقد إلى ({editContractStatus}) سيؤدي إلى إنهاء العقد الحالي وإزالته من سجل العقود المؤجرة. سيتم تصفية بيانات المستأجر والتواريخ لتبدأ دورة جديدة للمحل.</span>
                          </div>
                        )}
 
