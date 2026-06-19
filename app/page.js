@@ -1319,6 +1319,13 @@ export default function ShubramiSystem() {
     e.preventDefault();
     if (!newContractShop || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تعبئة جميع البيانات بشكل صحيح، بما فيها رقم عقد إيجار");
     
+    // 🛡️ الحارس الزمني: فحص منطقية التواريخ
+    const startD = new Date(newContractStart);
+    const endD = new Date(newContractEnd);
+    if (endD <= startD) {
+        return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
+    }
+
     const updatedFields = {
       status: "مؤجر",
       tenant: newContractTenant,
@@ -1350,39 +1357,56 @@ export default function ShubramiSystem() {
     const isRenewal = isContractExpired(originalRow.endDate);
     const remainingBalance = originalRow.annualRent - originalRow.collected;
 
+    // 🛡️ الحارس الزمني: فحص منطقية التواريخ عند التعديل/التجديد
+    if (editContractStatus === "مؤجر" && editContractStart && editContractEnd) {
+       const startD = new Date(editContractStart);
+       const endD = new Date(editContractEnd);
+       if (endD <= startD) {
+           return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
+       }
+    }
+
+    // حماية محاسبية: يمنع تجديد أو تعديل تواريخ/رقم عقد ساري وعليه مديونية
     if (!isRenewal && remainingBalance > 0) {
        if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
            return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
        }
     }
 
+    // حماية إدارية ومحاسبية: يمنع تعديل بيانات/تواريخ عقد ساري نهائياً
     if (!isRenewal && editContractStatus === "مؤجر") {
        if (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent) {
            return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات!\nإذا أردت إجراء تغيير جذري في العقد، يجب إنهاء العقد الحالي أو الانتظار حتى انتهائه.");
        }
     }
 
+    // ================== الدرع المالي (المخالصة النهائية عند الإخلاء) ==================
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
        
+       // 1. فحص المبالغ المتبقية
        if (remainingBalance > 0) {
           return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).\nيرجى سداد المبلغ بالكامل أو تسجيله في (إدراج مديونية يدوية) قبل إخلاء المحل لتصفية الحسابات.`);
        }
 
+       // 2. فحص السندات المعلقة
        const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
        if (openTx) {
           return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nالمحل مرتبط بسند قبض معلق برقم (${openTx.id}).\nيرجى التوجه لقسم (التحصيل وسندات القبض) وإغلاق السند أولاً.`);
        }
 
+       // 3. فحص الاستحقاقات المجدولة
        const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
        if (pendingInst) {
           return alert(`🚫 منع إداري: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد استحقاق مجدول لهذا المحل بقيمة (${pendingInst.amount} ريال).\nيرجى التوجه لجدول (الاستحقاقات) وتأكيد سداده أو حذفه أولاً.`);
        }
 
+       // 4. رسالة التأكيد بعد اجتياز الفحوصات
        const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك تغيير حالة المحل (${originalRow.shopNumber}) من "مؤجر" إلى "${editContractStatus}".\n\nهذا الإجراء سيؤدي إلى:\n1- إنهاء العقد الحالي فوراً.\n2- مسح بيانات المستأجر والتواريخ.\n3- إزالة العقد من (سجل العقود المؤجرة).\n\nهل أنت متأكد من رغبتك في الاستمرار وإخلاء المحل؟`;
        if (!window.confirm(confirmMsg)) {
          return; 
        }
     }
+    // =================================================================================
 
     if (isRenewal) {
       if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد!");
