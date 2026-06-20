@@ -13,9 +13,6 @@ const DashboardIndicators = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // === 1. المؤشرات اللحظية (لا تتأثر بالسنة المالية) ===
-
-  // تنبيهات الإخلاء (لحظي)
   const upcomingExpirations = shopsDB.filter(s => {
     if (s.status !== "مؤجر" || !s.endDate || s.endDate === "-") return false;
     const end = new Date(s.endDate);
@@ -24,7 +21,6 @@ const DashboardIndicators = ({
     return diffDays >= 0 && diffDays <= 60; 
   }).sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
 
-  // التدفق النقدي القادم (لحظي)
   const next30Days = new Date(today);
   next30Days.setDate(next30Days.getDate() + 30);
 
@@ -49,23 +45,18 @@ const DashboardIndicators = ({
     }
   });
 
-  // معدل الإشغال الفعلي (لحظي)
   const totalShops = 166;
-  const rentedShopsCount = statusCounts["مؤجر"] || 0;
+  const rentedShopsCount = (statusCounts["مؤجر"] || 0) + (statusCounts["مدمج"] || 0);
   const occupancyRate = ((rentedShopsCount / totalShops) * 100).toFixed(1);
 
-  // === 2. المؤشرات التاريخية (تتأثر بفلتر السنة المالية) ===
-
-  // كفاءة أداء التحصيل (مرتبط بالسنة المالية)
   let fullyPaid = 0;
   let partiallyPaid = 0;
   let unpaid = 0;
   
   const contractsToAnalyze = shopsDB.filter(s => {
     if (dashboardYear === "الكل") {
-      return s.status === "مؤجر"; // إذا كان "الكل"، نعرض العقود السارية حالياً
+      return s.status === "مؤجر"; 
     } else {
-      // إذا اختار سنة، نجلب العقود التي تداخلت مع هذه السنة
       const startY = s.startDate && s.startDate !== "-" ? s.startDate.split("-")[0] : null;
       const endY = s.endDate && s.endDate !== "-" ? s.endDate.split("-")[0] : null;
       return startY === dashboardYear || endY === dashboardYear;
@@ -84,7 +75,11 @@ const DashboardIndicators = ({
          <h3 className="text-lg font-bold text-slate-900">📊 لوحة المؤشرات المالية</h3>
          <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-300">
             <label className="font-semibold text-slate-700 text-xs">تحديد السنة المالية للمؤشرات:</label>
-            <select className="rounded border border-slate-400 p-1 bg-white text-slate-900 outline-none font-bold min-w-[90px] text-xs" value={dashboardYear} onChange={(e) => setDashboardYear(e.target.value)}>
+            <select 
+              className="rounded border border-slate-400 p-1 bg-white text-slate-900 outline-none font-bold min-w-[90px] text-xs" 
+              value={dashboardYear} 
+              onChange={(e) => setDashboardYear(e.target.value)}
+            >
               <option value="الكل">الكل (شامل)</option>
               {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -181,8 +176,8 @@ const DashboardIndicators = ({
 
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center p-2 bg-slate-50 rounded border border-slate-300">
-              <span className="text-slate-700 font-semibold text-xs">مؤجر</span>
-              <span className="text-sm font-bold text-teal-700">{statusCounts["مؤجر"] || 0}</span>
+              <span className="text-slate-700 font-semibold text-xs">مؤجر (شامل المدمج)</span>
+              <span className="text-sm font-bold text-teal-700">{rentedShopsCount}</span>
             </div>
             <div className="flex justify-between items-center p-2 bg-slate-50 rounded border border-slate-300">
               <span className="text-slate-700 font-semibold text-xs">شاغر</span>
@@ -201,7 +196,7 @@ const DashboardIndicators = ({
                <span>⚠️</span> عقود تنتهي قريباً (60 يوم) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
              </h3>
              <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold border border-red-200">
-               {upcomingExpirations.length} محلات
+               {upcomingExpirations.length} كيانات/عقود
              </span>
           </div>
           
@@ -211,8 +206,7 @@ const DashboardIndicators = ({
                 <table className="w-full text-right text-slate-800 text-xs">
                   <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
                     <tr>
-                      <th className="p-2 font-semibold">المحل</th>
-                      <th className="p-2 font-semibold">المستأجر</th>
+                      <th className="p-2 font-semibold">المستأجر (الكيان המوحد)</th>
                       <th className="p-2 font-semibold">النهاية</th>
                       <th className="p-2 font-semibold">المتبقي</th>
                       <th className="p-2 font-semibold text-red-600">مديونية</th>
@@ -224,10 +218,11 @@ const DashboardIndicators = ({
                       const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
                       const remainingRent = shop.annualRent - shop.collected;
                       
+                      const displayName = shop.isGroupMain ? `${shop.tenant} (${shop.groupShops.join('، ')})` : `${shop.tenant} (${shop.shopNumber})`;
+
                       return (
                         <tr key={shop.id} className="border-b border-slate-200 hover:bg-slate-100">
-                          <td className="p-2 font-bold text-slate-900">{shop.shopNumber}</td>
-                          <td className="p-2 truncate max-w-[100px]" title={shop.tenant}>{shop.tenant}</td>
+                          <td className="p-2 font-bold text-slate-900 truncate max-w-[150px]" title={displayName}>{displayName}</td>
                           <td className="p-2 text-slate-700">{shop.endDate}</td>
                           <td className="p-2 font-bold text-amber-600">{diffDays} يوم</td>
                           <td className="p-2 font-bold text-red-600">{remainingRent.toLocaleString()} ريال</td>
@@ -272,15 +267,16 @@ const FinancialCollection = ({
 
       {paymentSubTab === "new" && (
         <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المحل (العقود السارية):</label>
+          <div className="md:col-span-2">
+            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف (العقود السارية המوحدة):</label>
             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
-              <option value="">-- اختر المحل --</option>
+              <option value="">-- اختر المستأجر / العقد --</option>
               {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => {
                 const isFullyPaid = s.collected >= s.annualRent;
+                const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
                 return (
                   <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
-                    {s.shopNumber} - {s.tenant} {isFullyPaid ? "(مسدد 🚫)" : ""}
+                    {displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}
                   </option>
                 );
               })}
@@ -289,7 +285,9 @@ const FinancialCollection = ({
           <div>
             <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
-              <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
+              <option value="نقد">نقد</option>
+              <option value="إيداع بنكي">إيداع بنكي</option>
+              <option value="حوالة بنكية">حوالة بنكية</option>
             </select>
           </div>
           <div>
@@ -310,7 +308,7 @@ const FinancialCollection = ({
             <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر السند المفتوح:</label>
             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
               <option value="">-- السندات المعلقة --</option>
-              {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.shop} (متبقي: {t.remainingAmount})</option>)}
+              {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.tenant} (متبقي: {t.remainingAmount})</option>)}
             </select>
           </div>
           {updatePayReceipt && (
@@ -318,7 +316,9 @@ const FinancialCollection = ({
               <div>
                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
                 <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
-                  <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
+                  <option value="نقد">نقد</option>
+                  <option value="إيداع بنكي">إيداع بنكي</option>
+                  <option value="حوالة بنكية">حوالة بنكية</option>
                 </select>
               </div>
               <div>
@@ -335,14 +335,15 @@ const FinancialCollection = ({
          <div>
            <form onSubmit={handleNewInstallment} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-100 p-4 rounded-xl border border-slate-300">
               <div>
-                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تحديد المحل:</label>
+                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف:</label>
                 <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
-                  <option value="">-- المحل --</option>
+                  <option value="">-- اختر المستأجر / العقد --</option>
                   {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => {
                     const isFullyPaid = s.collected >= s.annualRent;
+                    const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
                     return (
                       <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
-                        {s.shopNumber} - {s.tenant} {isFullyPaid ? "(مسدد 🚫)" : ""}
+                        {displayName} {isFullyPaid ? " - (مسدد 🚫)" : ""}
                       </option>
                     );
                   })}
@@ -368,21 +369,20 @@ const FinancialCollection = ({
              <table className="w-full text-right text-slate-800 text-xs">
                <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
                  <tr>
-                   <th className="p-3 font-semibold">المحل</th>
-                   <th className="p-3 font-semibold">المستأجر</th>
+                   <th className="p-3 font-semibold">المستأجر (الكيان)</th>
                    <th className="p-3 font-semibold text-blue-700">المبلغ</th>
                    <th className="p-3 font-semibold text-teal-700">التاريخ</th>
                    <th className="p-3 font-semibold">المحصل الكلي</th>
-                   <th className="p-3 font-semibold text-red-600">المتبقي</th>
+                   <th className="p-3 font-semibold text-red-600">المتبقي من العقد</th>
                    <th className="p-3 font-semibold text-center">الإجراء</th>
                  </tr>
                </thead>
                <tbody>
                  {installmentsDB.length === 0 ? (
-                   <tr><td colSpan="7" className="p-4 text-center text-slate-500">لا توجد دفعات مجدولة حالياً.</td></tr>
+                   <tr><td colSpan="6" className="p-4 text-center text-slate-500">لا توجد دفعات مجدولة حالياً.</td></tr>
                  ) : (
                    installmentsDB.map(inst => {
-                     const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
+                     const shopData = shopsDB.find(s => s.shopNumber === inst.shop) || {};
                      const collected = shopData.collected || 0;
                      const remaining = (shopData.annualRent || 0) - collected;
                      
@@ -390,10 +390,11 @@ const FinancialCollection = ({
                      instDateObj.setHours(0, 0, 0, 0);
                      const isDueOrOverdue = instDateObj <= todayDateObj;
 
+                     const displayName = shopData.isGroupMain ? `${shopData.tenant} (${shopData.groupShops?.join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
+
                      return (
                        <tr key={inst.id} className="border-b border-slate-200 hover:bg-slate-100">
-                         <td className="p-3 font-bold">{inst.shop}</td>
-                         <td className="p-3 text-slate-600">{shopData.tenant || "-"}</td>
+                         <td className="p-3 font-bold">{displayName}</td>
                          <td className="p-3 font-bold text-blue-700">{inst.amount.toLocaleString()} ريال</td>
                          <td className="p-3 font-bold">{inst.date}</td>
                          <td className="p-3 text-teal-700">{collected.toLocaleString()} ريال</td>
@@ -471,8 +472,7 @@ const FinancialCollection = ({
             <tr>
               <th className="p-3 font-semibold">السند</th>
               <th className="p-3 font-semibold">الاعتماد</th>
-              <th className="p-3 font-semibold">المحل</th>
-              <th className="p-3 font-semibold">المستأجر</th>
+              <th className="p-3 font-semibold">المستأجر (الكيان)</th>
               <th className="p-3 font-semibold">المطلوب</th>
               <th className="p-3 font-semibold text-teal-700">المدفوع</th>
               <th className="p-3 font-semibold text-red-600">المتبقي</th>
@@ -487,8 +487,7 @@ const FinancialCollection = ({
                   <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-100">
                     <td className="p-3 font-bold text-slate-900">{t.id}</td>
                     <td className="p-3 text-slate-600">{t.updateDate}</td>
-                    <td className="p-3">{t.shop}</td>
-                    <td className="p-3 text-slate-600 truncate max-w-[100px]" title={t.tenant}>{t.tenant}</td>
+                    <td className="p-3 text-slate-600 truncate max-w-[150px]" title={t.tenant}>{t.tenant}</td>
                     <td className="p-3">{t.targetAmount.toLocaleString()}</td>
                     <td className="p-3 font-bold text-teal-700">{t.paidAmount.toLocaleString()}</td>
                     <td className="p-3 font-bold text-red-600">{t.remainingAmount.toLocaleString()}</td>
@@ -501,7 +500,7 @@ const FinancialCollection = ({
                   </tr>
                 ))}
                 <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900">
-                    <td className="p-3" colSpan="4">المجموع للفرز الحالي</td>
+                    <td className="p-3" colSpan="3">المجموع للفرز الحالي</td>
                     <td className="p-3">{filteredTxTargetSum.toLocaleString()}</td>
                     <td className="p-3 text-teal-700">{filteredTxPaidSum.toLocaleString()}</td>
                     <td className="p-3 text-red-600">{filteredTxRemainingSum.toLocaleString()}</td>
@@ -517,7 +516,6 @@ const FinancialCollection = ({
     </div>
   );
 };
-
 // ==================== المكوّن الرئيسي للمشروع ====================
 export default function ShubramiSystem() {
   const [loading, setLoading] = useState(true);
@@ -556,7 +554,9 @@ export default function ShubramiSystem() {
   const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
   const [searchReceipt, setSearchReceipt] = useState(""); 
 
-  const [newContractShop, setNewContractShop] = useState("");
+  // --- حالات إدخال العقد الجديد مع الملصقات الذكية ---
+  const [newContractShops, setNewContractShops] = useState([]); 
+  const [shopInputValue, setShopInputValue] = useState(""); 
   const [newContractTenant, setNewContractTenant] = useState("");
   const [newContractEjarNumber, setNewContractEjarNumber] = useState(""); 
   const [newContractRent, setNewContractRent] = useState(15000);
@@ -616,7 +616,9 @@ export default function ShubramiSystem() {
           annualRent: 15000,
           startDate: "-",
           endDate: "-",
-          collected: 0
+          collected: 0,
+          isGroupMain: false,
+          groupShops: null
         }));
         await supabase.from('shops').insert(generatedShops);
         const { data: updatedShops } = await supabase.from('shops').select('*');
@@ -799,16 +801,19 @@ export default function ShubramiSystem() {
   });
 
   const expiredShopsDebts = shopsDB
-    .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected)
-    .map(s => ({
-      id: s.id,
-      label: s.shopNumber,
-      year: s.endDate,
-      tenant: s.tenant,
-      details: `عقد منتهي يتطلب تجديد - ${s.shopNumber}`,
-      amount: s.annualRent - s.collected,
-      isShopDebt: true
-    }));
+    .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected && s.status !== "مدمج")
+    .map(s => {
+      const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+      return {
+        id: s.id,
+        label: s.shopNumber,
+        year: s.endDate,
+        tenant: displayName,
+        details: `عقد منتهي يتطلب تجديد - ${s.shopNumber}`,
+        amount: s.annualRent - s.collected,
+        isShopDebt: true
+      };
+    });
 
   const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => ({ ...d, isShopDebt: false }));
   const allOutstandingDebts = [...expiredShopsDebts, ...manualDebts];
@@ -836,6 +841,484 @@ export default function ShubramiSystem() {
     setPayingInstId(instId); 
   };
 
+  // --- دوال الملصقات الذكية (Smart Tags) ---
+  const handleAddShopTag = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = shopInputValue.trim();
+      if (!val) return;
+      
+      const formattedVal = val.startsWith("محل") ? val : `محل ${val}`;
+      
+      const shopExists = shopsDB.find(s => s.shopNumber === formattedVal && s.status === "شاغر");
+      if (!shopExists) return alert(`المحل ${formattedVal} غير متاح أو غير موجود. تأكد أنه شاغر.`);
+      if (newContractShops.includes(formattedVal)) return alert(`المحل ${formattedVal} مضاف مسبقاً للقائمة.`);
+
+      setNewContractShops([...newContractShops, formattedVal]);
+      setShopInputValue("");
+    }
+  };
+  const removeShopTag = (shopNum) => setNewContractShops(newContractShops.filter(s => s !== shopNum));
+
+  // --- دالة الحفظ مع الملصقات والحارس الزمني ---
+  const handleNewContract = async (e) => {
+    e.preventDefault();
+    if (newContractShops.length === 0 || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") {
+        return alert("الرجاء تعبئة جميع البيانات واختيار محل واحد على الأقل من خلال حقل التأجير المجمع.");
+    }
+    
+    // 🛡️ الحارس الزمني
+    const startD = new Date(newContractStart);
+    const endD = new Date(newContractEnd);
+    if (endD <= startD) {
+        return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
+    }
+
+    const mainShopName = newContractShops[0];
+    
+    const mainUpdate = {
+      status: "مؤجر",
+      tenant: newContractTenant,
+      ejarNumber: newContractEjarNumber,
+      annualRent: Number(newContractRent),
+      startDate: newContractStart,
+      endDate: newContractEnd,
+      isGroupMain: newContractShops.length > 1, 
+      groupShops: newContractShops.length > 1 ? newContractShops : null
+    };
+
+    const dependentUpdate = {
+      status: "مدمج",
+      tenant: newContractTenant,
+      ejarNumber: newContractEjarNumber,
+      annualRent: 0,
+      startDate: newContractStart,
+      endDate: newContractEnd,
+      isGroupMain: false, 
+      groupShops: newContractShops
+    };
+
+    for (const shopNum of newContractShops) {
+       const shopRecord = shopsDB.find(s => s.shopNumber === shopNum);
+       const payload = shopNum === mainShopName ? mainUpdate : dependentUpdate;
+       await supabase.from('shops').update(payload).eq('id', shopRecord.id);
+    }
+
+    setShopsDB(shopsDB.map(s => {
+       if (newContractShops.includes(s.shopNumber)) return { ...s, ...(s.shopNumber === mainShopName ? mainUpdate : dependentUpdate) };
+       return s;
+    }));
+
+    setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
+    alert(`تم حفظ العقد واعتماد الكيان الموحد بنجاح!`);
+  };
+
+  // --- دالة التعديل والإخلاء للكيان الموحد ---
+  const handleEditContract = async (e) => {
+    e.preventDefault();
+    if (!editContractId) return alert("الرجاء تحديد الكيان أولاً");
+
+    const originalRow = shopsDB.find(s => s.id === editContractId);
+    if (!originalRow) return;
+
+    const isRenewal = isContractExpired(originalRow.endDate);
+    const remainingBalance = originalRow.annualRent - originalRow.collected;
+
+    // 🛡️ الحارس الزمني
+    if (editContractStatus === "مؤجر" && editContractStart && editContractEnd) {
+       const startD = new Date(editContractStart);
+       const endD = new Date(editContractEnd);
+       if (endD <= startD) {
+           return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
+       }
+    }
+
+    if (!isRenewal && remainingBalance > 0) {
+       if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
+           return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
+       }
+    }
+
+    if (!isRenewal && editContractStatus === "مؤجر") {
+       if (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent) {
+           return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول.");
+       }
+    }
+
+    // ================== الدرع المالي والإخلاء المجمع ==================
+    if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
+       
+       if (remainingBalance > 0) {
+          return alert(`🚫 منع مالي: لا يمكن تحويل الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`);
+       }
+
+       const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
+       if (openTx) {
+          return alert(`🚫 منع مالي: الكيان مرتبط بسند معلق برقم (${openTx.id}). يرجى إغلاقه أولاً.`);
+       }
+
+       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
+       if (pendingInst) {
+          return alert(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`);
+       }
+
+       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان وتفكيك المحلات المدمجة لإرجاعها لحالة (شاغر).\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
+       if (!window.confirm(confirmMsg)) {
+         return; 
+       }
+
+       const groupToUpdate = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
+       const updatedFields = { 
+           status: editContractStatus, tenant: "-", ejarNumber: "-", 
+           annualRent: 0, startDate: "-", endDate: "-", 
+           isGroupMain: false, groupShops: null, collected: 0 
+       };
+       
+       for (const sNum of groupToUpdate) {
+          const shopToUpdate = shopsDB.find(s => s.shopNumber === sNum && s.status !== "شاغر");
+          if(shopToUpdate) await supabase.from('shops').update(updatedFields).eq('id', shopToUpdate.id);
+       }
+       setShopsDB(shopsDB.map(s => groupToUpdate.includes(s.shopNumber) ? { ...s, ...updatedFields } : s));
+       return alert("تم إخلاء الكيان وتفكيك المحلات بنجاح!");
+    }
+
+    // ================== التجديد للكيان الموحد ==================
+    if (isRenewal) {
+      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: يجب إدخال رقم عقد إيجار جديد!");
+      if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
+      if (!editContractStart || !editContractEnd) return alert("خطأ: الرجاء إدخال تاريخ بداية ونهاية العقد الجديد!");
+      if (editContractStart === originalRow.startDate || editContractEnd === originalRow.endDate) return alert("خطأ: يلزم تعديل تواريخ البداية والنهاية للتجديد!");
+
+      const groupToRenew = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
+      const newRows = [];
+      
+      for (let i = 0; i < groupToRenew.length; i++) {
+         const isMain = i === 0;
+         newRows.push({
+            id: `row-${Date.now()}-${i}`, 
+            shopNumber: groupToRenew[i],
+            area: 60,
+            status: isMain ? "مؤجر" : "مدمج",
+            tenant: editContractTenant,
+            ejarNumber: editContractEjarNumber,
+            annualRent: isMain ? Number(editContractRent) : 0,
+            startDate: editContractStart,
+            endDate: editContractEnd,
+            collected: 0,
+            isGroupMain: groupToRenew.length > 1 ? isMain : false,
+            groupShops: groupToRenew.length > 1 ? groupToRenew : null
+         });
+      }
+
+      const { error } = await supabase.from('shops').insert(newRows);
+      if (!error) {
+        setShopsDB([...shopsDB, ...newRows]);
+        alert(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`);
+        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+      }
+    } else {
+      await supabase.from('shops').update({ status: editContractStatus }).eq('id', editContractId);
+      setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, status: editContractStatus } : s));
+      alert("تم تحديث حالة العقد على السحابة بنجاح!");
+    }
+  };
+
+  const handleNewPayment = async (e) => {
+    e.preventDefault();
+    if (!newPayShop) return;
+    
+    const targetNum = Number(newPayTarget);
+    const amountNum = Number(newPayAmount);
+
+    if (amountNum > targetNum) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
+    
+    const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
+    if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا الكيان لتسجيل الدفعة عليه.");
+
+    if (activeShop.collected >= activeShop.annualRent) {
+      return alert("هذا العقد مسدد بالكامل ولا يمكن تسجيل دفعات إضافية عليه!");
+    }
+
+    if (activeShop.collected + amountNum > activeShop.annualRent) {
+      const actualRemaining = activeShop.annualRent - activeShop.collected;
+      return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية للكيان!\n\nالمتبقي الفعلي للإيجار هو: ${actualRemaining} ريال فقط.`);
+    }
+
+    const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
+    if (existingOpen) return alert(`الكيان مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
+
+    const remaining = targetNum - amountNum;
+    const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
+    
+    const displayTenantName = activeShop.isGroupMain ? `${activeShop.tenant} (${activeShop.groupShops.join('، ')})` : `${activeShop.tenant} (${activeShop.shopNumber})`;
+
+    const newTx = {
+      id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
+      startDate: new Date().toISOString().split('T')[0],
+      updateDate: new Date().toISOString().split('T')[0],
+      shop: newPayShop,
+      tenant: displayTenantName,
+      targetAmount: targetNum,
+      paidAmount: amountNum,
+      remainingAmount: remaining,
+      method: newPayMethod,
+      status: status
+    };
+
+    const { error: txErr } = await supabase.from('transactions').insert([newTx]);
+    
+    if (!txErr) {
+      const updatedCollected = activeShop.collected + amountNum;
+      await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
+      
+      const instToDelete = payingInstId 
+          ? installmentsDB.find(i => i.id === payingInstId)
+          : installmentsDB.find(i => i.shop === activeShop.shopNumber);
+
+      if (instToDelete) {
+         await supabase.from('installments').delete().eq('id', instToDelete.id);
+         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
+      }
+      setPayingInstId(""); 
+
+      setTransactionsDB([...transactionsDB, newTx]); 
+      setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
+      
+      alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.");
+    }
+  };
+
+  const handleUpdatePayment = async (e) => {
+    e.preventDefault();
+    if (!updatePayReceipt) return;
+    const tx = transactionsDB.find(t => t.id === updatePayReceipt);
+    if (!tx) return;
+    if (Number(updatePayAmount) > tx.remainingAmount) return alert("خطأ: المدفوع أكبر من المتبقي في هذا السند!");
+
+    const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
+    
+    if (activeShop && (activeShop.collected + Number(updatePayAmount) > activeShop.annualRent)) {
+        const actualRemaining = activeShop.annualRent - activeShop.collected;
+        return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية للكيان!\n\nالمتبقي الفعلي هو: ${actualRemaining} ريال فقط.`);
+    }
+
+    const updatedPaid = tx.paidAmount + Number(updatePayAmount);
+    const updatedRemaining = tx.targetAmount - updatedPaid;
+    const updatedStatus = updatedRemaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
+    const newMethod = tx.method.includes(updatePayMethod) ? tx.method : `${tx.method} و ${updatePayMethod}`;
+
+    const updatedTx = { 
+      paidAmount: updatedPaid, 
+      remainingAmount: updatedRemaining, 
+      status: updatedStatus, 
+      method: newMethod, 
+      updateDate: new Date().toISOString().split('T')[0] 
+    };
+
+    const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', updatePayReceipt);
+    if (!txErr) {
+      if (activeShop) {
+        const updatedCollected = activeShop.collected + Number(updatePayAmount);
+        await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
+        setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
+      }
+
+      const instToDelete = installmentsDB.find(i => i.shop === tx.shop);
+      if (instToDelete) {
+         await supabase.from('installments').delete().eq('id', instToDelete.id);
+         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
+      }
+
+      setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
+      alert("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.");
+    }
+  };
+
+  const handleDebt = async (e) => {
+    e.preventDefault();
+    const newDebt = { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) };
+    
+    const { error } = await supabase.from('debts').insert([newDebt]);
+    if (!error) {
+      setDebtsDB([...debtsDB, newDebt]);
+      setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
+      alert("تم إدراج المديونية السابقة في قاعدة البيانات السحابية.");
+    }
+  };
+
+  const handleDebtPayment = async (e) => {
+    e.preventDefault();
+    if (!payDebtId) return;
+    const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
+    if (!targetDebt) return;
+    const payAmt = Number(payDebtAmount);
+    if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية!");
+
+    const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
+
+    if (existingTxIndex >= 0) {
+      const existingTx = transactionsDB[existingTxIndex];
+      const updatedPaid = existingTx.paidAmount + payAmt;
+      const updatedRemaining = existingTx.targetAmount - updatedPaid;
+      const newMethod = existingTx.method.includes(payDebtMethod) ? existingTx.method : `${existingTx.method} و ${payDebtMethod}`;
+
+      const updatedTx = {
+        paidAmount: updatedPaid,
+        remainingAmount: updatedRemaining,
+        method: newMethod,
+        updateDate: new Date().toISOString().split('T')[0],
+        status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
+      };
+
+      await supabase.from('transactions').update(updatedTx).eq('id', existingTx.id);
+      const newTxDB = [...transactionsDB];
+      newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
+      setTransactionsDB(newTxDB);
+    } else {
+      const newTx = {
+        id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
+        referenceId: targetDebt.id,
+        isDebtReceipt: true,
+        startDate: new Date().toISOString().split('T')[0],
+        updateDate: new Date().toISOString().split('T')[0],
+        shop: targetDebt.isShopDebt ? targetDebt.label : `مديونية سابقة`,
+        tenant: targetDebt.tenant,
+        targetAmount: targetDebt.amount,
+        paidAmount: payAmt,
+        remainingAmount: targetDebt.amount - payAmt,
+        method: payDebtMethod,
+        status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
+      };
+      await supabase.from('transactions').insert([newTx]);
+      setTransactionsDB([...transactionsDB, newTx]);
+    }
+
+    if (targetDebt.isShopDebt) {
+      const currentShop = shopsDB.find(s => s.id === targetDebt.id);
+      const newCollected = (currentShop?.collected || 0) + payAmt;
+      await supabase.from('shops').update({ collected: newCollected }).eq('id', targetDebt.id);
+      setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: newCollected } : s));
+    } else {
+      await supabase.from('debts').update({ amount: targetDebt.amount - payAmt }).eq('id', targetDebt.id);
+      setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
+    }
+
+    alert(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند سحابياً.");
+    setPayDebtId(""); setPayDebtAmount("");
+  };
+
+  const handleExpense = async (e) => {
+    e.preventDefault();
+    const newExpense = { id: `E-${Date.now()}`, date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes };
+    
+    const { error } = await supabase.from('expenses').insert([newExpense]);
+    if (!error) {
+      setExpensesDB([...expensesDB, newExpense]);
+      setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
+      alert("تم تسجيل وتوثيق المصروف سحابياً.");
+    }
+  };
+
+  const handleNewInstallment = async (e) => {
+    e.preventDefault();
+    if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
+
+    const newInst = {
+      id: `INST-${Date.now()}`,
+      shop: instShop,
+      amount: Number(instAmount),
+      date: instDate
+    };
+
+    const { error } = await supabase.from('installments').insert([newInst]);
+    if (!error) {
+      setInstallmentsDB([...installmentsDB, newInst]);
+      setInstShop(""); setInstAmount(""); setInstDate("");
+      alert("تمت جدولة استحقاق الدفعة القادمة بنجاح!");
+    } else {
+      alert("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟");
+    }
+  };
+
+  const handleDeleteInstallment = async (id) => {
+    if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
+      const { error = null } = await supabase.from('installments').delete().eq('id', id);
+      if (!error) {
+        setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
+      }
+    }
+  };
+
+  const filteredTxForDash = dashboardYear === "الكل" ? transactionsDB : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
+  const filteredExpForDash = dashboardYear === "الكل" ? expensesDB : expensesDB.filter(e => getYear(e.date) === dashboardYear);
+  const filteredDebtsForDash = dashboardYear === "الكل" ? allOutstandingDebts : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
+
+  const dashTotalCollected = filteredTxForDash.reduce((sum, t) => sum + t.paidAmount, 0);
+  const dashTotalExpenses = filteredExpForDash.reduce((sum, e) => sum + e.amount, 0);
+  const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
+  const dashNetIncome = dashTotalCollected - dashTotalExpenses;
+
+  const latestShopRecords = {};
+  shopsDB.forEach(shop => {
+    const currentIdNum = parseInt(String(shop.id).replace(/\D/g, '')) || 0;
+    const existingIdNum = latestShopRecords[shop.shopNumber] 
+      ? (parseInt(String(latestShopRecords[shop.shopNumber].id).replace(/\D/g, '')) || 0) 
+      : -1;
+    
+    if (!latestShopRecords[shop.shopNumber] || currentIdNum > existingIdNum) {
+      latestShopRecords[shop.shopNumber] = shop;
+    }
+  });
+
+  const statusCounts = { "مؤجر": 0, "شاغر": 0, "تحت الصيانة": 0, "مدمج": 0 };
+  Object.values(latestShopRecords).forEach(shop => {
+    statusCounts[shop.status] = (statusCounts[shop.status] || 0) + 1;
+  });
+
+  const filteredRentedShops = shopsDB.filter(s => {
+    if (s.status !== "مؤجر" && s.status !== "مدمج") return false;
+    const isExpired = isContractExpired(s.endDate);
+    if (filterContractStatus === "ساري" && isExpired) return false;
+    if (filterContractStatus === "منتهي" && !isExpired) return false;
+    if (filterContractYear !== "الكل") {
+      const startY = getYear(s.startDate) || "";
+      const endY = getYear(s.endDate) || "";
+      if (startY !== filterContractYear && endY !== filterContractYear) return false;
+    }
+    const searchLower = searchContract.toLowerCase().trim();
+    if (searchLower !== "") {
+      const matchShop = String(s.shopNumber).toLowerCase().includes(searchLower);
+      const matchTenant = String(s.tenant).toLowerCase().includes(searchLower);
+      const matchEjar = String(s.ejarNumber).toLowerCase().includes(searchLower);
+      if (!matchShop && !matchTenant && !matchEjar) return false;
+    }
+    return true;
+  });
+
+  const totalRentSum = filteredRentedShops.filter(s => s.status === "مؤجر").reduce((sum, s) => sum + s.annualRent, 0);
+  const totalCollectedSum = filteredRentedShops.filter(s => s.status === "مؤجر").reduce((sum, s) => sum + s.collected, 0);
+  const totalRemainingSum = totalRentSum - totalCollectedSum;
+
+  const filteredTransactions = transactionsDB.filter(t => {
+    const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
+    const parts = String(t.id).split('-');
+    const txYear = parts.length > 1 ? parts[1] : null;
+    const yearMatch = filterReceiptYear === "الكل" || txYear === filterReceiptYear;
+    const searchLower = searchReceipt.toLowerCase().trim();
+    const searchMatch = searchLower === "" || 
+                        String(t.id).toLowerCase().includes(searchLower) || 
+                        String(t.shop).toLowerCase().includes(searchLower) || 
+                        String(t.tenant).toLowerCase().includes(searchLower);
+    return statusMatch && yearMatch && searchMatch;
+  });
+
+  const filteredTxTargetSum = filteredTransactions.reduce((sum, t) => sum + t.targetAmount, 0);
+  const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
+  const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
+
+  // ==========================================
+  // جميع دوال الطباعة والتصدير الأصلية بالكامل
+  // ==========================================
   const printInstallmentsPDF = (data) => {
     if (data.length === 0) return alert("لا توجد دفعات مجدولة للطباعة حالياً");
     const printWindow = window.open('', '_blank');
@@ -864,23 +1347,24 @@ export default function ShubramiSystem() {
           <table>
               <thead>
                   <tr>
-                      <th>رقم المحل</th>
+                      <th>رقم المحل (الكيان)</th>
                       <th>المستأجر</th>
                       <th>مبلغ الدفعة القادمة</th>
                       <th>تاريخ الاستحقاق</th>
-                      <th>إجمالي المحصل من المحل</th>
-                      <th>إجمالي المتبقي على المحل</th>
+                      <th>إجمالي المحصل</th>
+                      <th>إجمالي المتبقي</th>
                   </tr>
               </thead>
               <tbody>
                   ${data.map(inst => {
-                      const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
+                      const shopData = shopsDB.find(s => s.shopNumber === inst.shop) || {};
                       const collected = shopData.collected || 0;
                       const remaining = (shopData.annualRent || 0) - collected;
+                      const displayName = shopData.isGroupMain ? `${shopData.tenant} (${shopData.groupShops?.join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
                       return `
                       <tr>
                           <td><b>${inst.shop}</b></td>
-                          <td>${shopData.tenant || "-"}</td>
+                          <td>${displayName}</td>
                           <td class="text-blue">${inst.amount.toLocaleString()} ريال</td>
                           <td>${inst.date}</td>
                           <td class="text-green">${collected.toLocaleString()} ريال</td>
@@ -925,7 +1409,7 @@ export default function ShubramiSystem() {
                   <tr>
                       <th>المعرف / رقم المحل</th>
                       <th>تاريخ نهاية العقد / السنة</th>
-                      <th>المستأجر</th>
+                      <th>المستأجر (الكيان)</th>
                       <th>التفاصيل</th>
                       <th>المبلغ المتبقي</th>
                   </tr>
@@ -951,8 +1435,12 @@ export default function ShubramiSystem() {
 
   const printRentedShopsPDF = (filteredData) => {
     if (filteredData.length === 0) return alert("لا توجد محلات في الفرز الحالي لطباعتها");
-    const sumRent = filteredData.reduce((sum, s) => sum + s.annualRent, 0);
-    const sumCollected = filteredData.reduce((sum, s) => sum + s.collected, 0);
+    
+    // نفلتر فقط المحلات المؤجرة (الرئيسية) لأن المدمجة إيجارها 0
+    const mainShops = filteredData.filter(s => s.status === "مؤجر");
+    
+    const sumRent = mainShops.reduce((sum, s) => sum + s.annualRent, 0);
+    const sumCollected = mainShops.reduce((sum, s) => sum + s.collected, 0);
     const sumRemaining = sumRent - sumCollected;
 
     const printWindow = window.open('', '_blank');
@@ -981,8 +1469,7 @@ export default function ShubramiSystem() {
           <table>
               <thead>
                   <tr>
-                      <th>رقم المحل</th>
-                      <th>المستأجر</th>
+                      <th>المستأجر (الكيان)</th>
                       <th>رقم عقد إيجار</th>
                       <th>الإيجار السنوي</th>
                       <th>بداية العقد</th>
@@ -993,10 +1480,11 @@ export default function ShubramiSystem() {
                   </tr>
               </thead>
               <tbody>
-                  ${filteredData.map(s => `
+                  ${mainShops.map(s => {
+                      const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                      return `
                       <tr>
-                          <td><b>${s.shopNumber}</b></td>
-                          <td>${s.tenant}</td>
+                          <td><b>${displayName}</b></td>
                           <td>${s.ejarNumber}</td>
                           <td>${s.annualRent.toLocaleString()} ريال</td>
                           <td>${s.startDate}</td>
@@ -1005,9 +1493,9 @@ export default function ShubramiSystem() {
                           <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
                           <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
                       </tr>
-                  `).join('')}
+                  `}).join('')}
                   <tr class="total-row">
-                      <td colspan="3">المجموع الكلي</td>
+                      <td colspan="2">المجموع الكلي</td>
                       <td>${sumRent.toLocaleString()} ريال</td>
                       <td colspan="2"></td>
                       <td class="text-green">${sumCollected.toLocaleString()} ريال</td>
@@ -1058,8 +1546,7 @@ export default function ShubramiSystem() {
                   <tr>
                       <th>رقم السند</th>
                       <th>تاريخ الإغلاق والاعتماد</th>
-                      <th>رقم المحل</th>
-                      <th>المستأجر</th>
+                      <th>المستأجر (الكيان)</th>
                       <th>المبلغ المطلوب</th>
                       <th>المبلغ المدفوع</th>
                       <th>المبلغ المتبقي</th>
@@ -1072,7 +1559,6 @@ export default function ShubramiSystem() {
                       <tr>
                           <td><b>${t.id}</b></td>
                           <td>${t.updateDate} م</td>
-                          <td>${t.shop}</td>
                           <td>${t.tenant}</td>
                           <td>${t.targetAmount.toLocaleString()} ريال</td>
                           <td class="text-green">${t.paidAmount.toLocaleString()} ريال</td>
@@ -1084,7 +1570,7 @@ export default function ShubramiSystem() {
                       </tr>
                   `).join('')}
                   <tr style="background-color: #cbd5e1; font-weight: bold; border-top: 2px solid #94a3b8; color: #0f172a;">
-                      <td colspan="4">المجموع الكلي</td>
+                      <td colspan="3">المجموع الكلي</td>
                       <td>${sumTarget.toLocaleString()} ريال</td>
                       <td class="text-green">${sumPaid.toLocaleString()} ريال</td>
                       <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
@@ -1251,9 +1737,6 @@ export default function ShubramiSystem() {
                       <span class="info-label">استلمنا من المكرم:</span>
                       <span class="info-value">
                           ${receipt.tenant} 
-                          <span style="font-size: 13px; color: #64748b; font-weight: 600; display: block; text-align: right; margin-top: 4px;">
-                              (المستأجر لـ ${receipt.shop})
-                          </span>
                       </span>
                   </div>
                   <div class="info-row">
@@ -1284,439 +1767,6 @@ export default function ShubramiSystem() {
     `);
     printWindow.document.close();
   };
-
-  const handleNewInstallment = async (e) => {
-    e.preventDefault();
-    if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
-
-    const newInst = {
-      id: `INST-${Date.now()}`,
-      shop: instShop,
-      amount: Number(instAmount),
-      date: instDate
-    };
-
-    const { error } = await supabase.from('installments').insert([newInst]);
-    if (!error) {
-      setInstallmentsDB([...installmentsDB, newInst]);
-      setInstShop(""); setInstAmount(""); setInstDate("");
-      alert("تمت جدولة استحقاق الدفعة القادمة بنجاح!");
-    } else {
-      alert("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟");
-    }
-  };
-
-  const handleDeleteInstallment = async (id) => {
-    if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
-      const { error = null } = await supabase.from('installments').delete().eq('id', id);
-      if (!error) {
-        setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
-      }
-    }
-  };
-
-  const handleNewContract = async (e) => {
-    e.preventDefault();
-    if (!newContractShop || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تعبئة جميع البيانات بشكل صحيح، بما فيها رقم عقد إيجار");
-    
-    // 🛡️ الحارس الزمني: فحص منطقية التواريخ
-    const startD = new Date(newContractStart);
-    const endD = new Date(newContractEnd);
-    if (endD <= startD) {
-        return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
-    }
-
-    const updatedFields = {
-      status: "مؤجر",
-      tenant: newContractTenant,
-      ejarNumber: newContractEjarNumber,
-      annualRent: Number(newContractRent),
-      startDate: newContractStart,
-      endDate: newContractEnd
-    };
-
-    const targetShop = shopsDB.find(s => s.shopNumber === newContractShop && s.status !== "مؤجر");
-    if (!targetShop) return alert("خطأ: لم يتم العثور على المحل الشاغر المطلوب.");
-
-    const { error } = await supabase.from('shops').update(updatedFields).eq('id', targetShop.id);
-    if (!error) {
-      setShopsDB(shopsDB.map(s => s.id === targetShop.id ? { ...s, ...updatedFields } : s));
-      setNewContractTenant("");
-      setNewContractEjarNumber("");
-      alert(`تم حفظ ومزامنة العقد للمحل ${newContractShop} بنجاح!`);
-    }
-  };
-
-  const handleEditContract = async (e) => {
-    e.preventDefault();
-    if (!editContractId) return alert("الرجاء تحديد المحل أولاً");
-
-    const originalRow = shopsDB.find(s => s.id === editContractId);
-    if (!originalRow) return;
-
-    const isRenewal = isContractExpired(originalRow.endDate);
-    const remainingBalance = originalRow.annualRent - originalRow.collected;
-
-    // 🛡️ الحارس الزمني: فحص منطقية التواريخ عند التعديل/التجديد
-    if (editContractStatus === "مؤجر" && editContractStart && editContractEnd) {
-       const startD = new Date(editContractStart);
-       const endD = new Date(editContractEnd);
-       if (endD <= startD) {
-           return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
-       }
-    }
-
-    // حماية محاسبية: يمنع تجديد أو تعديل تواريخ/رقم عقد ساري وعليه مديونية
-    if (!isRenewal && remainingBalance > 0) {
-       if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
-           return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
-       }
-    }
-
-    // حماية إدارية ومحاسبية: يمنع تعديل بيانات/تواريخ عقد ساري نهائياً
-    if (!isRenewal && editContractStatus === "مؤجر") {
-       if (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent) {
-           return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات!\nإذا أردت إجراء تغيير جذري في العقد، يجب إنهاء العقد الحالي أو الانتظار حتى انتهائه.");
-       }
-    }
-
-    // ================== الدرع المالي (المخالصة النهائية عند الإخلاء) ==================
-    if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
-       
-       // 1. فحص المبالغ المتبقية
-       if (remainingBalance > 0) {
-          return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).\nيرجى سداد المبلغ بالكامل أو تسجيله في (إدراج مديونية يدوية) قبل إخلاء المحل لتصفية الحسابات.`);
-       }
-
-       // 2. فحص السندات المعلقة
-       const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
-       if (openTx) {
-          return alert(`🚫 منع مالي: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nالمحل مرتبط بسند قبض معلق برقم (${openTx.id}).\nيرجى التوجه لقسم (التحصيل وسندات القبض) وإغلاق السند أولاً.`);
-       }
-
-       // 3. فحص الاستحقاقات المجدولة
-       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
-       if (pendingInst) {
-          return alert(`🚫 منع إداري: لا يمكن تحويل المحل إلى "${editContractStatus}"!\n\nيوجد استحقاق مجدول لهذا المحل بقيمة (${pendingInst.amount} ريال).\nيرجى التوجه لجدول (الاستحقاقات) وتأكيد سداده أو حذفه أولاً.`);
-       }
-
-       // 4. رسالة التأكيد بعد اجتياز الفحوصات
-       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك تغيير حالة المحل (${originalRow.shopNumber}) من "مؤجر" إلى "${editContractStatus}".\n\nهذا الإجراء سيؤدي إلى:\n1- إنهاء العقد الحالي فوراً.\n2- مسح بيانات المستأجر والتواريخ.\n3- إزالة العقد من (سجل العقود المؤجرة).\n\nهل أنت متأكد من رغبتك في الاستمرار وإخلاء المحل؟`;
-       if (!window.confirm(confirmMsg)) {
-         return; 
-       }
-    }
-    // =================================================================================
-
-    if (isRenewal) {
-      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد!");
-      if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
-      if (!editContractStart || !editContractEnd) return alert("خطأ: الرجاء إدخال تاريخ بداية ونهاية العقد الجديد!");
-      if (editContractStart === originalRow.startDate || editContractEnd === originalRow.endDate) return alert("خطأ: يلزم تعديل تواريخ البداية والنهاية للتجديد!");
-
-      const newContractRow = {
-        id: `row-${Date.now()}`, 
-        shopNumber: originalRow.shopNumber,
-        area: originalRow.area,
-        status: "مؤجر",
-        tenant: editContractTenant,
-        ejarNumber: editContractEjarNumber,
-        annualRent: Number(editContractRent),
-        startDate: editContractStart,
-        endDate: editContractEnd,
-        collected: 0 
-      };
-
-      const { error } = await supabase.from('shops').insert([newContractRow]);
-      if (!error) {
-        setShopsDB([...shopsDB, newContractRow]);
-        alert(`🎉 تم تجديد العقد للمحل (${originalRow.shopNumber}) ومزامنته سحابياً بنجاح!`);
-        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
-      }
-    } else {
-      const updatedFields = { 
-        status: editContractStatus, 
-        tenant: editContractStatus === "مؤجر" ? editContractTenant : "-", 
-        ejarNumber: editContractStatus === "مؤجر" ? editContractEjarNumber : "-", 
-        annualRent: editContractStatus === "مؤجر" ? Number(editContractRent) : 0, 
-        startDate: editContractStatus === "مؤجر" ? editContractStart : "-", 
-        endDate: editContractStatus === "مؤجر" ? editContractEnd : "-" 
-      };
-
-      const { error } = await supabase.from('shops').update(updatedFields).eq('id', editContractId);
-      if (!error) {
-        setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, ...updatedFields } : s));
-        alert("تم تحديث حالة العقد على السحابة بنجاح!");
-      }
-    }
-  };
-
-  const handleNewPayment = async (e) => {
-    e.preventDefault();
-    if (!newPayShop) return;
-    
-    const targetNum = Number(newPayTarget);
-    const amountNum = Number(newPayAmount);
-
-    if (amountNum > targetNum) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
-    
-    const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
-    if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا المحل لتسجيل الدفعة عليه.");
-
-    if (activeShop.collected >= activeShop.annualRent) {
-      return alert("هذا العقد مسدد بالكامل ولا يمكن تسجيل دفعات إضافية عليه!");
-    }
-
-    if (activeShop.collected + amountNum > activeShop.annualRent) {
-      const actualRemaining = activeShop.annualRent - activeShop.collected;
-      return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
-    }
-
-    const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
-    if (existingOpen) return alert(`المحل مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
-
-    const remaining = targetNum - amountNum;
-    const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
-    
-    const newTx = {
-      id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
-      startDate: new Date().toISOString().split('T')[0],
-      updateDate: new Date().toISOString().split('T')[0],
-      shop: newPayShop,
-      tenant: activeShop.tenant,
-      targetAmount: targetNum,
-      paidAmount: amountNum,
-      remainingAmount: remaining,
-      method: newPayMethod,
-      status: status
-    };
-
-    const { error: txErr } = await supabase.from('transactions').insert([newTx]);
-    
-    if (!txErr) {
-      const updatedCollected = activeShop.collected + amountNum;
-      await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
-      
-      const instToDelete = payingInstId 
-          ? installmentsDB.find(i => i.id === payingInstId)
-          : installmentsDB.find(i => i.shop === activeShop.shopNumber);
-
-      if (instToDelete) {
-         await supabase.from('installments').delete().eq('id', instToDelete.id);
-         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
-      }
-      setPayingInstId(""); 
-
-      setTransactionsDB([...transactionsDB, newTx]); 
-      setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
-      
-      alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.");
-    }
-  };
-
-  const handleUpdatePayment = async (e) => {
-    e.preventDefault();
-    if (!updatePayReceipt) return;
-    const tx = transactionsDB.find(t => t.id === updatePayReceipt);
-    if (!tx) return;
-    if (Number(updatePayAmount) > tx.remainingAmount) return alert("خطأ: المدفوع أكبر من المتبقي في هذا السند!");
-
-    const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
-    
-    if (activeShop && (activeShop.collected + Number(updatePayAmount) > activeShop.annualRent)) {
-        const actualRemaining = activeShop.annualRent - activeShop.collected;
-        return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي للإيجار في هذا العقد هو: ${actualRemaining} ريال فقط.`);
-    }
-
-    const updatedPaid = tx.paidAmount + Number(updatePayAmount);
-    const updatedRemaining = tx.targetAmount - updatedPaid;
-    const updatedStatus = updatedRemaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
-    const newMethod = tx.method.includes(updatePayMethod) ? tx.method : `${tx.method} و ${updatePayMethod}`;
-
-    const updatedTx = { 
-      paidAmount: updatedPaid, 
-      remainingAmount: updatedRemaining, 
-      status: updatedStatus, 
-      method: newMethod, 
-      updateDate: new Date().toISOString().split('T')[0] 
-    };
-
-    const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', updatePayReceipt);
-    if (!txErr) {
-      if (activeShop) {
-        const updatedCollected = activeShop.collected + Number(updatePayAmount);
-        await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
-        setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
-      }
-
-      const instToDelete = installmentsDB.find(i => i.shop === tx.shop);
-      if (instToDelete) {
-         await supabase.from('installments').delete().eq('id', instToDelete.id);
-         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
-      }
-
-      setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
-      alert("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.");
-    }
-  };
-
-  const handleDebt = async (e) => {
-    e.preventDefault();
-    const newDebt = { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) };
-    
-    const { error } = await supabase.from('debts').insert([newDebt]);
-    if (!error) {
-      setDebtsDB([...debtsDB, newDebt]);
-      setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
-      alert("تم إدراج المديونية السابقة في قاعدة البيانات السحابية.");
-    }
-  };
-
-  const handleDebtPayment = async (e) => {
-    e.preventDefault();
-    if (!payDebtId) return;
-    const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
-    if (!targetDebt) return;
-    const payAmt = Number(payDebtAmount);
-    if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية!");
-
-    const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
-
-    if (existingTxIndex >= 0) {
-      const existingTx = transactionsDB[existingTxIndex];
-      const updatedPaid = existingTx.paidAmount + payAmt;
-      const updatedRemaining = existingTx.targetAmount - updatedPaid;
-      const newMethod = existingTx.method.includes(payDebtMethod) ? existingTx.method : `${existingTx.method} و ${payDebtMethod}`;
-
-      const updatedTx = {
-        paidAmount: updatedPaid,
-        remainingAmount: updatedRemaining,
-        method: newMethod,
-        updateDate: new Date().toISOString().split('T')[0],
-        status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
-      };
-
-      await supabase.from('transactions').update(updatedTx).eq('id', existingTx.id);
-      const newTxDB = [...transactionsDB];
-      newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
-      setTransactionsDB(newTxDB);
-    } else {
-      const newTx = {
-        id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
-        referenceId: targetDebt.id,
-        isDebtReceipt: true,
-        startDate: new Date().toISOString().split('T')[0],
-        updateDate: new Date().toISOString().split('T')[0],
-        shop: targetDebt.isShopDebt ? targetDebt.label : `مديونية سابقة`,
-        tenant: targetDebt.tenant,
-        targetAmount: targetDebt.amount,
-        paidAmount: payAmt,
-        remainingAmount: targetDebt.amount - payAmt,
-        method: payDebtMethod,
-        status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
-      };
-      await supabase.from('transactions').insert([newTx]);
-      setTransactionsDB([...transactionsDB, newTx]);
-    }
-
-    if (targetDebt.isShopDebt) {
-      const currentShop = shopsDB.find(s => s.id === targetDebt.id);
-      const newCollected = (currentShop?.collected || 0) + payAmt;
-      await supabase.from('shops').update({ collected: newCollected }).eq('id', targetDebt.id);
-      setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: newCollected } : s));
-    } else {
-      await supabase.from('debts').update({ amount: targetDebt.amount - payAmt }).eq('id', targetDebt.id);
-      setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
-    }
-
-    alert(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند سحابياً.");
-    setPayDebtId(""); setPayDebtAmount("");
-  };
-
-  const handleExpense = async (e) => {
-    e.preventDefault();
-    const newExpense = { id: `E-${Date.now()}`, date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes };
-    
-    const { error } = await supabase.from('expenses').insert([newExpense]);
-    if (!error) {
-      setExpensesDB([...expensesDB, newExpense]);
-      setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
-      alert("تم تسجيل وتوثيق المصروف سحابياً.");
-    }
-  };
-
-  const filteredTxForDash = dashboardYear === "الكل" ? transactionsDB : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
-  const filteredExpForDash = dashboardYear === "الكل" ? expensesDB : expensesDB.filter(e => getYear(e.date) === dashboardYear);
-  const filteredDebtsForDash = dashboardYear === "الكل" ? allOutstandingDebts : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
-
-  const dashTotalCollected = filteredTxForDash.reduce((sum, t) => sum + t.paidAmount, 0);
-  const dashTotalExpenses = filteredExpForDash.reduce((sum, e) => sum + e.amount, 0);
-  const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
-  const dashNetIncome = dashTotalCollected - dashTotalExpenses;
-
-  const latestShopRecords = {};
-  shopsDB.forEach(shop => {
-    const currentIdNum = parseInt(String(shop.id).replace(/\D/g, '')) || 0;
-    const existingIdNum = latestShopRecords[shop.shopNumber] 
-      ? (parseInt(String(latestShopRecords[shop.shopNumber].id).replace(/\D/g, '')) || 0) 
-      : -1;
-    
-    if (!latestShopRecords[shop.shopNumber] || currentIdNum > existingIdNum) {
-      latestShopRecords[shop.shopNumber] = shop;
-    }
-  });
-
-  const statusCounts = { "مؤجر": 0, "شاغر": 0, "تحت الصيانة": 0 };
-  Object.values(latestShopRecords).forEach(shop => {
-    statusCounts[shop.status] = (statusCounts[shop.status] || 0) + 1;
-  });
-
-  const filteredRentedShops = shopsDB.filter(s => {
-    if (s.status !== "مؤجر") return false;
-    const isExpired = isContractExpired(s.endDate);
-    if (filterContractStatus === "ساري" && isExpired) return false;
-    if (filterContractStatus === "منتهي" && !isExpired) return false;
-    if (filterContractYear !== "الكل") {
-      const startY = getYear(s.startDate) || "";
-      const endY = getYear(s.endDate) || "";
-      if (startY !== filterContractYear && endY !== filterContractYear) return false;
-    }
-    const searchLower = searchContract.toLowerCase().trim();
-    if (searchLower !== "") {
-      const matchShop = String(s.shopNumber).toLowerCase().includes(searchLower);
-      const matchTenant = String(s.tenant).toLowerCase().includes(searchLower);
-      const matchEjar = String(s.ejarNumber).toLowerCase().includes(searchLower);
-      if (!matchShop && !matchTenant && !matchEjar) return false;
-    }
-    return true;
-  });
-
-  const totalRentSum = filteredRentedShops.reduce((sum, s) => sum + s.annualRent, 0);
-  const totalCollectedSum = filteredRentedShops.reduce((sum, s) => sum + s.collected, 0);
-  const totalRemainingSum = totalRentSum - totalCollectedSum;
-
-  const filteredTransactions = transactionsDB.filter(t => {
-    const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
-    const parts = String(t.id).split('-');
-    const txYear = parts.length > 1 ? parts[1] : null;
-    const yearMatch = filterReceiptYear === "الكل" || txYear === filterReceiptYear;
-    const searchLower = searchReceipt.toLowerCase().trim();
-    const searchMatch = searchLower === "" || 
-                        String(t.id).toLowerCase().includes(searchLower) || 
-                        String(t.shop).toLowerCase().includes(searchLower) || 
-                        String(t.tenant).toLowerCase().includes(searchLower);
-    return statusMatch && yearMatch && searchMatch;
-  });
-
-  const filteredTxTargetSum = filteredTransactions.reduce((sum, t) => sum + t.targetAmount, 0);
-  const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
-  const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
-
-  const selectedEditShop = shopsDB.find(s => s.id === editContractId);
-  const isActiveContract = selectedEditShop 
-      ? !isContractExpired(selectedEditShop.endDate)
-      : false;
-
   const visibleTabs = allTabs.filter(tab => {
     if (currentUser?.role === "مدير") return true; 
     if (tab.adminOnly) return false; 
@@ -1789,12 +1839,13 @@ export default function ShubramiSystem() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar p-1">
                     {installmentAlerts.map(alert => {
                         const shopData = shopsDB.find(s => s.shopNumber === alert.shop && !isContractExpired(s.endDate)) || shopsDB.find(s => s.shopNumber === alert.shop) || {};
+                        const displayName = shopData.isGroupMain ? `${shopData.tenant} (${shopData.groupShops?.join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
+
                         return (
                         <div key={alert.id} className="bg-slate-100 border border-slate-300 p-3 rounded-xl flex flex-col justify-between hover:bg-white transition-colors">
                             <div className="flex justify-between items-start mb-2">
                               <div>
-                                <span className="font-bold text-slate-900 block text-sm">المحل: {alert.shop}</span>
-                                <span className="text-xs text-slate-600">{shopData.tenant || "-"}</span>
+                                <span className="font-bold text-slate-900 block text-sm">{displayName}</span>
                               </div>
                               <div className="text-left">
                                 <span className="block text-red-600 font-bold text-base">{alert.amount.toLocaleString()} ريال</span>
@@ -1929,18 +1980,30 @@ export default function ShubramiSystem() {
                {activeTab === "contracts" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
-                     <button onClick={() => setContractSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>✍️ تسجيل عقد جديد</button>
-                     <button onClick={() => setContractSubTab("edit")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "edit" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔄 تحديث وتجديد عقد</button>
+                     <button onClick={() => setContractSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>✍️ تسجيل عقد جديد (فردي/مجمع)</button>
+                     <button onClick={() => setContractSubTab("edit")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "edit" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔄 تحديث وإخلاء العقود</button>
                    </div>
 
                    {contractSubTab === "new" && (
                      <form onSubmit={handleNewContract} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                       <div>
-                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر المحل الشاغر:</label>
-                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractShop} onChange={(e) => setNewContractShop(e.target.value)} required>
-                           <option value="">-- اختر المحل --</option>
-                           {shopsDB.filter(s => s.status !== "مؤجر").map(s => <option key={s.id} value={s.shopNumber}>{s.shopNumber}</option>)}
-                         </select>
+                       <div className="md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-300">
+                         <label className="block mb-1.5 font-bold text-blue-800 text-sm">المحلات المشمولة في العقد (التأجير المجمع الذكي):</label>
+                         <p className="text-xs text-slate-500 mb-2">اكتب رقم المحل واضغط Enter لإضافته للمجموعة. (المحل الأول سيكون هو الواجهة المحاسبية للعقد).</p>
+                         <div className="flex flex-wrap gap-2 p-2 border border-slate-400 rounded-lg bg-white focus-within:border-blue-700 transition-colors min-h-[46px] items-center">
+                            {newContractShops.map(shop => (
+                              <span key={shop} className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1.5 rounded flex items-center gap-1 shadow-sm">
+                                {shop} <button type="button" onClick={() => removeShopTag(shop)} className="text-blue-600 hover:text-red-600 font-bold ml-1">&times;</button>
+                              </span>
+                            ))}
+                            <input 
+                               type="text" 
+                               className="flex-1 outline-none min-w-[120px] text-sm bg-transparent font-semibold text-slate-800" 
+                               placeholder="مثال: 10 أو محل 10" 
+                               value={shopInputValue} 
+                               onChange={(e) => setShopInputValue(e.target.value)} 
+                               onKeyDown={handleAddShopTag} 
+                            />
+                         </div>
                        </div>
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستأجر:</label>
@@ -1951,7 +2014,7 @@ export default function ShubramiSystem() {
                          <input type="text" placeholder="مثال: 87654321" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractEjarNumber} onChange={(e) => setNewContractEjarNumber(e.target.value)} required />
                        </div>
                        <div>
-                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإيجار السنوي:</label>
+                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإجمالي الكلي للإيجار السنوي:</label>
                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractRent} onChange={(e) => setNewContractRent(e.target.value)} required />
                        </div>
                        <div className="grid grid-cols-2 gap-4 md:col-span-2">
@@ -1964,7 +2027,7 @@ export default function ShubramiSystem() {
                            <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractEnd} onChange={(e) => setNewContractEnd(e.target.value)} required />
                          </div>
                        </div>
-                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">💾 حفظ العقد الجديد</button>
+                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">💾 حفظ العقد واعتماد الكيان</button>
                      </form>
                    )}
 
@@ -1979,26 +2042,22 @@ export default function ShubramiSystem() {
                            }
                          }} required>
                            <option value="">-- المحلات المؤجرة المتاحة --</option>
-                           {shopsDB.filter(s => {
-                             if (s.status !== "مؤجر") return false;
+                           {shopsDB.filter(s => s.status === "مؤجر").map(s => {
                              const isExpired = isContractExpired(s.endDate);
-                             if (!isExpired) return true; 
-                             const isPaid = (s.annualRent - s.collected) <= 0;
-                             const hasActiveContract = shopsDB.some(activeShop => activeShop.shopNumber === s.shopNumber && activeShop.status === "مؤجر" && !isContractExpired(activeShop.endDate));
-                             return isPaid && !hasActiveContract;
-                           }).map(s => (
-                             <option key={s.id} value={s.id}>
-                               {s.shopNumber} - {s.tenant} {isContractExpired(s.endDate) ? '(⚠️ منتهي - متاح للتجديد)' : '(ساري)'}
-                             </option>
-                           ))}
+                             const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                             return (
+                               <option key={s.id} value={s.id}>
+                                 {displayName} {isExpired ? '(⚠️ منتهي - متاح للتجديد)' : '(ساري)'}
+                               </option>
+                             );
+                           })}
                          </select>
                        </div>
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحالة التعاقدية الحالية:</label>
                          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" value={editContractStatus} onChange={(e) => setEditContractStatus(e.target.value)} disabled={editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)}>
                            <option value="مؤجر">مؤجر</option>
-                           <option value="شاغر">شاغر (إخلاء)</option>
-                           <option value="تحت الصيانة">تحت الصيانة</option>
+                           <option value="شاغر">شاغر (إخلاء شامل للكيان)</option>
                          </select>
                        </div>
 
@@ -2009,7 +2068,7 @@ export default function ShubramiSystem() {
                          </div>
                        )}
 
-                       {isActiveContract && editContractStatus === "مؤجر" && (
+                       {editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && (
                          <div className="md:col-span-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">🔒</span>
                            <span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية (الاسم، التواريخ، الرسوم، رقم العقد) لحماية استقرار السجلات. يمكنك فقط تغيير حالة المحل (كالإخلاء).</span>
@@ -2018,30 +2077,30 @@ export default function ShubramiSystem() {
 
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المستأجر:</label>
-                         <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
+                         <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} />
                        </div>
                        <div>
                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم عقد إيجار المحدث/الجديد:</label>
-                          <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
+                          <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} />
                        </div>
                        <div>
                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإيجار السنوي الجديد:</label>
-                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
+                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} />
                        </div>
                        
                        <div className="grid grid-cols-2 gap-4 md:col-span-2">
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">بداية العقد:</label>
-                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} />
+                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} />
                          </div>
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">نهاية العقد:</label>
-                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} disabled={isActiveContract && editContractStatus === "مؤجر"} required />
+                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} required />
                          </div>
                        </div>
 
                        <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">
-                         {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث حالة العقد الحالي"}
+                         {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث حالة الكيان الحالي"}
                        </button>
                      </form>
                    )}
@@ -2086,8 +2145,7 @@ export default function ShubramiSystem() {
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                          <tr>
-                           <th className="p-3 font-semibold">رقم المحل</th>
-                           <th className="p-3 font-semibold">المستأجر</th>
+                           <th className="p-3 font-semibold">المستأجر (الكيان)</th>
                            <th className="p-3 font-semibold text-blue-700">رقم عقد إيجار</th>
                            <th className="p-3 font-semibold">الإيجار السنوي</th>
                            <th className="p-3 font-semibold">البداية</th>
@@ -2098,10 +2156,11 @@ export default function ShubramiSystem() {
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredRentedShops.map((s) => (
+                         {filteredRentedShops.filter(s => s.status === "مؤجر").map((s) => {
+                           const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                           return (
                            <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
-                             <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
-                             <td className="p-3">{s.tenant}</td>
+                             <td className="p-3 font-bold text-slate-900">{displayName}</td>
                              <td className="p-3 font-bold text-blue-700">{s.ejarNumber}</td>
                              <td className="p-3">{s.annualRent.toLocaleString()}</td>
                              <td className="p-3">{s.startDate}</td>
@@ -2120,10 +2179,10 @@ export default function ShubramiSystem() {
                                  : <span className="text-teal-700 font-bold text-xs">ساري</span>}
                              </td>
                            </tr>
-                         ))}
-                         {filteredRentedShops.length > 0 ? (
+                         )})}
+                         {filteredRentedShops.filter(s => s.status === "مؤجر").length > 0 ? (
                            <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900">
-                             <td className="p-3" colSpan="3">مجموع نتائج الفرز الحالية</td>
+                             <td className="p-3" colSpan="2">مجموع نتائج الفرز الحالية</td>
                              <td className="p-3">{totalRentSum.toLocaleString()}</td>
                              <td className="p-3" colSpan="2"></td>
                              <td className="p-3 text-teal-700">{totalCollectedSum.toLocaleString()}</td>
@@ -2131,7 +2190,7 @@ export default function ShubramiSystem() {
                              <td className="p-3"></td>
                            </tr>
                          ) : (
-                           <tr><td colSpan="9" className="p-5 text-center text-slate-500">لا توجد عقود.</td></tr>
+                           <tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد عقود.</td></tr>
                          )}
                        </tbody>
                      </table>
@@ -2204,7 +2263,8 @@ export default function ShubramiSystem() {
                              <div>
                                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
                                <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtMethod} onChange={(e) => setPayDebtMethod(e.target.value)}>
-                                 <option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option>
+                                 <option value="نقد">نقد</option>
+                                 <option value="إيداع بنكي">إيداع بنكي</option>
                                </select>
                              </div>
                              <div>
@@ -2251,7 +2311,13 @@ export default function ShubramiSystem() {
                     <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white custom-scrollbar">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3">المعرف / المحل</th><th className="p-3">تاريخ نهاية العقد</th><th className="p-3">المستأجر</th><th className="p-3">التفاصيل</th><th className="p-3 text-red-600">المبلغ المتبقي</th></tr>
+                         <tr>
+                           <th className="p-3">المعرف / المحل</th>
+                           <th className="p-3">تاريخ نهاية العقد</th>
+                           <th className="p-3">المستأجر</th>
+                           <th className="p-3">التفاصيل</th>
+                           <th className="p-3 text-red-600">المبلغ المتبقي</th>
+                         </tr>
                        </thead>
                        <tbody>
                          {allOutstandingDebts.length === 0 ? (
@@ -2299,7 +2365,12 @@ export default function ShubramiSystem() {
                     <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3">التاريخ</th><th className="p-3">البند</th><th className="p-3 text-slate-900">المبلغ</th><th className="p-3">ملاحظات</th></tr>
+                         <tr>
+                           <th className="p-3">التاريخ</th>
+                           <th className="p-3">البند</th>
+                           <th className="p-3 text-slate-900">المبلغ</th>
+                           <th className="p-3">ملاحظات</th>
+                         </tr>
                        </thead>
                        <tbody>
                          {expensesDB.map((e, i) => (
@@ -2377,7 +2448,12 @@ export default function ShubramiSystem() {
                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3">الاسم الكامل</th><th className="p-3">اسم الدخول</th><th className="p-3">الصلاحية</th><th className="p-3 text-center">إجراءات</th></tr>
+                         <tr>
+                           <th className="p-3">الاسم الكامل</th>
+                           <th className="p-3">اسم الدخول</th>
+                           <th className="p-3">الصلاحية</th>
+                           <th className="p-3 text-center">إجراءات</th>
+                         </tr>
                        </thead>
                        <tbody>
                          {usersDB.map(user => (
