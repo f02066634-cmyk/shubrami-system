@@ -564,6 +564,7 @@ export default function ShubramiSystem() {
   const [newContractEnd, setNewContractEnd] = useState("");
 
   const [editContractId, setEditContractId] = useState("");
+  const [editContractShop, setEditContractShop] = useState("");
   const [editContractStatus, setEditContractStatus] = useState("مؤجر");
   const [editContractTenant, setEditContractTenant] = useState("");
   const [editContractEjarNumber, setEditContractEjarNumber] = useState(""); 
@@ -604,8 +605,6 @@ export default function ShubramiSystem() {
       setLoading(true);
 
       let { data: shops } = await supabase.from('shops').select('*');
-      
-      // التوليد المبدئي لو كانت القاعدة فارغة
       if (shops && shops.length === 0) {
         const generatedShops = Array.from({ length: 166 }, (_, i) => ({
           id: `row-${i + 1}`, 
@@ -625,55 +624,6 @@ export default function ShubramiSystem() {
         const { data: updatedShops } = await supabase.from('shops').select('*');
         shops = updatedShops;
       }
-
-      // ================== الأتمتة: أرشفة العقود المنتهية وتوليد شاغر ==================
-      if (shops && shops.length > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const newVacantShops = [];
-        let madeChanges = false;
-
-        for (let i = 0; i < shops.length; i++) {
-          const s = shops[i];
-          if ((s.status === "مؤجر" || s.status === "مدمج") && s.endDate && s.endDate !== "-") {
-            const endD = new Date(s.endDate);
-            if (endD < today) {
-              // 1. أرشفة القديم وتجميده
-              await supabase.from('shops').update({ status: "منتهي ومؤرشف" }).eq('id', s.id);
-              shops[i].status = "منتهي ومؤرشف";
-              madeChanges = true;
-
-              // 2. توليد محل شاغر جديد بنفس الرقم إذا لم يكن موجوداً
-              const hasVacant = shops.some(other => other.shopNumber === s.shopNumber && other.status === "شاغر");
-              const hasPendingNew = newVacantShops.some(n => n.shopNumber === s.shopNumber);
-              
-              if (!hasVacant && !hasPendingNew) {
-                newVacantShops.push({
-                  id: `row-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                  shopNumber: s.shopNumber,
-                  area: s.area || 60,
-                  status: "شاغر",
-                  tenant: "-",
-                  ejarNumber: "-",
-                  annualRent: s.status === "مؤجر" ? s.annualRent : 0,
-                  startDate: "-",
-                  endDate: "-",
-                  collected: 0,
-                  isGroupMain: false,
-                  groupShops: null
-                });
-              }
-            }
-          }
-        }
-
-        if (newVacantShops.length > 0) {
-          await supabase.from('shops').insert(newVacantShops);
-          shops = [...shops, ...newVacantShops];
-        }
-      }
-      // ===============================================================================
-
       setShopsDB(shops || []);
 
       let { data: users } = await supabase.from('users').select('*');
@@ -701,6 +651,7 @@ export default function ShubramiSystem() {
         const { data: insts } = await supabase.from('installments').select('*');
         setInstallmentsDB(insts || []);
       } catch (instErr) {
+        console.log("جدول installments غير موجود بعد أو به مشكلة، يرجى إنشاؤه.");
         setInstallmentsDB([]);
       }
 
@@ -800,7 +751,7 @@ export default function ShubramiSystem() {
       setEditingUser(null);
       alert("تم تحديث صلاحيات الموظف بنجاح!");
     } else {
-      alert("حدث خطأ أثناء التحديث.");
+      alert("حدث خطأ أثناء التحديث. هل تأكدت من إضافة عمود 'allowedTabs' (JSONB) لجدول users في Supabase؟");
     }
   };
 
@@ -808,7 +759,9 @@ export default function ShubramiSystem() {
     if (id === currentUser.id) return alert("لا يمكنك حذف حسابك وأنت مسجل الدخول به!");
     if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟")) {
       const { error } = await supabase.from('users').delete().eq('id', id);
-      if (!error) setUsersDB(usersDB.filter(u => u.id !== id));
+      if (!error) {
+        setUsersDB(usersDB.filter(u => u.id !== id));
+      }
     }
   };
 
@@ -850,7 +803,7 @@ export default function ShubramiSystem() {
   const expiredShopsDebts = shopsDB
     .filter(s => isContractExpired(s.endDate) && s.annualRent > s.collected && s.status !== "مدمج")
     .map(s => {
-      const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops?.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+      const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
       return {
         id: s.id,
         label: s.shopNumber,
@@ -897,7 +850,6 @@ export default function ShubramiSystem() {
       
       const formattedVal = val.startsWith("محل") ? val : `محل ${val}`;
       
-      // نتحقق أن المحل موجود وحالته "شاغر"
       const shopExists = shopsDB.find(s => s.shopNumber === formattedVal && s.status === "شاغر");
       if (!shopExists) return alert(`المحل ${formattedVal} غير متاح أو غير موجود. تأكد أنه شاغر.`);
       if (newContractShops.includes(formattedVal)) return alert(`المحل ${formattedVal} مضاف مسبقاً للقائمة.`);
@@ -908,13 +860,14 @@ export default function ShubramiSystem() {
   };
   const removeShopTag = (shopNum) => setNewContractShops(newContractShops.filter(s => s !== shopNum));
 
-  // --- دالة حفظ العقد (بالاستهداف الدقيق بالـ ID) ---
+  // --- دالة الحفظ مع الملصقات والحارس الزمني ---
   const handleNewContract = async (e) => {
     e.preventDefault();
     if (newContractShops.length === 0 || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") {
         return alert("الرجاء تعبئة جميع البيانات واختيار محل واحد على الأقل من خلال حقل التأجير المجمع.");
     }
     
+    // 🛡️ الحارس الزمني
     const startD = new Date(newContractStart);
     const endD = new Date(newContractEnd);
     if (endD <= startD) {
@@ -945,36 +898,22 @@ export default function ShubramiSystem() {
       groupShops: newContractShops
     };
 
-    // 🎯 الاستهداف الدقيق (ID Matching)
-    const targetIDs = [];
     for (const shopNum of newContractShops) {
-       const shopRecord = shopsDB.find(s => s.shopNumber === shopNum && s.status === "شاغر");
-       if (!shopRecord) {
-           return alert(`خطأ: المحل ${shopNum} غير متاح أو لم يعد شاغراً! لم يتم حفظ العقد لحماية البيانات.`);
-       }
-       targetIDs.push({ id: shopRecord.id, num: shopNum });
+       const shopRecord = shopsDB.find(s => s.shopNumber === shopNum);
+       const payload = shopNum === mainShopName ? mainUpdate : dependentUpdate;
+       await supabase.from('shops').update(payload).eq('id', shopRecord.id);
     }
 
-    // التنفيذ باستخدام المعرفات الفريدة
-    for (const target of targetIDs) {
-       const payload = target.num === mainShopName ? mainUpdate : dependentUpdate;
-       await supabase.from('shops').update(payload).eq('id', target.id);
-    }
-
-    // تحديث الشاشة بدون مساس بالأرشيف القديم
     setShopsDB(shopsDB.map(s => {
-       const matchedTarget = targetIDs.find(t => t.id === s.id);
-       if (matchedTarget) {
-           return { ...s, ...(matchedTarget.num === mainShopName ? mainUpdate : dependentUpdate) };
-       }
+       if (newContractShops.includes(s.shopNumber)) return { ...s, ...(s.shopNumber === mainShopName ? mainUpdate : dependentUpdate) };
        return s;
     }));
 
     setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
-    alert(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`);
+    alert(`تم حفظ العقد واعتماد الكيان الموحد بنجاح!`);
   };
 
-  // --- دالة التعديل والإخلاء (مع الأرشفة وتوليد الشواغر) ---
+  // --- دالة التعديل والإخلاء للكيان الموحد ---
   const handleEditContract = async (e) => {
     e.preventDefault();
     if (!editContractId) return alert("الرجاء تحديد الكيان أولاً");
@@ -985,15 +924,18 @@ export default function ShubramiSystem() {
     const isRenewal = isContractExpired(originalRow.endDate);
     const remainingBalance = originalRow.annualRent - originalRow.collected;
 
+    // 🛡️ الحارس الزمني
     if (editContractStatus === "مؤجر" && editContractStart && editContractEnd) {
        const startD = new Date(editContractStart);
        const endD = new Date(editContractEnd);
-       if (endD <= startD) return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ النهاية قبل البداية أو يساويه!");
+       if (endD <= startD) {
+           return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
+       }
     }
 
     if (!isRenewal && remainingBalance > 0) {
        if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
-           return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!");
+           return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
        }
     }
 
@@ -1003,63 +945,46 @@ export default function ShubramiSystem() {
        }
     }
 
-    // ================== الدرع المالي والإخلاء المجمع (مع الأرشفة) ==================
+    // ================== الدرع المالي والإخلاء المجمع ==================
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
        
-       if (remainingBalance > 0) return alert(`🚫 منع مالي: لا يمكن إخلاء الكيان! يوجد مبلغ متبقي (${remainingBalance} ريال).`);
-       const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
-       if (openTx) return alert(`🚫 منع مالي: الكيان مرتبط بسند معلق برقم (${openTx.id}). يرجى إغلاقه أولاً.`);
-       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
-       if (pendingInst) return alert(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`);
-
-       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان.\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
-       if (!window.confirm(confirmMsg)) return; 
-
-       const groupToUpdate = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
-       
-       // 1. أرشفة السجلات الحالية (لا نمسحها، فقط نغير حالتها)
-       for (const sNum of groupToUpdate) {
-          const shopToArchive = shopsDB.find(s => s.shopNumber === sNum && (s.status === "مؤجر" || s.status === "مدمج") && s.tenant === originalRow.tenant);
-          if (shopToArchive) {
-              await supabase.from('shops').update({ status: "مخلى ومؤرشف" }).eq('id', shopToArchive.id);
-          }
+       if (remainingBalance > 0) {
+          return alert(`🚫 منع مالي: لا يمكن تحويل الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`);
        }
 
-       // 2. توليد محلات شاغرة جديدة بـ IDs جديدة تماماً
-       const newVacantRows = groupToUpdate.map((sNum, index) => ({
-          id: `row-${Date.now()}-${index}`,
-          shopNumber: sNum,
-          area: originalRow.area || 60,
-          status: "شاغر",
-          tenant: "-",
-          ejarNumber: "-",
-          annualRent: originalRow.annualRent || 15000,
-          startDate: "-",
-          endDate: "-",
-          collected: 0,
-          isGroupMain: false,
-          groupShops: null
-       }));
+       const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
+       if (openTx) {
+          return alert(`🚫 منع مالي: الكيان مرتبط بسند معلق برقم (${openTx.id}). يرجى إغلاقه أولاً.`);
+       }
 
-       await supabase.from('shops').insert(newVacantRows);
+       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
+       if (pendingInst) {
+          return alert(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`);
+       }
 
-       // 3. تحديث الذاكرة المحلية (State)
-       setShopsDB(prev => {
-          const archivedState = prev.map(s => {
-             if (groupToUpdate.includes(s.shopNumber) && (s.status === "مؤجر" || s.status === "مدمج") && s.tenant === originalRow.tenant) {
-                 return { ...s, status: "مخلى ومؤرشف" };
-             }
-             return s;
-          });
-          return [...archivedState, ...newVacantRows];
-       });
+       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان وتفكيك المحلات المدمجة لإرجاعها لحالة (شاغر).\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
+       if (!window.confirm(confirmMsg)) {
+         return; 
+       }
 
-       return alert("تم الإخلاء بنجاح! السجل القديم الآن في الأرشيف وتم تفكيك وتوليد المحلات الشاغرة.");
+       const groupToUpdate = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
+       const updatedFields = { 
+           status: editContractStatus, tenant: "-", ejarNumber: "-", 
+           annualRent: 0, startDate: "-", endDate: "-", 
+           isGroupMain: false, groupShops: null, collected: 0 
+       };
+       
+       for (const sNum of groupToUpdate) {
+          const shopToUpdate = shopsDB.find(s => s.shopNumber === sNum && s.status !== "شاغر");
+          if(shopToUpdate) await supabase.from('shops').update(updatedFields).eq('id', shopToUpdate.id);
+       }
+       setShopsDB(shopsDB.map(s => groupToUpdate.includes(s.shopNumber) ? { ...s, ...updatedFields } : s));
+       return alert("تم إخلاء الكيان وتفكيك المحلات بنجاح!");
     }
-    // =============================================================================
 
+    // ================== التجديد للكيان الموحد ==================
     if (isRenewal) {
-      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: لتجديد هذا العقد المنتهي، يجب إدخال رقم عقد إيجار جديد!");
+      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: يجب إدخال رقم عقد إيجار جديد!");
       if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
       if (!editContractStart || !editContractEnd) return alert("خطأ: الرجاء إدخال تاريخ بداية ونهاية العقد الجديد!");
       if (editContractStart === originalRow.startDate || editContractEnd === originalRow.endDate) return alert("خطأ: يلزم تعديل تواريخ البداية والنهاية للتجديد!");
@@ -1108,7 +1033,7 @@ export default function ShubramiSystem() {
     if (amountNum > targetNum) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
     
     const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
-    if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لتسجيل الدفعة عليه.");
+    if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا الكيان لتسجيل الدفعة عليه.");
 
     if (activeShop.collected >= activeShop.annualRent) {
       return alert("هذا العقد مسدد بالكامل ولا يمكن تسجيل دفعات إضافية عليه!");
@@ -1116,7 +1041,7 @@ export default function ShubramiSystem() {
 
     if (activeShop.collected + amountNum > activeShop.annualRent) {
       const actualRemaining = activeShop.annualRent - activeShop.collected;
-      return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية!\n\nالمتبقي الفعلي هو: ${actualRemaining} ريال فقط.`);
+      return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية للكيان!\n\nالمتبقي الفعلي للإيجار هو: ${actualRemaining} ريال فقط.`);
     }
 
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
@@ -1174,7 +1099,7 @@ export default function ShubramiSystem() {
     
     if (activeShop && (activeShop.collected + Number(updatePayAmount) > activeShop.annualRent)) {
         const actualRemaining = activeShop.annualRent - activeShop.collected;
-        return alert(`❌ خطأ: المبلغ المدفوع يتجاوز المتبقي للكيان! المتبقي الفعلي هو: ${actualRemaining} ريال.`);
+        return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية للكيان!\n\nالمتبقي الفعلي هو: ${actualRemaining} ريال فقط.`);
     }
 
     const updatedPaid = tx.paidAmount + Number(updatePayAmount);
@@ -1294,6 +1219,36 @@ export default function ShubramiSystem() {
     }
   };
 
+  const handleNewInstallment = async (e) => {
+    e.preventDefault();
+    if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
+
+    const newInst = {
+      id: `INST-${Date.now()}`,
+      shop: instShop,
+      amount: Number(instAmount),
+      date: instDate
+    };
+
+    const { error } = await supabase.from('installments').insert([newInst]);
+    if (!error) {
+      setInstallmentsDB([...installmentsDB, newInst]);
+      setInstShop(""); setInstAmount(""); setInstDate("");
+      alert("تمت جدولة استحقاق الدفعة القادمة بنجاح!");
+    } else {
+      alert("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟");
+    }
+  };
+
+  const handleDeleteInstallment = async (id) => {
+    if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
+      const { error = null } = await supabase.from('installments').delete().eq('id', id);
+      if (!error) {
+        setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
+      }
+    }
+  };
+
   const filteredTxForDash = dashboardYear === "الكل" ? transactionsDB : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
   const filteredExpForDash = dashboardYear === "الكل" ? expensesDB : expensesDB.filter(e => getYear(e.date) === dashboardYear);
   const filteredDebtsForDash = dashboardYear === "الكل" ? allOutstandingDebts : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
@@ -1406,16 +1361,16 @@ export default function ShubramiSystem() {
                       const collected = shopData.collected || 0;
                       const remaining = (shopData.annualRent || 0) - collected;
                       const displayName = shopData.isGroupMain ? `${shopData.tenant} (${shopData.groupShops?.join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
-                      return \`
+                      return `
                       <tr>
-                          <td><b>\${inst.shop}</b></td>
-                          <td>\${displayName}</td>
-                          <td class="text-blue">\${inst.amount.toLocaleString()} ريال</td>
-                          <td>\${inst.date}</td>
-                          <td class="text-green">\${collected.toLocaleString()} ريال</td>
-                          <td class="text-red">\${remaining.toLocaleString()} ريال</td>
+                          <td><b>${inst.shop}</b></td>
+                          <td>${displayName}</td>
+                          <td class="text-blue">${inst.amount.toLocaleString()} ريال</td>
+                          <td>${inst.date}</td>
+                          <td class="text-green">${collected.toLocaleString()} ريال</td>
+                          <td class="text-red">${remaining.toLocaleString()} ريال</td>
                       </tr>
-                      \`;
+                      `;
                   }).join('')}
               </tbody>
           </table>
@@ -1460,15 +1415,15 @@ export default function ShubramiSystem() {
                   </tr>
               </thead>
               <tbody>
-                  ${data.map(d => \`
+                  ${data.map(d => `
                       <tr>
-                          <td><b>\${d.isShopDebt ? d.label : d.id}</b></td>
-                          <td>\${d.year}</td>
-                          <td>\${d.tenant}</td>
-                          <td>\${d.details}</td>
-                          <td class="text-red">\${d.amount.toLocaleString()} ريال</td>
+                          <td><b>${d.isShopDebt ? d.label : d.id}</b></td>
+                          <td>${d.year}</td>
+                          <td>${d.tenant}</td>
+                          <td>${d.details}</td>
+                          <td class="text-red">${d.amount.toLocaleString()} ريال</td>
                       </tr>
-                  \`).join('')}
+                  `).join('')}
               </tbody>
           </table>
           <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
@@ -1481,7 +1436,9 @@ export default function ShubramiSystem() {
   const printRentedShopsPDF = (filteredData) => {
     if (filteredData.length === 0) return alert("لا توجد محلات في الفرز الحالي لطباعتها");
     
+    // نفلتر فقط المحلات المؤجرة (الرئيسية) لأن المدمجة إيجارها 0
     const mainShops = filteredData.filter(s => s.status === "مؤجر");
+    
     const sumRent = mainShops.reduce((sum, s) => sum + s.annualRent, 0);
     const sumCollected = mainShops.reduce((sum, s) => sum + s.collected, 0);
     const sumRemaining = sumRent - sumCollected;
@@ -1525,18 +1482,18 @@ export default function ShubramiSystem() {
               <tbody>
                   ${mainShops.map(s => {
                       const displayName = s.isGroupMain ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-                      return \`
+                      return `
                       <tr>
-                          <td><b>\${displayName}</b></td>
-                          <td>\${s.ejarNumber}</td>
-                          <td>\${s.annualRent.toLocaleString()} ريال</td>
-                          <td>\${s.startDate}</td>
-                          <td>\${s.endDate}</td>
-                          <td class="text-green">\${s.collected.toLocaleString()} ريال</td>
-                          <td class="text-red">\${(s.annualRent - s.collected).toLocaleString()} ريال</td>
-                          <td>\${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
+                          <td><b>${displayName}</b></td>
+                          <td>${s.ejarNumber}</td>
+                          <td>${s.annualRent.toLocaleString()} ريال</td>
+                          <td>${s.startDate}</td>
+                          <td>${s.endDate}</td>
+                          <td class="text-green">${s.collected.toLocaleString()} ريال</td>
+                          <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
+                          <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
                       </tr>
-                  \`}).join('')}
+                  `}).join('')}
                   <tr class="total-row">
                       <td colspan="2">المجموع الكلي</td>
                       <td>${sumRent.toLocaleString()} ريال</td>
@@ -1598,20 +1555,20 @@ export default function ShubramiSystem() {
                   </tr>
               </thead>
               <tbody>
-                  ${data.map(t => \`
+                  ${data.map(t => `
                       <tr>
-                          <td><b>\${t.id}</b></td>
-                          <td>\${t.updateDate} م</td>
-                          <td>\${t.tenant}</td>
-                          <td>\${t.targetAmount.toLocaleString()} ريال</td>
-                          <td class="text-green">\${t.paidAmount.toLocaleString()} ريال</td>
-                          <td class="text-red">\${t.remainingAmount.toLocaleString()} ريال</td>
-                          <td>\${t.method}</td>
+                          <td><b>${t.id}</b></td>
+                          <td>${t.updateDate} م</td>
+                          <td>${t.tenant}</td>
+                          <td>${t.targetAmount.toLocaleString()} ريال</td>
+                          <td class="text-green">${t.paidAmount.toLocaleString()} ريال</td>
+                          <td class="text-red">${t.remainingAmount.toLocaleString()} ريال</td>
+                          <td>${t.method}</td>
                           <td>
-                            <span class="\${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">\${t.status}</span>
+                            <span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${t.status}</span>
                           </td>
                       </tr>
-                  \`).join('')}
+                  `).join('')}
                   <tr style="background-color: #cbd5e1; font-weight: bold; border-top: 2px solid #94a3b8; color: #0f172a;">
                       <td colspan="3">المجموع الكلي</td>
                       <td>${sumTarget.toLocaleString()} ريال</td>
@@ -1810,37 +1767,6 @@ export default function ShubramiSystem() {
     `);
     printWindow.document.close();
   };
-
-  const handleNewInstallment = async (e) => {
-    e.preventDefault();
-    if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
-
-    const newInst = {
-      id: `INST-${Date.now()}`,
-      shop: instShop,
-      amount: Number(instAmount),
-      date: instDate
-    };
-
-    const { error } = await supabase.from('installments').insert([newInst]);
-    if (!error) {
-      setInstallmentsDB([...installmentsDB, newInst]);
-      setInstShop(""); setInstAmount(""); setInstDate("");
-      alert("تمت جدولة استحقاق الدفعة القادمة بنجاح!");
-    } else {
-      alert("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟");
-    }
-  };
-
-  const handleDeleteInstallment = async (id) => {
-    if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
-      const { error = null } = await supabase.from('installments').delete().eq('id', id);
-      if (!error) {
-        setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
-      }
-    }
-  };
-
   const visibleTabs = allTabs.filter(tab => {
     if (currentUser?.role === "مدير") return true; 
     if (tab.adminOnly) return false; 
@@ -2108,7 +2034,7 @@ export default function ShubramiSystem() {
                    {contractSubTab === "edit" && (
                      <form onSubmit={handleEditContract} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                        <div>
-                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر العقد للتعديل/التجديد/الإخلاء:</label>
+                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر العقد للتعديل/التجديد:</label>
                          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={editContractId} onChange={(e) => {
                            const row = shopsDB.find(s => s.id === e.target.value);
                            if(row) {
@@ -2131,7 +2057,7 @@ export default function ShubramiSystem() {
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحالة التعاقدية الحالية:</label>
                          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" value={editContractStatus} onChange={(e) => setEditContractStatus(e.target.value)} disabled={editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)}>
                            <option value="مؤجر">مؤجر</option>
-                           <option value="شاغر">شاغر (إخلاء شامل للكيان وأرشفة)</option>
+                           <option value="شاغر">شاغر (إخلاء شامل للكيان)</option>
                          </select>
                        </div>
 
