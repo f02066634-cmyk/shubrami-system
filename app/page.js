@@ -970,7 +970,7 @@ export default function ShubramiSystem() {
     alert(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`);
   };
 
-  // --- دالة التعديل والإخلاء للكيان الموحد (مع الأرشفة) ---
+  // --- دالة التعديل والإخلاء للكيان الموحد (مع الأرشفة والدرع المالي) ---
   const handleEditContract = async (e) => {
     e.preventDefault();
     if (!editContractId) return alert("الرجاء تحديد الكيان أولاً");
@@ -981,7 +981,7 @@ export default function ShubramiSystem() {
     const isRenewal = isContractExpired(originalRow.endDate);
     const remainingBalance = originalRow.annualRent - originalRow.collected;
 
-    // 🛡️ الحارس الزمني
+    // 🛡️ الحارس الزمني للتواريخ
     if (editContractStatus === "مؤجر" && editContractStart && editContractEnd) {
        const startD = new Date(editContractStart);
        const endD = new Date(editContractEnd);
@@ -990,23 +990,32 @@ export default function ShubramiSystem() {
        }
     }
 
+    // ================== 🛡️ الدرع المالي والإداري ==================
+
+    // 1. منع تجديد العقد المنتهي إذا كان عليه مديونية (تمت إعادتها وتقويتها)
+    if (isRenewal && editContractStatus === "مؤجر" && remainingBalance > 0) {
+       return alert(`🚫 منع مالي: لا يمكن تجديد هذا العقد المنتهي!\n\nيوجد متبقي إيجار بقيمة (${remainingBalance} ريال).\nالرجاء تحصيل المديونية بالكامل أو تسجيلها في قسم الديون قبل بدء دورة تعاقدية جديدة.`);
+    }
+
+    // 2. منع تمديد تواريخ عقد ساري وعليه مديونية
     if (!isRenewal && remainingBalance > 0) {
        if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
            return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
        }
     }
 
+    // 3. منع تعديل بيانات أساسية لعقد ساري
     if (!isRenewal && editContractStatus === "مؤجر") {
        if (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent) {
-           return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول.");
+           return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات.");
        }
     }
 
-    // ================== الدرع المالي والإخلاء المجمع والأرشفة ==================
+    // ================== الإخلاء المجمع والأرشفة ==================
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
        
        if (remainingBalance > 0) {
-          return alert(`🚫 منع مالي: لا يمكن تحويل الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`);
+          return alert(`🚫 منع مالي: لا يمكن إخلاء الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`);
        }
 
        const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
@@ -1105,7 +1114,6 @@ export default function ShubramiSystem() {
       alert("تم تحديث حالة العقد على السحابة بنجاح!");
     }
   };
-
   const handleNewPayment = async (e) => {
     e.preventDefault();
     if (!newPayShop) return;
