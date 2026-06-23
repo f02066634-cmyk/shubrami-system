@@ -12,20 +12,17 @@ const isContractExpired = (endDate) => {
 const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailableYears, dashTotalCollected, dashTotalExpenses, dashNetIncome, dashTotalDebts, shopsDB, installmentsDB }) => {
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
-  // حساب الحالة الفيزيائية الحقيقية للمحلات (الـ 166 محل فقط بتجاهل الأرشيف)
   const latestShopRecords = {};
-  shopsDB.forEach(shop => {
-    if (!shop.status.includes("أرشيف")) {
+  (shopsDB || []).forEach(shop => {
+    if (shop && !String(shop.status || "").includes("أرشيف")) {
       latestShopRecords[shop.shopNumber] = shop;
     }
   });
 
-  let activeRented = 0;
-  let expiredRented = 0;
-  let trueVacant = 0;
-  let maintenance = 0;
+  let activeRented = 0, expiredRented = 0, trueVacant = 0, maintenance = 0;
 
   Object.values(latestShopRecords).forEach(s => {
+     if (!s) return;
      if (s.status === "شاغر") trueVacant++;
      else if (s.status === "تحت الصيانة") maintenance++;
      else if (s.status === "مؤجر" || s.status === "مدمج") {
@@ -36,10 +33,10 @@ const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailab
 
   const availableForRent = trueVacant;
   const totalShops = 166;
-  const occupancyRate = (((activeRented + expiredRented) / totalShops) * 100).toFixed(1);
+  const occupancyRate = totalShops > 0 ? (((activeRented + expiredRented) / totalShops) * 100).toFixed(1) : "0.0";
 
-  const upcomingExpirations = shopsDB.filter(s => {
-    if ((s.status !== "مؤجر" && s.status !== "مدمج") || !s.endDate || s.endDate === "-") return false;
+  const upcomingExpirations = (shopsDB || []).filter(s => {
+    if (!s || (s.status !== "مؤجر" && s.status !== "مدمج") || !s.endDate || s.endDate === "-") return false;
     const end = new Date(s.endDate);
     const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
     return diffDays <= 60; 
@@ -49,17 +46,18 @@ const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailab
   const next60Days = new Date(today); next60Days.setDate(next60Days.getDate() + 60);
 
   let overdueInstallments = 0, expected30Days = 0, expected31To60Days = 0;
-  installmentsDB.forEach(inst => {
-    if (!inst.date) return;
+  (installmentsDB || []).forEach(inst => {
+    if (!inst || !inst.date) return;
     const instDate = new Date(inst.date); instDate.setHours(0, 0, 0, 0);
-    if (instDate < today) overdueInstallments += Number(inst.amount) || 0;
-    else if (instDate >= today && instDate <= next30Days) expected30Days += Number(inst.amount) || 0;
-    else if (instDate > next30Days && instDate <= next60Days) expected31To60Days += Number(inst.amount) || 0;
+    const amt = Number(inst.amount) || 0;
+    if (instDate < today) overdueInstallments += amt;
+    else if (instDate >= today && instDate <= next30Days) expected30Days += amt;
+    else if (instDate > next30Days && instDate <= next60Days) expected31To60Days += amt;
   });
 
   let fullyPaid = 0, partiallyPaid = 0, unpaid = 0;
-  const contractsToAnalyze = shopsDB.filter(s => {
-    if (s.status.includes("أرشيف")) return false;
+  const contractsToAnalyze = (shopsDB || []).filter(s => {
+    if (!s || String(s.status || "").includes("أرشيف")) return false;
     if (dashboardYear === "الكل") return (s.status === "مؤجر" || s.status === "مدمج"); 
     const startY = s.startDate && s.startDate !== "-" ? s.startDate.split("-")[0] : null;
     const endY = s.endDate && s.endDate !== "-" ? s.endDate.split("-")[0] : null;
@@ -67,8 +65,10 @@ const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailab
   });
   
   contractsToAnalyze.forEach(s => {
-    if (s.collected >= s.annualRent && s.annualRent > 0) fullyPaid++;
-    else if (s.collected > 0) partiallyPaid++;
+    const rent = Number(s.annualRent) || 0;
+    const coll = Number(s.collected) || 0;
+    if (coll >= rent && rent > 0) fullyPaid++;
+    else if (coll > 0) partiallyPaid++;
     else unpaid++;
   });
 
@@ -80,79 +80,33 @@ const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailab
             <label className="font-semibold text-slate-700 text-xs">تحديد السنة المالية للمؤشرات:</label>
             <select className="rounded border border-slate-400 p-1 bg-white text-slate-900 outline-none font-bold min-w-[90px] text-xs" value={dashboardYear} onChange={(e) => setDashboardYear(e.target.value)}>
               <option value="الكل">الكل (شامل)</option>
-              {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+              {(dashboardAvailableYears || []).map(y => <option key={y} value={y}>{y}</option>)}
             </select>
          </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">إجمالي التحصيلات</h4>
-           <p className="text-xl font-extrabold text-blue-700">{dashTotalCollected.toLocaleString()} ريال</p>
-        </div>
-        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">إجمالي المصروفات</h4>
-           <p className="text-xl font-extrabold text-slate-700">{dashTotalExpenses.toLocaleString()} ريال</p>
-        </div>
-        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">صافي الدخل</h4>
-           <p className="text-xl font-extrabold text-teal-700">{dashNetIncome.toLocaleString()} ريال</p>
-        </div>
-        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">الديون المستحقة المعلقة</h4>
-           <p className="text-xl font-extrabold text-red-600">{dashTotalDebts.toLocaleString()} ريال</p>
-        </div>
+        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center"><h4 className="text-slate-600 font-bold mb-1 text-xs">إجمالي التحصيلات</h4><p className="text-xl font-extrabold text-blue-700">{(dashTotalCollected || 0).toLocaleString()} ريال</p></div>
+        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center"><h4 className="text-slate-600 font-bold mb-1 text-xs">إجمالي المصروفات</h4><p className="text-xl font-extrabold text-slate-700">{(dashTotalExpenses || 0).toLocaleString()} ريال</p></div>
+        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center"><h4 className="text-slate-600 font-bold mb-1 text-xs">صافي الدخل</h4><p className="text-xl font-extrabold text-teal-700">{(dashNetIncome || 0).toLocaleString()} ريال</p></div>
+        <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center"><h4 className="text-slate-600 font-bold mb-1 text-xs">الديون المستحقة المعلقة</h4><p className="text-xl font-extrabold text-red-600">{(dashTotalDebts || 0).toLocaleString()} ريال</p></div>
       </div>
 
       <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 mt-4">
-         <div className="flex justify-between items-center mb-4">
-           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-             <span>🎯</span> كفاءة أداء التحصيل {dashboardYear !== 'الكل' ? <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">(لسنة {dashboardYear})</span> : <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">(للعقود السارية والمنتهية النشطة)</span>}
-           </h3>
-         </div>
+         <div className="flex justify-between items-center mb-4"><h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><span>🎯</span> كفاءة أداء التحصيل</h3></div>
          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-teal-600 flex justify-between items-center shadow-sm">
-               <div><p className="text-slate-600 font-bold text-xs">مسدد بالكامل</p><p className="text-lg font-extrabold text-teal-700">{fullyPaid}</p></div><div className="text-xl">✔️</div>
-            </div>
-            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-amber-500 flex justify-between items-center shadow-sm">
-               <div><p className="text-slate-600 font-bold text-xs">سداد جزئي</p><p className="text-lg font-extrabold text-amber-600">{partiallyPaid}</p></div><div className="text-xl">⏳</div>
-            </div>
-            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-red-600 flex justify-between items-center shadow-sm">
-               <div><p className="text-slate-600 font-bold text-xs">لم يسدد</p><p className="text-lg font-extrabold text-red-600">{unpaid}</p></div><div className="text-xl">⚠️</div>
-            </div>
-         </div>
-      </div>
-
-      <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 mt-4">
-         <div className="flex justify-between items-center mb-4">
-           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-             <span>📈</span> توقعات التدفق النقدي <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">مؤشر لحظي</span>
-           </h3>
-         </div>
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متأخرات مستحقة الدفع</p>
-               <p className="text-xl font-extrabold text-red-600">{overdueInstallments.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 30 يوم</p>
-               <p className="text-xl font-extrabold text-teal-700">{expected30Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 31 - 60 يوم</p>
-               <p className="text-xl font-extrabold text-blue-700">{expected31To60Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
-            </div>
+            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-teal-600 flex justify-between items-center shadow-sm"><div><p className="text-slate-600 font-bold text-xs">مسدد بالكامل</p><p className="text-lg font-extrabold text-teal-700">{fullyPaid}</p></div><div className="text-xl">✔️</div></div>
+            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-amber-500 flex justify-between items-center shadow-sm"><div><p className="text-slate-600 font-bold text-xs">سداد جزئي</p><p className="text-lg font-extrabold text-amber-600">{partiallyPaid}</p></div><div className="text-xl">⏳</div></div>
+            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-red-600 flex justify-between items-center shadow-sm"><div><p className="text-slate-600 font-bold text-xs">لم يسدد</p><p className="text-lg font-extrabold text-red-600">{unpaid}</p></div><div className="text-xl">⚠️</div></div>
          </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
         <div className="md:col-span-1 bg-white p-5 rounded-xl shadow-md border border-slate-300 flex flex-col justify-center">
-          <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center justify-center gap-2">
-            🏢 الإشغال ({totalShops} محل) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
-          </h3>
+          <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center justify-center gap-2">🏢 الإشغال ({totalShops} محل)</h3>
           <div className="mb-5 px-1">
             <div className="flex justify-between text-xs font-bold mb-1"><span className="text-slate-600">نسبة الإشغال الكلية</span><span className="text-blue-700">{occupancyRate}%</span></div>
-            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden border border-slate-300"><div className="bg-blue-600 h-2 rounded-full transition-all duration-1000" style={{ width: `${occupancyRate}%` }}></div></div>
+            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden border border-slate-300"><div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${occupancyRate}%` }}></div></div>
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center p-2 bg-slate-50 rounded border border-slate-300"><span className="text-slate-700 font-semibold text-xs">مؤجر (شامل المنتهي غير المخلى)</span><span className="text-sm font-bold text-teal-700">{activeRented + expiredRented}</span></div>
@@ -162,30 +116,21 @@ const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailab
         </div>
 
         <div className="md:col-span-2 bg-white p-5 rounded-xl shadow-md border border-slate-300 flex flex-col">
-          <div className="flex justify-between items-center mb-4">
-             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-               <span>⚠️</span> عقود تنتهي قريباً أو منتهية <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
-             </h3>
-             <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold border border-red-200">{upcomingExpirations.length} عقود</span>
-          </div>
+          <div className="flex justify-between items-center mb-4"><h3 className="text-base font-bold text-slate-900 flex items-center gap-2"><span>⚠️</span> عقود تنتهي قريباً أو منتهية</h3><span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold border border-red-200">{upcomingExpirations.length} عقود</span></div>
           <div className="flex-1 overflow-hidden flex flex-col">
             {upcomingExpirations.length > 0 ? (
               <div className="overflow-x-auto rounded-lg border border-slate-300 custom-scrollbar flex-1">
                 <table className="w-full text-right text-slate-800 text-xs">
-                  <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
-                    <tr><th className="p-2 font-semibold">المستأجر (الكيان)</th><th className="p-2 font-semibold">النهاية</th><th className="p-2 font-semibold">الوقت المتبقي</th><th className="p-2 font-semibold text-red-600">مديونية</th></tr>
-                  </thead>
+                  <thead className="bg-slate-200 text-slate-800 border-b border-slate-300"><tr><th className="p-2 font-semibold">المستأجر (الكيان)</th><th className="p-2 font-semibold">النهاية</th><th className="p-2 font-semibold">الوقت المتبقي</th><th className="p-2 font-semibold text-red-600">مديونية</th></tr></thead>
                   <tbody>
                     {upcomingExpirations.map(shop => {
-                      const end = new Date(shop.endDate); const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24)); const remainingRent = shop.annualRent - shop.collected;
-                      const displayName = shop.isGroupMain ? `${shop.tenant} (${(shop.groupShops || []).join('، ')})` : `${shop.tenant} (${shop.shopNumber})`;
+                      const end = new Date(shop.endDate); const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24)); const remainingRent = (Number(shop.annualRent) || 0) - (Number(shop.collected) || 0);
+                      const displayName = shop.isGroupMain && Array.isArray(shop.groupShops) ? `${shop.tenant} (${shop.groupShops.join('، ')})` : `${shop.tenant} (${shop.shopNumber})`;
                       return (
                         <tr key={shop.id} className="border-b border-slate-200 hover:bg-slate-100">
-                          <td className="p-2 font-bold text-slate-900 truncate max-w-[150px]" title={displayName}>{displayName}</td>
+                          <td className="p-2 font-bold text-slate-900 truncate max-w-[150px]">{displayName}</td>
                           <td className="p-2 text-slate-700">{shop.endDate}</td>
-                          <td className="p-2 font-bold text-amber-600">
-                              {diffDays < 0 ? <span className="text-red-600">منتهي منذ {Math.abs(diffDays)} يوم</span> : `${diffDays} يوم`}
-                          </td>
+                          <td className="p-2 font-bold text-amber-600">{diffDays < 0 ? <span className="text-red-600">منتهي منذ {Math.abs(diffDays)} يوم</span> : `${diffDays} يوم`}</td>
                           <td className="p-2 font-bold text-red-600">{remainingRent.toLocaleString()} ريال</td>
                         </tr>
                       );
@@ -201,17 +146,9 @@ const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailab
   );
 };
 
-// ==================== مكوّن قسم التحصيل المالي وسندات القبض (مستقل) ====================
+// ==================== مكوّن قسم التحصيل المالي وسندات القبض ====================
 const FinancialCollection = ({
-  paymentSubTab, setPaymentSubTab,
-  newPayShop, setNewPayShop, newPayMethod, setNewPayMethod, newPayTarget, setNewPayTarget, newPayAmount, setNewPayAmount,
-  updatePayReceipt, setUpdatePayReceipt, updatePayMethod, setUpdatePayMethod, updatePayAmount, setUpdatePayAmount,
-  instShop, setInstShop, instAmount, setInstAmount, instDate, setInstDate,
-  handleNewPayment, handleUpdatePayment, handleNewInstallment, handleDeleteInstallment, handleTransferToPayment,
-  shopsDB, transactionsDB, installmentsDB, isContractExpired, todayDateObj,
-  searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears,
-  filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum,
-  printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF
+  paymentSubTab, setPaymentSubTab, newPayShop, setNewPayShop, newPayMethod, setNewPayMethod, newPayTarget, setNewPayTarget, newPayAmount, setNewPayAmount, updatePayReceipt, setUpdatePayReceipt, updatePayMethod, setUpdatePayMethod, updatePayAmount, setUpdatePayAmount, instShop, setInstShop, instAmount, setInstAmount, instDate, setInstDate, handleNewPayment, handleUpdatePayment, handleNewInstallment, handleDeleteInstallment, handleTransferToPayment, shopsDB, transactionsDB, installmentsDB, todayDateObj, searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears, filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum, printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF
 }) => {
   return (
     <div className="animate-fade-in text-sm">
@@ -224,37 +161,19 @@ const FinancialCollection = ({
       {paymentSubTab === "new" && (
         <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف (العقود السارية الموحدة):</label>
+            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف (العقود السارية):</label>
             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
               <option value="">-- اختر المستأجر / العقد --</option>
-              {shopsDB.filter(s => (s.status === "مؤجر" || s.status === "مدمج") && !(s.status || "").includes("أرشيف")).map(s => {
-                const isFullyPaid = (s.collected || 0) >= (s.annualRent || 0);
-                const safeGroupShops = Array.isArray(s.groupShops) ? s.groupShops : [];
-                const displayName = s.isGroupMain && safeGroupShops.length > 0 ? `${s.tenant} (${safeGroupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-                return (
-                  <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
-                    {displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}
-                  </option>
-                );
+              {(shopsDB || []).filter(s => s && (s.status === "مؤجر" || s.status === "مدمج") && !String(s.status || "").includes("أرشيف")).map(s => {
+                const isFullyPaid = (Number(s.collected) || 0) >= (Number(s.annualRent) || 0);
+                const displayName = s.isGroupMain && Array.isArray(s.groupShops) ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                return (<option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>{displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}</option>);
               })}
             </select>
           </div>
-          <div>
-            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
-            <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
-              <option value="نقد">نقد</option>
-              <option value="إيداع بنكي">إيداع بنكي</option>
-              <option value="حوالة بنكية">حوالة بنكية</option>
-            </select>
-          </div>
-          <div>
-            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ الكلي للسند:</label>
-            <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayTarget} onChange={(e) => setNewPayTarget(e.target.value)} required />
-          </div>
-          <div>
-            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label>
-            <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required />
-          </div>
+          <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}><option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option><option value="حوالة بنكية">حوالة بنكية</option></select></div>
+          <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ الكلي للسند:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayTarget} onChange={(e) => setNewPayTarget(e.target.value)} required /></div>
+          <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required /></div>
           <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">➕ حفظ السند</button>
         </form>
       )}
@@ -265,23 +184,13 @@ const FinancialCollection = ({
             <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر السند المفتوح:</label>
             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayReceipt} onChange={(e) => setUpdatePayReceipt(e.target.value)} required>
               <option value="">-- السندات المعلقة --</option>
-              {transactionsDB.filter(t => t.status === "مفتوح (قيد التحصيل)").map(t => <option key={t.id} value={t.id}>{t.id} - {t.tenant} (متبقي: {t.remainingAmount})</option>)}
+              {(transactionsDB || []).filter(t => t && String(t.status || "").includes("مفتوح")).map(t => <option key={t.id} value={t.id}>{t.id} - {t.tenant} (متبقي: {t.remainingAmount})</option>)}
             </select>
           </div>
           {updatePayReceipt && (
             <>
-              <div>
-                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
-                <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
-                  <option value="نقد">نقد</option>
-                  <option value="إيداع بنكي">إيداع بنكي</option>
-                  <option value="حوالة بنكية">حوالة بنكية</option>
-                </select>
-              </div>
-              <div>
-                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label>
-                <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required />
-              </div>
+              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}><option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option><option value="حوالة بنكية">حوالة بنكية</option></select></div>
+              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required /></div>
               <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">🔄 اعتماد الإغلاق</button>
             </>
           )}
@@ -294,63 +203,31 @@ const FinancialCollection = ({
               <div>
                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تحديد الكيان:</label>
                 <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
-                  <option value="">-- اختر المستأجر / العقد --</option>
-                  {shopsDB.filter(s => (s.status === "مؤجر" || s.status === "مدمج") && !(s.status || "").includes("أرشيف")).map(s => {
-                    const isFullyPaid = (s.collected || 0) >= (s.annualRent || 0);
-                    const safeGroupShops = Array.isArray(s.groupShops) ? s.groupShops : [];
-                    const displayName = s.isGroupMain && safeGroupShops.length > 0 ? `${s.tenant} (${safeGroupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-                    return (
-                      <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
-                        {displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}
-                      </option>
-                    );
+                  <option value="">-- اختر المحل --</option>
+                  {(shopsDB || []).filter(s => s && (s.status === "مؤجر" || s.status === "مدمج") && !String(s.status || "").includes("أرشيف")).map(s => {
+                    const isFullyPaid = (Number(s.collected) || 0) >= (Number(s.annualRent) || 0);
+                    const displayName = s.isGroupMain && Array.isArray(s.groupShops) ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                    return (<option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>{displayName}</option>);
                   })}
                 </select>
               </div>
-              <div>
-                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">مبلغ الدفعة:</label>
-                <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instAmount} onChange={(e) => setInstAmount(e.target.value)} required />
-              </div>
-              <div>
-                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ الاستحقاق:</label>
-                <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instDate} onChange={(e) => setInstDate(e.target.value)} required />
-              </div>
+              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">مبلغ الدفعة:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instAmount} onChange={(e) => setInstAmount(e.target.value)} required /></div>
+              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ الاستحقاق:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instDate} onChange={(e) => setInstDate(e.target.value)} required /></div>
               <button type="submit" className="md:col-span-3 mt-1 bg-teal-700 hover:bg-teal-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">📅 جدولة الدفعة</button>
            </form>
 
-           <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
-              <h3 className="text-base font-bold text-slate-900">📋 الدفعات المجدولة</h3>
-              <button onClick={() => printInstallmentsPDF(installmentsDB)} className="bg-white border border-slate-400 text-slate-800 px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">📄 طباعة PDF</button>
-           </div>
-
            <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
              <table className="w-full text-right text-slate-800 text-xs">
-               <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
-                 <tr>
-                   <th className="p-3 font-semibold">المستأجر (الكيان)</th>
-                   <th className="p-3 font-semibold text-blue-700">المبلغ</th>
-                   <th className="p-3 font-semibold text-teal-700">التاريخ</th>
-                   <th className="p-3 font-semibold">المحصل الكلي</th>
-                   <th className="p-3 font-semibold text-red-600">المتبقي من العقد</th>
-                   <th className="p-3 font-semibold text-center">الإجراء</th>
-                 </tr>
-               </thead>
+               <thead className="bg-slate-200 text-slate-800 border-b border-slate-300"><tr><th className="p-3">المستأجر</th><th className="p-3">المبلغ</th><th className="p-3">التاريخ</th><th className="p-3">المحصل</th><th className="p-3">المتبقي</th><th className="p-3 text-center">الإجراء</th></tr></thead>
                <tbody>
-                 {installmentsDB.length === 0 ? (
-                   <tr><td colSpan="6" className="p-4 text-center text-slate-500">لا توجد دفعات مجدولة حالياً.</td></tr>
-                 ) : (
+                 {(!installmentsDB || installmentsDB.length === 0) ? (<tr><td colSpan="6" className="p-4 text-center text-slate-500">لا توجد دفعات مجدولة.</td></tr>) : (
                    installmentsDB.map(inst => {
-                     const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !(s.status || "").includes("أرشيف")) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
-                     const collected = shopData.collected || 0;
-                     const remaining = (shopData.annualRent || 0) - collected;
-                     
-                     const instDateObj = new Date(inst.date);
-                     instDateObj.setHours(0, 0, 0, 0);
+                     if (!inst) return null;
+                     const shopData = (shopsDB || []).find(s => s && s.shopNumber === inst.shop && !String(s.status || "").includes("أرشيف")) || {};
+                     const collected = Number(shopData.collected) || 0; const remaining = (Number(shopData.annualRent) || 0) - collected;
+                     const instDateObj = new Date(inst.date || ""); instDateObj.setHours(0, 0, 0, 0);
                      const isDueOrOverdue = instDateObj <= todayDateObj;
-
-                     const safeGroupShops = Array.isArray(shopData.groupShops) ? shopData.groupShops : [];
-                     const displayName = shopData.isGroupMain && safeGroupShops.length > 0 ? `${shopData.tenant} (${safeGroupShops.join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
-
+                     const displayName = shopData.isGroupMain && Array.isArray(shopData.groupShops) ? `${shopData.tenant} (${shopData.groupShops.join('، ')})` : `${shopData.tenant || "-"} (${inst.shop})`;
                      return (
                        <tr key={inst.id} className="border-b border-slate-200 hover:bg-slate-100">
                          <td className="p-3 font-bold">{displayName}</td>
@@ -361,18 +238,10 @@ const FinancialCollection = ({
                          <td className="p-3 text-center">
                            {isDueOrOverdue ? (
                              <div className="flex flex-col gap-1.5 items-center">
-                               <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-teal-100 text-teal-800 border border-teal-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-teal-700 hover:text-white transition-all shadow-sm">
-                                 سداد الآن
-                               </button>
-                               <button onClick={() => handleDeleteInstallment(inst.id)} className="text-slate-500 hover:text-red-600 text-[10px] underline font-semibold">
-                                 حذف
-                               </button>
+                               <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-teal-100 text-teal-800 border border-teal-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-teal-700 shadow-sm">سداد الآن</button>
+                               <button onClick={() => handleDeleteInstallment(inst.id)} className="text-slate-500 hover:text-red-600 text-[10px] underline">حذف</button>
                              </div>
-                           ) : (
-                             <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 hover:text-white transition-all shadow-sm">
-                               إلغاء
-                             </button>
-                           )}
+                           ) : (<button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 shadow-sm">إلغاء</button>)}
                          </td>
                        </tr>
                      );
@@ -385,90 +254,38 @@ const FinancialCollection = ({
       )}
 
       <hr className="my-8 border-slate-300" />
-      
-      <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
-         <h3 className="text-base font-bold text-slate-900">📋 أرشيف السندات</h3>
-         <div className="flex gap-2">
-            <button onClick={() => printTablePDF(filteredTransactions)} className="bg-white border border-slate-400 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">📄 طباعة الجدول</button>
-            <button onClick={() => exportToCSV(filteredTransactions, "ارشيف_السندات.csv")} className="bg-white border border-slate-400 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">📥 Excel</button>
-         </div>
-      </div>
+      <div className="flex justify-between items-end mb-4 flex-wrap gap-4"><h3 className="text-base font-bold text-slate-900">📋 أرشيف السندات</h3></div>
 
       <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
-        <div className="flex-1 min-w-[200px]">
-          <input 
-            type="text" 
-            placeholder="🔍 بحث برقم السند، المحل..." 
-            className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors text-xs" 
-            value={searchReceipt} 
-            onChange={(e) => setSearchReceipt(e.target.value)} 
-          />
-        </div>
-
-        <div className="flex-1 min-w-[150px]">
-          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
-            <option value="الكل">حالة السند (الكل)</option>
-            <option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option>
-            <option value="سداد جزئي (مديونية)">سداد جزئي</option>
-            <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
-            <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
-          </select>
-        </div>
-        
-        <div className="flex-1 min-w-[120px]">
-          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterReceiptYear} onChange={(e) => setFilterReceiptYear(e.target.value)}>
-            <option value="الكل">السنة (الكل)</option>
-            {receiptYears.map(year => (
-                <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
-        </div>
+        <div className="flex-1 min-w-[200px]"><input type="text" placeholder="🔍 بحث برقم السند، المحل..." className="w-full rounded-lg border border-slate-400 p-2 bg-white text-xs outline-none" value={searchReceipt} onChange={(e) => setSearchReceipt(e.target.value)} /></div>
+        <div className="flex-1 min-w-[150px]"><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-xs outline-none" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}><option value="الكل">حالة السند (الكل)</option><option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option><option value="سداد جزئي (مديونية)">سداد جزئي</option><option value="مغلق (مكتمل)">مغلق (مكتمل)</option></select></div>
       </div>
       
       <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
         <table className="w-full text-right text-slate-800 text-xs">
-          <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
-            <tr>
-              <th className="p-3 font-semibold">السند</th>
-              <th className="p-3 font-semibold">الاعتماد</th>
-              <th className="p-3 font-semibold">الجهة / الكيان</th>
-              <th className="p-3 font-semibold">المطلوب</th>
-              <th className="p-3 font-semibold text-teal-700">المدفوع</th>
-              <th className="p-3 font-semibold text-red-600">المتبقي</th>
-              <th className="p-3 font-semibold">الحالة</th>
-              <th className="p-3 font-semibold text-center">الإجراء</th>
-            </tr>
-          </thead>
+          <thead className="bg-slate-200 text-slate-800 border-b border-slate-300"><tr><th className="p-3">السند</th><th className="p-3">الاعتماد</th><th className="p-3">الجهة / الكيان</th><th className="p-3">المطلوب</th><th className="p-3 text-teal-700">المدفوع</th><th className="p-3 text-red-600">المتبقي</th><th className="p-3">الحالة</th><th className="p-3 text-center">الإجراء</th></tr></thead>
           <tbody>
-            {filteredTransactions.length > 0 ? (
+            {(filteredTransactions || []).length > 0 ? (
               <>
-                {filteredTransactions.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-100">
-                    <td className="p-3 font-bold text-slate-900">{t.id}</td>
-                    <td className="p-3 text-slate-600">{t.updateDate}</td>
-                    <td className="p-3 text-slate-600 truncate max-w-[150px]" title={t.tenant}>{t.tenant}</td>
-                    <td className="p-3">{(t.targetAmount || 0).toLocaleString()}</td>
-                    <td className="p-3 font-bold text-teal-700">{(t.paidAmount || 0).toLocaleString()}</td>
-                    <td className="p-3 font-bold text-red-600">{(t.remainingAmount || 0).toLocaleString()}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-1 rounded text-[10px] font-bold ${(t.status || "").includes('مغلق') ? 'bg-teal-100 text-teal-800 border border-teal-300' : 'bg-red-100 text-red-700 border border-red-300'}`}>{t.status}</span>
-                    </td>
-                    <td className="p-3 text-center">
-                      {(t.status || "").includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-blue-100 text-blue-800 border border-blue-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 hover:text-white transition-all shadow-sm">طباعة</button>}
-                    </td>
-                  </tr>
-                ))}
-                <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900">
-                    <td className="p-3" colSpan="3">المجموع للفرز الحالي</td>
-                    <td className="p-3">{filteredTxTargetSum.toLocaleString()}</td>
-                    <td className="p-3 text-teal-700">{filteredTxPaidSum.toLocaleString()}</td>
-                    <td className="p-3 text-red-600">{filteredTxRemainingSum.toLocaleString()}</td>
-                    <td className="p-3" colSpan="2"></td>
-                </tr>
+                {filteredTransactions.map((t) => {
+                  if(!t) return null;
+                  const isClosed = String(t.status || "").includes("مغلق");
+                  return (
+                    <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-100">
+                      <td className="p-3 font-bold text-slate-900">{t.id}</td>
+                      <td className="p-3 text-slate-600">{t.updateDate}</td>
+                      <td className="p-3 text-slate-600 truncate max-w-[150px]">{t.tenant}</td>
+                      <td className="p-3">{(t.targetAmount || 0).toLocaleString()}</td>
+                      <td className="p-3 font-bold text-teal-700">{(t.paidAmount || 0).toLocaleString()}</td>
+                      <td className="p-3 font-bold text-red-600">{(t.remainingAmount || 0).toLocaleString()}</td>
+                      <td className="p-3"><span className={`px-2 py-1 rounded text-[10px] font-bold ${isClosed ? 'bg-teal-100 text-teal-800' : 'bg-red-100 text-red-700'}`}>{t.status || "معلق"}</span></td>
+                      <td className="p-3 text-center">{isClosed && <button onClick={() => printReceipt(t)} className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 shadow-sm">طباعة</button>}</td>
+                    </tr>
+                  )
+                })}
+                <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900"><td className="p-3" colSpan="3">المجموع للفرز الحالي</td><td className="p-3">{(filteredTxTargetSum||0).toLocaleString()}</td><td className="p-3 text-teal-700">{(filteredTxPaidSum||0).toLocaleString()}</td><td className="p-3 text-red-600">{(filteredTxRemainingSum||0).toLocaleString()}</td><td className="p-3" colSpan="2"></td></tr>
               </>
-            ) : (
-              <tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سندات.</td></tr>
-            )}
+            ) : (<tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سندات.</td></tr>)}
           </tbody>
         </table>
       </div>
@@ -571,6 +388,33 @@ export default function ShubramiSystem() {
         const { data: updatedShops } = await supabase.from('shops').select('*');
         shops = updatedShops;
       }
+
+      if (shops && shops.length > 0) {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const newVacantShops = [];
+        for (let i = 0; i < shops.length; i++) {
+          const s = shops[i];
+          if (s && (s.status === "مؤجر" || s.status === "مدمج") && s.endDate && s.endDate !== "-") {
+            const endD = new Date(s.endDate);
+            // 🛡️ الأتمتة: أرشفة العقد المنتهي وتوليد شاغر (فقط إذا كان مسدداً بالكامل)
+            if (endD < today && (Number(s.collected) || 0) >= (Number(s.annualRent) || 0)) {
+              await supabase.from('shops').update({ status: "أرشيف - منتهي ومسدد" }).eq('id', s.id);
+              shops[i].status = "أرشيف - منتهي ومسدد";
+              const hasVacant = shops.some(other => other && other.shopNumber === s.shopNumber && other.status === "شاغر");
+              const hasPendingNew = newVacantShops.some(n => n && n.shopNumber === s.shopNumber);
+              if (!hasVacant && !hasPendingNew) {
+                newVacantShops.push({
+                  id: `row-${Date.now()}-${Math.floor(Math.random() * 10000)}`, shopNumber: s.shopNumber, area: s.area || 60, status: "شاغر", tenant: "-", ejarNumber: "-", annualRent: 0, startDate: "-", endDate: "-", collected: 0, isGroupMain: false, groupShops: null
+                });
+              }
+            }
+          }
+        }
+        if (newVacantShops.length > 0) {
+          await supabase.from('shops').insert(newVacantShops);
+          shops = [...shops, ...newVacantShops];
+        }
+      }
       setShopsDB(shops || []);
 
       let { data: users } = await supabase.from('users').select('*');
@@ -631,87 +475,49 @@ export default function ShubramiSystem() {
     const str = String(dateStr); return str.includes("-") ? str.split("-")[0] : str;
   };
 
-  const todayDateObj = new Date(); todayDateObj.setHours(0, 0, 0, 0);
-  const tomorrowDateObj = new Date(); tomorrowDateObj.setDate(tomorrowDateObj.getDate() + 1); tomorrowDateObj.setHours(0, 0, 0, 0);
-
-  const installmentAlerts = installmentsDB.filter(inst => {
-    if (!inst.date) return false;
-    const instDateObj = new Date(inst.date); instDateObj.setHours(0, 0, 0, 0); return instDateObj <= tomorrowDateObj;
-  }).map(inst => {
-    const instDateObj = new Date(inst.date); instDateObj.setHours(0, 0, 0, 0);
-    let statusText = "";
-    if (instDateObj.getTime() === tomorrowDateObj.getTime()) statusText = "مستحقة غداً ⏳"; else if (instDateObj.getTime() === todayDateObj.getTime()) statusText = "مستحقة اليوم 🔴"; else statusText = "متأخرة السداد ⚠️";
-    return { ...inst, statusText };
-  });
-
-  const expiredShopsDebts = shopsDB.filter(s => 
-     !s.status.includes("أرشيف") && isContractExpired(s.endDate) && s.annualRent > s.collected && s.status !== "مدمج"
+  // الديون المستحقة المعلقة (تشمل العقود المنتهية التي لم تسدد)
+  const expiredShopsDebts = (shopsDB || []).filter(s => 
+     s && (String(s.status || "").includes("أرشيف - منتهي") || isContractExpired(s.endDate)) && (Number(s.annualRent) || 0) > (Number(s.collected) || 0) && s.status !== "مدمج"
   ).map(s => {
-      const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops || []).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-      return { id: s.id, label: s.shopNumber, year: s.endDate, tenant: displayName, details: `عقد منتهي يتطلب السداد - ${s.shopNumber}`, amount: s.annualRent - s.collected, isShopDebt: true };
+      const displayName = s.isGroupMain && Array.isArray(s.groupShops) ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+      const rem = (Number(s.annualRent) || 0) - (Number(s.collected) || 0);
+      return { id: s.id, label: s.shopNumber, year: s.endDate, tenant: displayName, details: `عقد منتهي يتطلب السداد - ${s.shopNumber}`, amount: rem, isShopDebt: true };
   });
 
-  const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => ({ ...d, isShopDebt: false }));
+  const manualDebts = (debtsDB || []).filter(d => d && (Number(d.amount) || 0) > 0).map(d => ({ ...d, isShopDebt: false }));
   const allOutstandingDebts = [...expiredShopsDebts, ...manualDebts];
-  const availableYears = [...new Set(shopsDB.filter(s => !s.status.includes("أرشيف") && s.startDate !== "-").flatMap(s => [getYear(s.startDate), getYear(s.endDate)]))].sort((a, b) => b - a);
+  const availableYears = [...new Set((shopsDB || []).filter(s => s && !String(s.status || "").includes("أرشيف") && s.startDate !== "-").flatMap(s => [getYear(s.startDate), getYear(s.endDate)]))].sort((a, b) => b - a);
 
   const dashYearsSet = new Set();
-  transactionsDB.forEach(t => { if(t.updateDate) dashYearsSet.add(getYear(t.updateDate)); });
-  expensesDB.forEach(e => { if(e.date) dashYearsSet.add(getYear(e.date)); });
-  allOutstandingDebts.forEach(d => { if(d.year) dashYearsSet.add(getYear(d.year)); });
+  (transactionsDB || []).forEach(t => { if(t && t.updateDate) dashYearsSet.add(getYear(t.updateDate)); });
+  (expensesDB || []).forEach(e => { if(e && e.date) dashYearsSet.add(getYear(e.date)); });
+  allOutstandingDebts.forEach(d => { if(d && d.year) dashYearsSet.add(getYear(d.year)); });
   const dashboardAvailableYears = [...dashYearsSet].filter(Boolean).sort((a, b) => b - a);
-  const receiptYears = [...new Set(transactionsDB.map(t => { const parts = String(t.id).split('-'); return parts.length > 1 ? parts[1] : null; }))].filter(Boolean).sort((a, b) => b - a);
-
-  const handleTransferToPayment = (shopNumber, amount, instId) => {
-    setShowNotifications(false); setActiveTab("payments"); setPaymentSubTab("new");
-    setNewPayShop(shopNumber); setNewPayTarget(amount); setNewPayAmount(amount); setPayingInstId(instId); 
-  };
-
-  const handleAddShopTag = (e) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      const val = shopInputValue.trim();
-      if (!val) return;
-      const formattedVal = val.startsWith("محل") ? val : `محل ${val}`;
-      
-      const shopExists = shopsDB.find(s => s.shopNumber === formattedVal && s.status === "شاغر");
-      if (!shopExists) return alert(`المحل ${formattedVal} غير متاح! تأكد أنه (شاغر) قبل إضافته للكيان.`);
-      if (newContractShops.includes(formattedVal)) return alert(`المحل ${formattedVal} مضاف مسبقاً للقائمة.`);
-      setNewContractShops([...newContractShops, formattedVal]);
-      setShopInputValue("");
-    }
-  };
-  const removeShopTag = (shopNum) => setNewContractShops(newContractShops.filter(s => s !== shopNum));
+  const receiptYears = [...new Set((transactionsDB || []).map(t => { if(!t) return null; const parts = String(t.id).split('-'); return parts.length > 1 ? parts[1] : null; }))].filter(Boolean).sort((a, b) => b - a);
 
   const handleNewContract = async (e) => {
     e.preventDefault();
-    if (newContractShops.length === 0 || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تعبئة جميع البيانات واختيار محل واحد على الأقل.");
+    if (newContractShops.length === 0 || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") return alert("الرجاء تحديد محل واحد على الأقل.");
     const startD = new Date(newContractStart); const endD = new Date(newContractEnd);
     if (endD <= startD) return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ النهاية قبل البداية أو يساويه!");
     const mainShopName = newContractShops[0];
-    const mainUpdate = { status: "مؤجر", tenant: newContractTenant, ejarNumber: newContractEjarNumber, annualRent: Number(newContractRent), startDate: newContractStart, endDate: newContractEnd, isGroupMain: newContractShops.length > 1, groupShops: newContractShops.length > 1 ? newContractShops : null };
-    const dependentUpdate = { status: "مدمج", tenant: newContractTenant, ejarNumber: newContractEjarNumber, annualRent: 0, startDate: newContractStart, endDate: newContractEnd, isGroupMain: false, groupShops: newContractShops };
+    const mainUpdate = { status: "مؤجر", tenant: newContractTenant, ejarNumber: newContractEjarNumber, annualRent: Number(newContractRent), startDate: newContractStart, endDate: newContractEnd, isGroupMain: newContractShops.length > 1, groupShops: newContractShops.length > 1 ? newContractShops : null, collected: 0 };
+    const dependentUpdate = { status: "مدمج", tenant: newContractTenant, ejarNumber: newContractEjarNumber, annualRent: 0, startDate: newContractStart, endDate: newContractEnd, isGroupMain: false, groupShops: newContractShops, collected: 0 };
 
-    const targetIDs = [];
+    const targetRecords = [];
     for (const shopNum of newContractShops) {
-       const shopRecord = shopsDB.find(s => s.shopNumber === shopNum && s.status === "شاغر");
-       if (!shopRecord) return alert(`خطأ: المحل ${shopNum} غير متاح حالياً! لم يتم حفظ العقد لحماية البيانات.`);
-       targetIDs.push({ id: shopRecord.id, num: shopNum });
+       const shopRecord = shopsDB.find(s => s && s.shopNumber === shopNum && !String(s.status || "").includes("أرشيف"));
+       if (!shopRecord || shopRecord.status !== "شاغر") return alert(`خطأ: المحل ${shopNum} غير شاغر حالياً ولا يمكن حجز عقد جديد عليه.`);
+       targetRecords.push({ record: shopRecord, num: shopNum });
     }
 
-    for (const target of targetIDs) {
+    for (const target of targetRecords) {
        const payload = target.num === mainShopName ? mainUpdate : dependentUpdate;
-       await supabase.from('shops').update(payload).eq('id', target.id);
+       await supabase.from('shops').update(payload).eq('id', target.record.id);
     }
-
-    setShopsDB(shopsDB.map(s => {
-       const matchedTarget = targetIDs.find(t => t.id === s.id);
-       if (matchedTarget) return { ...s, ...(matchedTarget.num === mainShopName ? mainUpdate : dependentUpdate) };
-       return s;
-    }));
-
+    await fetchAllData();
     setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
-    alert(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`);
+    alert(`🎉 تم حفظ العقد واعتماد المحل ككيان مؤجر بنجاح!`);
   };
 
   const handleEditContract = async (e) => {
@@ -720,8 +526,8 @@ export default function ShubramiSystem() {
     const originalRow = shopsDB.find(s => s.id === editContractId);
     if (!originalRow) return;
 
-    const isRenewal = isContractExpired(originalRow.endDate);
-    const remainingBalance = originalRow.annualRent - originalRow.collected;
+    const isRenewal = isContractExpired(originalRow.endDate) || String(originalRow.status || "").includes("منتهي");
+    const remainingBalance = (Number(originalRow.annualRent) || 0) - (Number(originalRow.collected) || 0);
 
     if (editContractStatus === "مؤجر" && editContractStart && editContractEnd) {
        const startD = new Date(editContractStart); const endD = new Date(editContractEnd);
@@ -729,439 +535,128 @@ export default function ShubramiSystem() {
     }
 
     if (isRenewal && editContractStatus === "مؤجر") {
-       const newStartD = new Date(editContractStart);
-       const oldEndD = new Date(originalRow.endDate);
-       if (newStartD <= oldEndD) return alert(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`);
+       const oldEndD = new Date(originalRow.endDate); const newStartD = new Date(editContractStart);
+       if (newStartD <= oldEndD) return alert(`🚫 تسلسل زمني خاطئ: يجب أن يبدأ العقد الجديد بعد تاريخ انتهاء السابق (${originalRow.endDate})`);
     }
 
-    if (isRenewal && editContractStatus === "مؤجر" && remainingBalance > 0) return alert(`🚫 منع مالي: لا يمكن تجديد هذا العقد!\n\nيوجد متبقي إيجار بقيمة (${remainingBalance} ريال).\nالرجاء تحصيل المديونية بالكامل قبل بدء دورة تعاقدية جديدة.`);
+    if (isRenewal && editContractStatus === "مؤجر" && remainingBalance > 0) return alert(`🚫 منع مالي: المحل عليه مديونية بقيمة (${remainingBalance} ريال) لا يمكن تجديده.`);
 
     if (!isRenewal && remainingBalance > 0 && (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate)) {
-       return alert("🚫 مهم: يمنع تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
+       return alert("🚫 مهم: يمنع تمديد تواريخ عقد ساري وعليه مديونية.");
     }
 
     if (!isRenewal && editContractStatus === "مؤجر" && (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent)) {
-       return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات.");
+       return alert("🚫 مهم: يمنع تعديل بيانات العقد الأساسية لعقد ساري.");
     }
 
-    if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
+    // الإخلاء ونقل المديونية للأرشيف
+    if (editContractStatus === "شاغر" && (originalRow.status === "مؤجر" || originalRow.status === "أرشيف - منتهي")) {
        if (remainingBalance > 0) {
-          const confirmMsg = `⚠️ تحذير هام:\n\nيوجد على هذا الكيان مديونية بقيمة (${remainingBalance} ريال).\nبمجرد الإخلاء، سيتم تحويل المديونية وتثبيتها في قسم (الديون المستحقة) تحت اسم المستأجر، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من الإخلاء؟`;
+          const confirmMsg = `⚠️ تنبيه مالي: يوجد متبقي مالي (${remainingBalance} ريال). عند الإخلاء سيتم ترحيل المبلغ كـ (دين مستحق باسم المستأجر)، ويصبح المحل شاغراً فوراً لتأجيره.\n\nهل تؤكد الإخلاء والترحيل المحاسبي؟`;
           if (!window.confirm(confirmMsg)) return;
 
-          const newDebt = { id: `D-${Date.now()}`, year: originalRow.endDate, tenant: originalRow.tenant, details: `تصفية وإخلاء: ${originalRow.isGroupMain ? 'كيان مجمع' : 'محل'} (${originalRow.shopNumber})`, amount: remainingBalance };
+          const newDebt = { id: `D-${Date.now()}`, year: originalRow.endDate || "2026", tenant: originalRow.tenant, details: `ترحيل مديونية إخلاء المحل (${originalRow.shopNumber})`, amount: remainingBalance };
           await supabase.from('debts').insert([newDebt]);
-          setDebtsDB(prev => [...prev, newDebt]);
        } else {
-          if (!window.confirm(`⚠️ تحذير: سيتم إخلاء الكيان وتحويله للأرشيف وتوليد محلات شاغرة جديدة. هل أنت متأكد؟`)) return; 
+          if (!window.confirm(`⚠️ تأكيد: هل تريد إخلاء الكيان وتحويل العقد الحالي للأرشيف؟`)) return; 
        }
 
-       const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
-       if (openTx) return alert(`🚫 منع مالي: الكيان مرتبط بسند معلق برقم ${openTx.id}. يرجى إغلاقه أولاً.`);
+       const groupToUpdate = originalRow.isGroupMain && Array.isArray(originalRow.groupShops) ? originalRow.groupShops : [originalRow.shopNumber];
        
-       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
-       if (pendingInst) return alert(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان.`);
-       
-       const groupToUpdate = originalRow.isGroupMain && originalRow.groupShops ? originalRow.groupShops : [originalRow.shopNumber];
-       const rowsToUpdate = []; const newVacants = [];
-
        for (const sNum of groupToUpdate) {
-          const shopToArchive = shopsDB.find(s => s.shopNumber === sNum && !s.status.includes("أرشيف"));
+          const shopToArchive = shopsDB.find(s => s && s.shopNumber === sNum && !String(s.status || "").includes("أرشيف"));
           if (shopToArchive) {
-              await supabase.from('shops').update({ status: "أرشيف - مخلى" }).eq('id', shopToArchive.id);
-              rowsToUpdate.push(shopToArchive.id);
-              newVacants.push({ id: `row-${Date.now()}-${Math.floor(Math.random()*10000)}`, shopNumber: sNum, area: originalRow.area || 60, status: "شاغر", tenant: "-", ejarNumber: "-", annualRent: originalRow.annualRent || 15000, startDate: "-", endDate: "-", collected: 0, isGroupMain: false, groupShops: null });
+              await supabase.from('shops').update({ status: "أرشيف - مستأجر سابق" }).eq('id', shopToArchive.id);
+              const newId = `row-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+              await supabase.from('shops').insert([{ id: newId, shopNumber: sNum, area: shopToArchive.area || 60, status: "شاغر", tenant: "-", ejarNumber: "-", annualRent: 15000, startDate: "-", endDate: "-", collected: 0, isGroupMain: false, groupShops: null }]);
           }
        }
-
-       if (newVacants.length > 0) await supabase.from('shops').insert(newVacants);
-       setShopsDB(prev => { const newState = prev.map(s => rowsToUpdate.includes(s.id) ? { ...s, status: "أرشيف - مخلى" } : s); return [...newState, ...newVacants]; });
-       return alert("تم الإخلاء والأرشفة وتوليد الشواغر بنجاح!");
+       await fetchAllData();
+       setEditContractId(""); alert("🎉 تم إخلاء المحل بنجاح، وترحيل المديونية، وأصبح شاغراً بالكامل!");
+       return;
     }
 
-    if (isRenewal) {
-      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: يجب إدخال رقم عقد إيجار جديد!");
-      if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
-      if (!editContractStart || !editContractEnd) return alert("خطأ: الرجاء إدخال تواريخ بداية ونهاية العقد الجديد!");
-      
-      const groupToRenew = originalRow.isGroupMain && originalRow.groupShops ? originalRow.groupShops : [originalRow.shopNumber];
-      const newRows = []; const rowsToUpdate = [];
+    // التجديد الفعلي
+    if (isRenewal && editContractStatus === "مؤجر") {
+      const groupToRenew = originalRow.isGroupMain && Array.isArray(originalRow.groupShops) ? originalRow.groupShops : [originalRow.shopNumber];
       
       for (let i = 0; i < groupToRenew.length; i++) {
          const sNum = groupToRenew[i];
-         const shopToArchive = shopsDB.find(s => s.shopNumber === sNum && !s.status.includes("أرشيف - مخلى") && !s.status.includes("أرشيف - مجدد"));
+         const shopToArchive = shopsDB.find(s => s && s.shopNumber === sNum && !String(s.status || "").includes("أرشيف"));
          if (shopToArchive) {
-             await supabase.from('shops').update({ status: "أرشيف - مجدد" }).eq('id', shopToArchive.id);
-             rowsToUpdate.push(shopToArchive.id);
+             await supabase.from('shops').update({ status: "أرشيف - عقد مجدد" }).eq('id', shopToArchive.id);
              const isMain = i === 0;
-             newRows.push({ id: `row-${Date.now()}-${Math.floor(Math.random()*10000)}`, shopNumber: sNum, area: 60, status: isMain ? "مؤجر" : "مدمج", tenant: editContractTenant, ejarNumber: editContractEjarNumber, annualRent: isMain ? Number(editContractRent) : 0, startDate: editContractStart, endDate: editContractEnd, collected: 0, isGroupMain: groupToRenew.length > 1 ? isMain : false, groupShops: groupToRenew.length > 1 ? groupToRenew : null });
+             const newId = `row-${Date.now()}-${Math.floor(Math.random()*10000)}`;
+             await supabase.from('shops').insert([{ id: newId, shopNumber: sNum, area: 60, status: isMain ? "مؤجر" : "مدمج", tenant: editContractTenant, ejarNumber: editContractEjarNumber, annualRent: isMain ? Number(editContractRent) : 0, startDate: editContractStart, endDate: editContractEnd, collected: 0, isGroupMain: groupToRenew.length > 1 ? isMain : false, groupShops: groupToRenew.length > 1 ? groupToRenew : null }]);
          }
       }
-      if (newRows.length > 0) await supabase.from('shops').insert(newRows);
-      setShopsDB(prev => { const newState = prev.map(s => rowsToUpdate.includes(s.id) ? { ...s, status: "أرشيف - مجدد" } : s); return [...newState, ...newRows]; });
-      alert(`🎉 تم تجديد العقد للكيان الموحد وحفظ الأرشيف بنجاح!`);
-      setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
-    } else {
-      await supabase.from('shops').update({ status: editContractStatus }).eq('id', editContractId);
-      setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, status: editContractStatus } : s));
-      alert("تم تحديث الحالة بنجاح!");
+      await fetchAllData();
+      alert(`🎉 تم تجديد العقد للكيان وحفظ السجلات السابقة بالأرشيف المالي!`);
+      setEditContractId("");
     }
   };
-
-  const handleNewPayment = async (e) => {
-    e.preventDefault();
-    if (!newPayShop) return;
-    const targetNum = Number(newPayTarget); const amountNum = Number(newPayAmount);
-    if (amountNum > targetNum) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
-    
-    const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
-    if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لتسجيل الدفعة عليه.");
-    if (activeShop.collected >= activeShop.annualRent) return alert("هذا العقد مسدد بالكامل!");
-    if (activeShop.collected + amountNum > activeShop.annualRent) {
-      const actualRemaining = activeShop.annualRent - activeShop.collected;
-      return alert(`❌ خطأ: المبلغ المدفوع يتجاوز المتبقي للكيان! المتبقي هو: ${actualRemaining} ريال.`);
-    }
-
-    const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
-    if (existingOpen) return alert(`الكيان مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
-
-    const remaining = targetNum - amountNum;
-    const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
-    const displayTenantName = activeShop.isGroupMain ? `${activeShop.tenant} (${(activeShop.groupShops || []).join('، ')})` : `${activeShop.tenant} (${activeShop.shopNumber})`;
-
-    const newTx = {
-      id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
-      startDate: new Date().toISOString().split('T')[0], updateDate: new Date().toISOString().split('T')[0], shop: newPayShop, tenant: displayTenantName, targetAmount: targetNum, paidAmount: amountNum, remainingAmount: remaining, method: newPayMethod, status: status
-    };
-
-    const { error: txErr } = await supabase.from('transactions').insert([newTx]);
-    if (!txErr) {
-      const updatedCollected = activeShop.collected + amountNum;
-      await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
-      
-      const instToDelete = payingInstId ? installmentsDB.find(i => i.id === payingInstId) : installmentsDB.find(i => i.shop === activeShop.shopNumber);
-      if (instToDelete) {
-         await supabase.from('installments').delete().eq('id', instToDelete.id);
-         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
-      }
-      setPayingInstId(""); setTransactionsDB([...transactionsDB, newTx]); 
-      setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
-      alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند!" : "تم حفظ الدفعة وفتح سند معلق.");
-    }
-  };
-
-  const handleUpdatePayment = async (e) => {
-    e.preventDefault();
-    if (!updatePayReceipt) return;
-    const tx = transactionsDB.find(t => t.id === updatePayReceipt);
-    if (!tx) return;
-    if (Number(updatePayAmount) > tx.remainingAmount) return alert("خطأ: المدفوع أكبر من المتبقي في هذا السند!");
-
-    const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
-    if (activeShop && (activeShop.collected + Number(updatePayAmount) > activeShop.annualRent)) {
-        const actualRemaining = activeShop.annualRent - activeShop.collected;
-        return alert(`❌ خطأ: المبلغ المدفوع يتجاوز المتبقي للكيان! المتبقي الفعلي هو: ${actualRemaining} ريال.`);
-    }
-
-    const updatedPaid = tx.paidAmount + Number(updatePayAmount);
-    const updatedRemaining = tx.targetAmount - updatedPaid;
-    const updatedStatus = updatedRemaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
-    const newMethod = tx.method.includes(updatePayMethod) ? tx.method : `${tx.method} و ${updatePayMethod}`;
-
-    const updatedTx = { paidAmount: updatedPaid, remainingAmount: updatedRemaining, status: updatedStatus, method: newMethod, updateDate: new Date().toISOString().split('T')[0] };
-
-    const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', updatePayReceipt);
-    if (!txErr) {
-      if (activeShop) {
-        const updatedCollected = activeShop.collected + Number(updatePayAmount);
-        await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
-        setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
-      }
-      const instToDelete = installmentsDB.find(i => i.shop === tx.shop);
-      if (instToDelete) {
-         await supabase.from('installments').delete().eq('id', instToDelete.id);
-         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
-      }
-      setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
-      alert("تم تحديث السند بنجاح!");
-    }
-  };
-  const handleDebt = async (e) => {
-    e.preventDefault();
-    const newDebt = { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) };
-    const { error } = await supabase.from('debts').insert([newDebt]);
-    if (!error) {
-      setDebtsDB([...debtsDB, newDebt]); setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount(""); alert("تم إدراج المديونية السابقة.");
-    }
-  };
-
-  const handleDebtPayment = async (e) => {
-    e.preventDefault();
-    if (!payDebtId) return;
-    const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
-    if (!targetDebt) return;
-    const payAmt = Number(payDebtAmount);
-    if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية!");
-
-    const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
-
-    if (existingTxIndex >= 0) {
-      const existingTx = transactionsDB[existingTxIndex];
-      const updatedPaid = existingTx.paidAmount + payAmt;
-      const updatedRemaining = existingTx.targetAmount - updatedPaid;
-      const newMethod = existingTx.method.includes(payDebtMethod) ? existingTx.method : `${existingTx.method} و ${payDebtMethod}`;
-
-      const updatedTx = { paidAmount: updatedPaid, remainingAmount: updatedRemaining, method: newMethod, updateDate: new Date().toISOString().split('T')[0], status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)" };
-
-      await supabase.from('transactions').update(updatedTx).eq('id', existingTx.id);
-      const newTxDB = [...transactionsDB];
-      newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
-      setTransactionsDB(newTxDB);
-    } else {
-      const newTx = {
-        id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`, referenceId: targetDebt.id, isDebtReceipt: true, startDate: new Date().toISOString().split('T')[0], updateDate: new Date().toISOString().split('T')[0], shop: targetDebt.isShopDebt ? targetDebt.label : `مديونية سابقة`, tenant: targetDebt.tenant, targetAmount: targetDebt.amount, paidAmount: payAmt, remainingAmount: targetDebt.amount - payAmt, method: payDebtMethod, status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
-      };
-      await supabase.from('transactions').insert([newTx]);
-      setTransactionsDB([...transactionsDB, newTx]);
-    }
-
-    if (targetDebt.isShopDebt) {
-      const currentShop = shopsDB.find(s => s.id === targetDebt.id);
-      const newCollected = (currentShop?.collected || 0) + payAmt;
-      await supabase.from('shops').update({ collected: newCollected }).eq('id', targetDebt.id);
-      setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: newCollected } : s));
-    } else {
-      await supabase.from('debts').update({ amount: targetDebt.amount - payAmt }).eq('id', targetDebt.id);
-      setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
-    }
-    alert(payAmt === targetDebt.amount ? "تم سداد المديونية بالكامل!" : "تم السداد الجزئي.");
-    setPayDebtId(""); setPayDebtAmount("");
-  };
-
-  const handleExpense = async (e) => {
-    e.preventDefault();
-    const newExpense = { id: `E-${Date.now()}`, date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes };
-    const { error } = await supabase.from('expenses').insert([newExpense]);
-    if (!error) { setExpensesDB([...expensesDB, newExpense]); setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes(""); alert("تم تسجيل المصروف."); }
-  };
-
-  const handleNewInstallment = async (e) => {
-    e.preventDefault();
-    if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
-    const newInst = { id: `INST-${Date.now()}`, shop: instShop, amount: Number(instAmount), date: instDate };
-    const { error } = await supabase.from('installments').insert([newInst]);
-    if (!error) { setInstallmentsDB([...installmentsDB, newInst]); setInstShop(""); setInstAmount(""); setInstDate(""); alert("تمت الجدولة بنجاح!"); } 
-  };
-
-  const handleDeleteInstallment = async (id) => {
-    if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
-      const { error = null } = await supabase.from('installments').delete().eq('id', id);
-      if (!error) { setInstallmentsDB(installmentsDB.filter(i => i.id !== id)); }
-    }
-  };
-
-  const filteredTxForDash = dashboardYear === "الكل" ? transactionsDB : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
-  const filteredExpForDash = dashboardYear === "الكل" ? expensesDB : expensesDB.filter(e => getYear(e.date) === dashboardYear);
-  const filteredDebtsForDash = dashboardYear === "الكل" ? allOutstandingDebts : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
-
-  const dashTotalCollected = filteredTxForDash.reduce((sum, t) => sum + t.paidAmount, 0);
-  const dashTotalExpenses = filteredExpForDash.reduce((sum, e) => sum + e.amount, 0);
-  const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
-  const dashNetIncome = dashTotalCollected - dashTotalExpenses;
-
-  const latestShopRecords = {};
-  shopsDB.forEach(shop => {
-    const currentIdNum = parseInt(String(shop.id).replace(/\D/g, '')) || 0;
-    const existingIdNum = latestShopRecords[shop.shopNumber] ? (parseInt(String(latestShopRecords[shop.shopNumber].id).replace(/\D/g, '')) || 0) : -1;
-    if (!shop.status.includes("أرشيف")) {
-      if (!latestShopRecords[shop.shopNumber] || currentIdNum > existingIdNum) {
-        latestShopRecords[shop.shopNumber] = shop;
-      }
-    }
-  });
-
-  const statusCounts = { "مؤجر": 0, "شاغر": 0, "تحت الصيانة": 0, "مدمج": 0 };
-  Object.values(latestShopRecords).forEach(shop => {
-    statusCounts[shop.status] = (statusCounts[shop.status] || 0) + 1;
-  });
 
   const filteredRentedShops = shopsDB.filter(s => {
-    if (s.status === "شاغر" || s.status === "مدمج") return false; 
-    
+    if (!s || s.status === "شاغر" || s.status === "مدمج") return false; 
     const isExpired = isContractExpired(s.endDate);
-    if (filterContractStatus === "ساري" && (isExpired || s.status.includes("أرشيف"))) return false;
-    if (filterContractStatus === "منتهي" && !isExpired && !s.status.includes("أرشيف")) return false;
+    if (filterContractStatus === "ساري" && (isExpired || String(s.status || "").includes("أرشيف"))) return false;
+    if (filterContractStatus === "منتهي" && !isExpired && !String(s.status || "").includes("أرشيف")) return false;
     
-    if (filterContractYear !== "الكل") {
-      const startY = getYear(s.startDate) || "";
-      const endY = getYear(s.endDate) || "";
-      if (startY !== filterContractYear && endY !== filterContractYear) return false;
-    }
+    if (filterContractYear !== "الكل" && getYear(s.startDate) !== filterContractYear && getYear(s.endDate) !== filterContractYear) return false;
     const searchLower = searchContract.toLowerCase().trim();
-    if (searchLower !== "") {
-      const matchShop = String(s.shopNumber).toLowerCase().includes(searchLower);
-      const matchTenant = String(s.tenant).toLowerCase().includes(searchLower);
-      const matchEjar = String(s.ejarNumber).toLowerCase().includes(searchLower);
-      if (!matchShop && !matchTenant && !matchEjar) return false;
-    }
+    if (searchLower !== "" && !String(s.shopNumber).toLowerCase().includes(searchLower) && !String(s.tenant).toLowerCase().includes(searchLower)) return false;
     return true;
   });
 
-  const totalRentSum = filteredRentedShops.filter(s => s.status === "مؤجر" && !s.status.includes("أرشيف")).reduce((sum, s) => sum + s.annualRent, 0);
-  const totalCollectedSum = filteredRentedShops.filter(s => s.status === "مؤجر" && !s.status.includes("أرشيف")).reduce((sum, s) => sum + s.collected, 0);
-  const totalRemainingSum = totalRentSum - totalCollectedSum;
-
-  const filteredTransactions = transactionsDB.filter(t => {
-    const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
-    const parts = String(t.id).split('-');
-    const txYear = parts.length > 1 ? parts[1] : null;
-    const yearMatch = filterReceiptYear === "الكل" || txYear === filterReceiptYear;
-    const searchLower = searchReceipt.toLowerCase().trim();
-    const searchMatch = searchLower === "" || String(t.id).toLowerCase().includes(searchLower) || String(t.shop).toLowerCase().includes(searchLower) || String(t.tenant).toLowerCase().includes(searchLower);
-    return statusMatch && yearMatch && searchMatch;
-  });
-
-  const filteredTxTargetSum = filteredTransactions.reduce((sum, t) => sum + t.targetAmount, 0);
-  const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
-  const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
-
-  const visibleTabs = allTabs.filter(tab => {
-    if (currentUser?.role === "مدير") return true; 
-    if (tab.adminOnly) return false; 
-    return currentUser?.allowedTabs?.includes(tab.id); 
-  });
-
-  if (loading) {
-    return (
-      <div dir="rtl" className="min-h-screen bg-slate-100 flex flex-col items-center justify-center font-tajawal text-slate-800">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-700 mb-4"></div>
-        <p className="text-base font-bold text-slate-600">جاري جلب ومزامنة البيانات من السحابة...</p>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return (
-      <div dir="rtl" className="min-h-screen font-tajawal flex items-center justify-center bg-slate-100">
-        <div className="w-full max-w-md p-8 bg-white border border-slate-300 rounded-2xl shadow-xl mx-4">
-          <div className="text-center mb-8">
-            <div className="text-5xl mb-3 text-blue-700">🏢</div>
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-wide">أسواق الشبرمي</h1>
-            <p className="text-slate-500 mt-1 text-sm">تسجيل الدخول للنظام المالي</p>
-          </div>
-          {authError && <div className="bg-red-50 border border-red-300 text-red-700 p-3 rounded-lg mb-6 text-sm text-center font-bold">{authError}</div>}
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div><label className="block text-slate-800 mb-1.5 font-semibold text-sm">اسم المستخدم</label><input type="text" mercantile-app="true" required className="w-full bg-slate-50 border border-slate-400 rounded-lg p-2.5 text-slate-900 focus:border-blue-700 focus:bg-white outline-none transition-colors text-sm" value={loginUser} onChange={e => setLoginUser(e.target.value)} /></div>
-            <div><label className="block text-slate-800 mb-1.5 font-semibold text-sm">كلمة المرور</label><input type="password" required className="w-full bg-slate-50 border border-slate-400 rounded-lg p-2.5 text-slate-900 focus:border-blue-700 focus:bg-white outline-none transition-colors text-sm" value={loginPass} onChange={e => setLoginPass(e.target.value)} /></div>
-            <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-lg text-sm shadow-md hover:bg-blue-800 transition-all">تسجيل الدخول</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <>
-      <style dangerouslySetInnerHTML={{__html: `@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap'); .font-tajawal { font-family: 'Tajawal', sans-serif; } .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; } .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 10px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }`}} />
-      
-      {showNotifications && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-2xl relative">
-                <button onClick={() => setShowNotifications(false)} className="absolute top-4 left-5 text-slate-500 hover:text-red-600 text-2xl font-bold transition-colors">&times;</button>
-                <h3 className="text-slate-900 font-extrabold mb-5 flex items-center gap-2 text-lg border-b border-slate-200 pb-3"><span>🔔</span> التنبيهات: دفعات مستحقة قريباً أو متأخرة</h3>
-                {installmentAlerts.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar p-1">
-                    {installmentAlerts.map(alert => {
-                        const shopData = shopsDB.find(s => s.shopNumber === alert.shop && !s.status.includes("أرشيف")) || shopsDB.find(s => s.shopNumber === alert.shop) || {};
-                        const displayName = shopData.isGroupMain ? `${shopData.tenant} (${(shopData.groupShops||[]).join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
-                        return (
-                        <div key={alert.id} className="bg-slate-100 border border-slate-300 p-3 rounded-xl flex flex-col justify-between hover:bg-white transition-colors">
-                            <div className="flex justify-between items-start mb-2">
-                              <div><span className="font-bold text-slate-900 block text-sm">{displayName}</span></div>
-                              <div className="text-left"><span className="block text-red-600 font-bold text-base">{alert.amount.toLocaleString()} ريال</span><span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 mt-1 inline-block">{alert.statusText}</span></div>
-                            </div>
-                            <div className="text-xs text-slate-600 mt-2 border-t border-slate-300 pt-2 flex justify-between items-center">
-                               <span>الاستحقاق: <b className="text-slate-800">{alert.date}</b></span>
-                               {visibleTabs.some(t => t.id === "payments") ? (<button onClick={() => handleTransferToPayment(alert.shop, alert.amount, alert.id)} className="text-blue-700 hover:text-blue-900 font-bold underline text-xs">سداد الآن</button>) : (<span className="text-slate-400 text-[10px]">(تتطلب صلاحية التحصيل)</span>)}
-                            </div>
-                        </div>
-                        );
-                    })}
-                  </div>
-                ) : (<div className="text-center py-8"><p className="text-4xl mb-3">🎉</p><p className="text-slate-600 font-bold text-sm">لا توجد تنبيهات أو دفعات متأخرة حالياً.</p></div>)}
-            </div>
-        </div>
-      )}
-
-      {editingUser && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-md relative">
-               <button onClick={() => setEditingUser(null)} className="absolute top-4 left-5 text-slate-400 hover:text-red-500 text-2xl font-bold transition-colors">&times;</button>
-               <h3 className="text-slate-900 font-extrabold mb-2 flex items-center gap-2 text-lg"><span>⚙️</span> تعديل صلاحيات: {editingUser.name}</h3>
-               <div className="flex flex-col gap-3 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4">
-                 {allTabs.filter(t => !t.adminOnly).map(tab => (
-                   <label key={tab.id} className="flex items-center gap-3 text-sm text-slate-800 cursor-pointer font-semibold p-2 hover:bg-white rounded transition-colors">
-                     <input type="checkbox" checked={(editingUser.allowedTabs || []).includes(tab.id)} onChange={() => handleTabToggle(tab.id, false)} className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-600" /> {tab.label}
-                   </label>
-                 ))}
-               </div>
-               <button onClick={handleSaveEditedPermissions} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">حفظ التعديلات</button>
-            </div>
-         </div>
-      )}
-
-      <div dir="rtl" className="flex h-screen overflow-hidden font-tajawal text-slate-900 bg-slate-100 relative">
+    <div dir="rtl" className="flex h-screen overflow-hidden font-tajawal text-slate-900 bg-slate-100 relative">
         <aside className="relative z-10 w-64 bg-slate-50 border-l border-slate-300 flex flex-col shadow-md shrink-0">
            <div className="p-6 text-center border-b border-slate-300"><div className="text-3xl mb-2 text-blue-700">🏢</div><h1 className="text-lg font-extrabold text-slate-900 tracking-wide">أسواق الشبرمي</h1></div>
-           <div className="p-4 border-b border-slate-300 flex items-center gap-3 bg-slate-100"><div className="w-9 h-9 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-sm font-bold shrink-0 border border-blue-300">{currentUser.name.charAt(0)}</div><div className="overflow-hidden"><p className="text-slate-800 font-bold text-sm truncate">{currentUser.name}</p><p className="text-[10px] text-slate-600 font-semibold truncate">الصلاحية: {currentUser.role}</p></div></div>
+           <div className="p-4 border-b border-slate-300 flex items-center gap-3 bg-slate-100">
+               <div className="w-9 h-9 bg-blue-200 text-blue-800 rounded-full flex items-center justify-center text-sm font-bold shrink-0 border border-blue-300">{currentUser ? currentUser.name.charAt(0) : "M"}</div>
+               <div className="overflow-hidden"><p className="text-slate-800 font-bold text-sm truncate">{currentUser?.name || "مدير النظام"}</p><p className="text-[10px] text-slate-600 font-semibold truncate">الصلاحية: {currentUser?.role || "مدير"}</p></div>
+           </div>
            <nav className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar">
-              {visibleTabs.length > 0 ? visibleTabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center text-right py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${activeTab === tab.id ? "bg-blue-100 text-blue-800 border-r-4 border-blue-700 shadow-sm" : "text-slate-700 hover:bg-slate-200 hover:text-blue-700 border-r-4 border-transparent"}`}>{tab.label}</button>)) : (<div className="text-center mt-10 p-4 bg-red-50 rounded-lg border border-red-200 text-red-600 text-xs font-bold">لا تملك صلاحية للوصول لأي شاشة.</div>)}
+              {visibleTabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center text-right py-2.5 px-3 rounded-lg font-bold transition-all text-sm ${activeTab === tab.id ? "bg-blue-100 text-blue-800 border-r-4 border-blue-700 shadow-sm" : "text-slate-700 hover:bg-slate-200 hover:text-blue-700 border-r-4 border-transparent"}`}>{tab.label}</button>))}
            </nav>
-           <div className="p-4 border-t border-slate-300"><button onClick={handleLogout} className="w-full bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-lg font-bold hover:bg-red-100 hover:text-red-700 hover:border-red-300 transition-all text-xs flex justify-center items-center gap-2">تسجيل الخروج 🚪</button></div>
+           <div className="p-4 border-t border-slate-300"><button onClick={handleLogout} className="w-full bg-slate-200 text-slate-800 border border-slate-300 px-3 py-2 rounded-lg font-bold hover:bg-red-100 hover:text-red-700 transition-all text-xs flex justify-center items-center gap-2">تسجيل الخروج 🚪</button></div>
         </aside>
 
         <main className="relative z-10 flex-1 flex flex-col h-screen overflow-hidden bg-transparent">
             <header className="flex justify-between items-center px-6 py-4 border-b border-slate-300 bg-white shadow-sm shrink-0">
-               <h2 className="text-xl font-extrabold text-slate-900">{visibleTabs.find(t => t.id === activeTab)?.label || "بدون صلاحية"}</h2>
-               <div className="relative">
-                  <button onClick={() => setShowNotifications(true)} className="relative p-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-full transition-all text-lg flex items-center justify-center h-10 w-10">
-                    🔔{installmentAlerts.length > 0 && (<span className="absolute top-0 right-0 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-600 border-2 border-white"></span></span>)}
-                  </button>
-               </div>
+               <h2 className="text-xl font-extrabold text-slate-900">{allTabs.find(t => t.id === activeTab)?.label}</h2>
+               <div className="relative"><button onClick={() => setShowNotifications(true)} className="relative p-2 bg-slate-100 border border-slate-300 rounded-full text-lg flex items-center justify-center h-10 w-10">🔔{installmentAlerts.length > 0 && (<span className="absolute top-0 right-0 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-600 border-2 border-white"></span></span>)}</button></div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-5 md:p-6 custom-scrollbar">
                {activeTab === "dashboard" && <DashboardIndicators dashboardYear={dashboardYear} setDashboardYear={setDashboardYear} dashboardAvailableYears={dashboardAvailableYears} dashTotalCollected={dashTotalCollected} dashTotalExpenses={dashTotalExpenses} dashNetIncome={dashNetIncome} dashTotalDebts={dashTotalDebts} statusCounts={statusCounts} shopsDB={shopsDB} installmentsDB={installmentsDB} />}
                
                {activeTab === "contracts" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
-                     <button onClick={() => setContractSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>✍️ تسجيل عقد جديد</button>
-                     <button onClick={() => setContractSubTab("edit")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "edit" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔄 تحديث وإخلاء العقود</button>
+                     <button onClick={() => setContractSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600"}`}>✍️ تسجيل عقد جديد (فردي/مجمع)</button>
+                     <button onClick={() => setContractSubTab("edit")} className={`px-3 py-1.5 font-bold transition-colors ${contractSubTab === "edit" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600"}`}>🔄 تحديث وإخلاء العقود</button>
                    </div>
 
                    {contractSubTab === "new" && (
                      <form onSubmit={handleNewContract} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                        <div className="md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-300">
                          <label className="block mb-1.5 font-bold text-blue-800 text-sm">المحلات المشمولة في العقد (التأجير المجمع الذكي):</label>
-                         <p className="text-xs text-slate-500 mb-2">اكتب رقم المحل واضغط Enter لإضافته للمجموعة. (المحل الأول سيكون هو الواجهة المحاسبية للعقد).</p>
-                         <div className="flex flex-wrap gap-2 p-2 border border-slate-400 rounded-lg bg-white focus-within:border-blue-700 transition-colors min-h-[46px] items-center">
+                         <div className="flex flex-wrap gap-2 p-2 border border-slate-400 rounded-lg bg-white min-h-[46px] items-center">
                             {newContractShops.map(shop => (
-                              <span key={shop} className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1.5 rounded flex items-center gap-1 shadow-sm">
-                                {shop} <button type="button" onClick={() => removeShopTag(shop)} className="text-blue-600 hover:text-red-600 font-bold ml-1">&times;</button>
-                              </span>
+                              <span key={shop} className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1.5 rounded flex items-center gap-1 shadow-sm">{shop} <button type="button" onClick={() => removeShopTag(shop)} className="text-blue-600 hover:text-red-600 font-bold ml-1">&times;</button></span>
                             ))}
-                            <input type="text" className="flex-1 outline-none min-w-[120px] text-sm bg-transparent font-semibold text-slate-800" placeholder="مثال: 10 أو محل 10" value={shopInputValue} onChange={(e) => setShopInputValue(e.target.value)} onKeyDown={handleAddShopTag} />
+                            <input type="text" className="flex-1 outline-none text-sm bg-transparent font-semibold text-slate-800" placeholder="اكتب رقم المحل واضغط Enter" value={shopInputValue} onChange={(e) => setShopInputValue(e.target.value)} onKeyDown={handleAddShopTag} />
                          </div>
                        </div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستأجر:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractTenant} onChange={(e) => setNewContractTenant(e.target.value)} required /></div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم عقد إيجار (إلزامي):</label><input type="text" placeholder="مثال: 87654321" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractEjarNumber} onChange={(e) => setNewContractEjarNumber(e.target.value)} required /></div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإجمالي الكلي للإيجار السنوي:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractRent} onChange={(e) => setNewContractRent(e.target.value)} required /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستأجر:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2" value={newContractTenant} onChange={(e) => setNewContractTenant(e.target.value)} required /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم عقد إيجار:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2" value={newContractEjarNumber} onChange={(e) => setNewContractEjarNumber(e.target.value)} required /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإيجار السنوي:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2" value={newContractRent} onChange={(e) => setNewContractRent(e.target.value)} required /></div>
                        <div className="grid grid-cols-2 gap-4 md:col-span-2">
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">بداية العقد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractStart} onChange={(e) => setNewContractStart(e.target.value)} required /></div>
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">نهاية العقد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractEnd} onChange={(e) => setNewContractEnd(e.target.value)} required /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">بداية العقد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2" value={newContractStart} onChange={(e) => setNewContractStart(e.target.value)} required /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">نهاية العقد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2" value={newContractEnd} onChange={(e) => setNewContractEnd(e.target.value)} required /></div>
                        </div>
-                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">💾 حفظ العقد واعتماد الكيان</button>
+                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md hover:bg-blue-800 transition-colors">💾 حفظ العقد واعتماد الكيان</button>
                      </form>
                    )}
 
@@ -1169,95 +664,63 @@ export default function ShubramiSystem() {
                      <form onSubmit={handleEditContract} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر العقد للتعديل/التجديد/الإخلاء:</label>
-                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={editContractId} onChange={(e) => {
+                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none" value={editContractId} onChange={(e) => {
                            const row = shopsDB.find(s => s.id === e.target.value);
                            if(row) { setEditContractId(row.id); setEditContractShop(row.shopNumber); setEditContractStatus(row.status); setEditContractTenant(row.tenant); setEditContractEjarNumber(row.ejarNumber === "-" ? "" : row.ejarNumber); setEditContractRent(row.annualRent); setEditContractStart(row.startDate); setEditContractEnd(row.endDate); }
                          }} required>
                            <option value="">-- المحلات المؤجرة المتاحة --</option>
-                           {shopsDB.filter(s => {
-                             if (s.status !== "مؤجر") return false;
+                           {/* التحديث: العقود تظهر دائماً حتى لو منتهية وستقيد بالدرع المالي عند الحفظ والتسلسل الزمني */}
+                           {shopsDB.filter(s => s && (s.status === "مؤجر" || String(s.status).includes("منتهي"))).map(s => {
                              const isExpired = isContractExpired(s.endDate);
-                             const remainingBalance = s.annualRent - s.collected;
-                             if (isExpired && remainingBalance > 0) return false;
-                             return true;
-                           }).map(s => {
-                             const isExpired = isContractExpired(s.endDate);
-                             const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-                             return <option key={s.id} value={s.id}>{displayName} {isExpired ? '(⚠️ منتهي - متاح للتجديد)' : '(ساري)'}</option>
+                             const displayName = s.isGroupMain && Array.isArray(s.groupShops) ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                             return <option key={s.id} value={s.id}>{displayName} {isExpired ? '(⚠️ منتهي العقد)' : '(ساري)'}</option>
                            })}
                          </select>
                        </div>
                        <div>
-                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحالة التعاقدية الحالية:</label>
-                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed" value={editContractStatus} onChange={(e) => setEditContractStatus(e.target.value)} disabled={editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)}>
-                           <option value="مؤجر">مؤجر</option><option value="شاغر">شاغر (إخلاء الكيان وأرشفة آلية)</option>
+                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإجراء المطلوب للكيان الحاضر:</label>
+                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none" value={editContractStatus} onChange={(e) => setEditContractStatus(e.target.value)}>
+                           <option value="مؤجر">تجديد أو تعديل بيانات العقد</option>
+                           <option value="شاغر">إخلاء الكيان فوراً (وترحيل المديونية تلقائياً)</option>
                          </select>
                        </div>
 
-                       {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && (
-                         <div className="md:col-span-2 p-3 bg-amber-100 text-amber-800 rounded-lg border border-amber-300 text-xs font-bold flex items-center gap-2"><span className="text-lg">⚠️</span><span>النظام رصد أن هذا العقد منتهي. التجديد الآن سيقوم بإنشاء دورة تعاقدية جديدة منفصلة لحفظ الأرشيف.</span></div>
-                       )}
-
-                       {editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && (
-                         <div className="md:col-span-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs font-bold flex items-center gap-2"><span className="text-lg">🔒</span><span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية.</span></div>
-                       )}
-
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المستأجر:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white disabled:bg-slate-100" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} /></div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم عقد إيجار المحدث/الجديد:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white disabled:bg-slate-100" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} /></div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإيجار السنوي الجديد:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white disabled:bg-slate-100" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المستأجر:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={editContractTenant} onChange={(e) => setEditContractTenant(e.target.value)} /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم عقد إيجار المحدث/الجديد:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={editContractEjarNumber} onChange={(e) => setEditContractEjarNumber(e.target.value)} /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">الإيجار السنوي الجديد:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={editContractRent} onChange={(e) => setEditContractRent(e.target.value)} /></div>
                        <div className="grid grid-cols-2 gap-4 md:col-span-2">
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">بداية العقد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white disabled:bg-slate-100" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} /></div>
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">نهاية العقد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white disabled:bg-slate-100" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} disabled={editContractId && editContractStatus === "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate)} required /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">بداية العقد الجديد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={editContractStart} onChange={(e) => setEditContractStart(e.target.value)} /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">نهاية العقد الجديد:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={editContractEnd} onChange={(e) => setEditContractEnd(e.target.value)} /></div>
                        </div>
-                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">
-                         {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث وإجراء العمليات"}
-                       </button>
+                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">🔄 تنفيذ وإجراء العمليات على المحل</button>
                      </form>
                    )}
 
                    <hr className="my-8 border-slate-300" />
-                   
-                   <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
-                      <h3 className="text-base font-bold text-slate-900">📋 المحلات المؤجرة وسجل العقود حالياً</h3>
-                      <button onClick={() => printRentedShopsPDF(filteredRentedShops)} className="bg-white border border-slate-400 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">📄 طباعة الجدول</button>
-                   </div>
-
-                   <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
-                     <div className="flex-1 min-w-[200px]"><input type="text" placeholder="🔍 بحث برقم المحل، المستأجر..." className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={searchContract} onChange={(e) => setSearchContract(e.target.value)} /></div>
-                     <div className="flex-1 min-w-[150px]"><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterContractStatus} onChange={(e) => setFilterContractStatus(e.target.value)}><option value="الكل">حالة العقد (الكل)</option><option value="ساري">ساري فقط</option><option value="منتهي">منتهي فقط</option></select></div>
-                     <div className="flex-1 min-w-[150px]"><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterContractYear} onChange={(e) => setFilterContractYear(e.target.value)}><option value="الكل">سنة العقد (الكل)</option>{availableYears.map(year => <option key={year} value={year}>{year}</option>)}</select></div>
-                   </div>
-                   
+                   <h3 className="text-base font-bold text-slate-900 mb-4">📋 المحلات وسجل العقود النشطة والتاريخية بالكامل</h3>
                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
-                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3 font-semibold">المستأجر (الكيان)</th><th className="p-3 font-semibold text-blue-700">رقم عقد إيجار</th><th className="p-3 font-semibold">الإيجار السنوي</th><th className="p-3 font-semibold">البداية</th><th className="p-3 font-semibold">النهاية</th><th className="p-3 font-semibold">المحصل</th><th className="p-3 font-semibold text-red-600">المتبقي</th><th className="p-3 font-semibold">الحالة</th></tr>
-                       </thead>
+                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300"><tr><th className="p-3">المستأجر (الكيان)</th><th className="p-3 text-blue-700">رقم عقد إيجار</th><th className="p-3">الإيجار السنوي</th><th className="p-3">البداية</th><th className="p-3">النهاية</th><th className="p-3">المحصل</th><th className="p-3 text-red-600">المتبقي</th><th className="p-3">الحالة والأرشيف</th></tr></thead>
                        <tbody>
                          {filteredRentedShops.map((s) => {
-                           const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                           if (!s) return null;
+                           const displayName = s.isGroupMain && Array.isArray(s.groupShops) ? `${s.tenant} (${s.groupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                           const isArchived = String(s.status || "").includes("أرشيف");
+                           const isExpired = isContractExpired(s.endDate);
                            return (
-                           <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
-                             <td className="p-3 font-bold text-slate-900">{displayName}</td>
+                           <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${isArchived ? 'bg-slate-50 text-slate-400' : ''}`}>
+                             <td className="p-3 font-bold">{displayName}</td>
                              <td className="p-3 font-bold text-blue-700">{s.ejarNumber}</td>
-                             <td className="p-3">{s.annualRent.toLocaleString()}</td>
+                             <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
                              <td className="p-3">{s.startDate}</td>
                              <td className="p-3">{s.endDate}</td>
-                             <td className="p-3 text-teal-700 font-bold">{s.collected.toLocaleString()}</td>
-                             <td className="p-3">{s.annualRent - s.collected <= 0 ? <span className="text-teal-700 font-bold text-[10px]">✔️ مسدد بالكامل</span> : <span className="text-red-600 font-bold">{(s.annualRent - s.collected).toLocaleString()}</span>}</td>
+                             <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
+                             <td className="p-3">{(s.annualRent - s.collected <= 0) ? <span className="text-teal-700 font-bold text-[10px]">✔️ مسدد</span> : <span className="text-red-600 font-bold">{(s.annualRent - s.collected).toLocaleString()}</span>}</td>
                              <td className="p-3">
-                               {s.status.includes("أرشيف") 
-                                 ? <span className="bg-slate-200 text-slate-700 px-2 py-1 rounded text-[10px] font-bold">{s.status}</span>
-                                 : (isContractExpired(s.endDate) 
-                                     ? <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⚠️ منتهي</span> 
-                                     : <span className="text-teal-700 font-bold text-xs">ساري</span>)
-                               }
+                               {isArchived ? <span className="bg-slate-200 text-slate-600 px-2 py-1 rounded text-[10px] font-bold">{s.status}</span> : (isExpired ? <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded text-[10px] font-bold">⚠️ منتهي العقد</span> : <span className="text-teal-700 font-bold text-xs">ساري</span>)}
                              </td>
                            </tr>
                          )})}
-                         {filteredRentedShops.filter(s => s.status === "مؤجر").length > 0 ? (
-                           <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900"><td className="p-3" colSpan="2">إجمالي العقود النشطة بالفرز الحالي</td><td className="p-3">{totalRentSum.toLocaleString()}</td><td className="p-3" colSpan="2"></td><td className="p-3 text-teal-700">{totalCollectedSum.toLocaleString()}</td><td className="p-3 text-red-600">{totalRemainingSum.toLocaleString()}</td><td className="p-3"></td></tr>
-                         ) : (<tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سجلات.</td></tr>)}
                        </tbody>
                      </table>
                    </div>
@@ -1265,34 +728,32 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "payments" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in">
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300">
                     <FinancialCollection paymentSubTab={paymentSubTab} setPaymentSubTab={setPaymentSubTab} newPayShop={newPayShop} setNewPayShop={setNewPayShop} newPayMethod={newPayMethod} setNewPayMethod={setNewPayMethod} newPayTarget={newPayTarget} setNewPayTarget={setNewPayTarget} newPayAmount={newPayAmount} setNewPayAmount={setNewPayAmount} updatePayReceipt={updatePayReceipt} setUpdatePayReceipt={setUpdatePayReceipt} updatePayMethod={updatePayMethod} setUpdatePayMethod={setUpdatePayMethod} updatePayAmount={updatePayAmount} setUpdatePayAmount={setUpdatePayAmount} instShop={instShop} setInstShop={setInstShop} instAmount={instAmount} setInstAmount={setInstAmount} instDate={instDate} setInstDate={setInstDate} handleNewPayment={handleNewPayment} handleUpdatePayment={handleUpdatePayment} handleNewInstallment={handleNewInstallment} handleDeleteInstallment={handleDeleteInstallment} handleTransferToPayment={handleTransferToPayment} shopsDB={shopsDB} transactionsDB={transactionsDB} installmentsDB={installmentsDB} isContractExpired={isContractExpired} todayDateObj={todayDateObj} searchReceipt={searchReceipt} setSearchReceipt={setSearchReceipt} filterReceiptStatus={filterReceiptStatus} setFilterReceiptStatus={setFilterReceiptStatus} filterReceiptYear={filterReceiptYear} setFilterReceiptYear={setFilterReceiptYear} receiptYears={receiptYears} filteredTransactions={filteredTransactions} filteredTxTargetSum={filteredTxTargetSum} filteredTxPaidSum={filteredTxPaidSum} filteredTxRemainingSum={filteredTxRemainingSum} printReceipt={printReceipt} printTablePDF={printTablePDF} exportToCSV={exportToCSV} printInstallmentsPDF={printInstallmentsPDF} />
                  </div>
                )}
 
                {activeTab === "debts" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
-                     <button onClick={() => setDebtSubTab("pay")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "pay" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>💰 سداد مديونية مستحقة</button>
-                     <button onClick={() => setDebtSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>✍️ إدراج مديونية يدوية</button>
+                     <button onClick={() => setDebtSubTab("pay")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "pay" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600"}`}>💰 سداد مديونية مستحقة</button>
+                     <button onClick={() => setDebtSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600"}`}>✍️ إدراج مديونية يدوية</button>
                    </div>
 
                    {debtSubTab === "pay" && (
                       <form onSubmit={handleDebtPayment} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                          <div className="md:col-span-2">
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر المديونية المستحقة للسداد:</label>
-                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtId} onChange={(e) => setPayDebtId(e.target.value)} required>
+                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none" value={payDebtId} onChange={(e) => setPayDebtId(e.target.value)} required>
                              <option value="">-- المديونيات المعلقة --</option>
-                             {allOutstandingDebts.map(d => (
-                               <option key={d.id} value={d.id}>{d.isShopDebt ? d.label : `يدوية: ${d.id}`} - {d.tenant} (المتبقي: {d.amount} ريال)</option>
-                             ))}
+                             {allOutstandingDebts.map(d => (<option key={d.id} value={d.id}>{d.label ? `المحل ${d.label}` : 'يدوية'} - {d.tenant} (المتبقي: {d.amount} ريال)</option>))}
                            </select>
                          </div>
                          {payDebtId && (
                            <>
-                             <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtMethod} onChange={(e) => setPayDebtMethod(e.target.value)}><option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option></select></div>
-                             <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtAmount} onChange={(e) => setPayDebtAmount(e.target.value)} required /></div>
-                             <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">💰 حفظ الدفعة للمديونية</button>
+                             <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none" value={payDebtMethod} onChange={(e) => setPayDebtMethod(e.target.value)}><option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option></select></div>
+                             <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={payDebtAmount} onChange={(e) => setPayDebtAmount(e.target.value)} required /></div>
+                             <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 text-white font-bold py-2.5 rounded-lg shadow-md transition-colors">💰 حفظ الدفعة للمديونية</button>
                            </>
                          )}
                       </form>
@@ -1300,32 +761,23 @@ export default function ShubramiSystem() {
 
                    {debtSubTab === "new" && (
                       <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ نهاية العقد / السنة المالية:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required /></div>
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستأجر / الجهة:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required /></div>
-                         <div className="md:col-span-2"><label className="block mb-1.5 font-semibold text-slate-800 text-xs">تفاصيل المديونية:</label><textarea className="w-full rounded-lg border border-slate-400 p-2 bg-white min-h-[80px]" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea></div>
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المطلوب:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required /></div>
-                         <div className="flex items-end"><button type="submit" className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">🎯 إدراج مديونية</button></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ نهاية العقد / السنة المالية:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستأجر / الجهة:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required /></div>
+                         <div className="md:col-span-2"><label className="block mb-1.5 font-semibold text-slate-800 text-xs">تفاصيل المديونية:</label><textarea className="w-full rounded-lg border border-slate-400 p-2 min-h-[80px]" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المطلوب:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required /></div>
+                         <div className="flex items-end"><button type="submit" className="w-full bg-blue-700 text-white font-bold py-2 rounded-lg shadow-md">🎯 إدراج مديونية</button></div>
                       </form>
                    )}
                      
                     <hr className="my-8 border-slate-300" />
-                    <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
-                       <h3 className="text-base font-bold text-slate-900">📊 جدول المديونيات المستحقة والمعلقة</h3>
-                       <button onClick={() => printDebtsPDF(allOutstandingDebts)} className="bg-white border border-slate-400 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">📄 طباعة الجدول</button>
-                    </div>
-                    
-                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white custom-scrollbar">
+                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
-                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3">المعرف / المحل</th><th className="p-3">تاريخ نهاية العقد</th><th className="p-3">المستأجر</th><th className="p-3">التفاصيل</th><th className="p-3 text-red-600">المبلغ المتبقي</th></tr>
-                       </thead>
+                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300"><tr><th className="p-3">المعرف / المحل</th><th className="p-3">تاريخ نهاية العقد</th><th className="p-3">المستأجر</th><th className="p-3">التفاصيل</th><th className="p-3 text-red-600">المبلغ المتبقي</th></tr></thead>
                        <tbody>
-                         {allOutstandingDebts.length === 0 ? (
-                           <tr><td colSpan="5" className="p-5 text-center text-slate-500">لا توجد مديونيات مستحقة.</td></tr>
-                         ) : (
+                         {allOutstandingDebts.length === 0 ? (<tr><td colSpan="5" className="p-5 text-center text-slate-500">لا توجد مديونيات مستحقة.</td></tr>) : (
                            allOutstandingDebts.map((d) => (
-                             <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
-                               <td className="p-3 font-bold text-slate-900">{d.isShopDebt ? d.label : d.id}</td>
+                             <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-100">
+                               <td className="p-3 font-bold text-slate-900">{d.label ? `محل ${d.label}` : d.id}</td>
                                <td className="p-3 text-slate-700">{d.year}</td>
                                <td className="p-3 text-slate-700">{d.tenant}</td>
                                <td className="p-3 text-slate-600 truncate max-w-[150px]">{d.details}</td>
@@ -1340,93 +792,48 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "expenses" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 text-sm">
                     <form onSubmit={handleExpense} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">التاريخ:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={expDate} onChange={(e) => setExpDate(e.target.value)} required /></div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">بند الصرف:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={expCat} onChange={(e) => setExpCat(e.target.value)} required /></div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} required /></div>
-                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">ملاحظات:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={expNotes} onChange={(e) => setExpNotes(e.target.value)} /></div>
-                       <button type="submit" className="md:col-span-2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">🚨 تسجيل المصروف</button>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">التاريخ:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2" value={expDate} onChange={(e) => setExpDate(e.target.value)} required /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">بند الصرف:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2" value={expCat} onChange={(e) => setExpCat(e.target.value)} required /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} required /></div>
+                       <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">ملاحظات:</label><input type="text" className="w-full rounded-lg border border-slate-400 p-2" value={expNotes} onChange={(e) => setExpNotes(e.target.value)} /></div>
+                       <button type="submit" className="md:col-span-2 bg-slate-800 text-white font-bold py-2.5 rounded-lg shadow-md">🚨 تسجيل المصروف</button>
                     </form>
-                    
-                    <h3 className="text-base font-bold text-slate-900 mb-4">📋 سجل المصروفات التشغيلية</h3>
-                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                    <div className="overflow-x-auto rounded-lg border border-slate-300 bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
-                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3">التاريخ</th><th className="p-3">البند</th><th className="p-3 text-slate-900">المبلغ</th><th className="p-3">ملاحظات</th></tr>
-                       </thead>
+                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300"><tr><th className="p-3">التاريخ</th><th className="p-3">البند</th><th className="p-3">المبلغ</th><th className="p-3">ملاحظات</th></tr></thead>
                        <tbody>
                          {expensesDB.map((e, i) => (
-                           <tr key={i} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                           <tr key={i} className="border-b border-slate-200 hover:bg-slate-100">
                              <td className="p-3 text-slate-700">{e.date}</td>
                              <td className="p-3 font-semibold text-slate-800">{e.category}</td>
                              <td className="p-3 font-bold text-slate-900">{e.amount.toLocaleString()}</td>
                              <td className="p-3 text-slate-600">{e.notes}</td>
                            </tr>
                          ))}
-                         {expensesDB.length === 0 && (<tr><td colSpan="4" className="p-5 text-center text-slate-500">لا توجد مصروفات مسجلة.</td></tr>)}
                        </tbody>
                      </table>
                    </div>
                  </div>
                )}
 
-               {activeTab === "users" && currentUser.role === "مدير" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+               {activeTab === "users" && currentUser?.role === "مدير" && (
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 text-sm">
                    <div className="bg-slate-100 p-5 rounded-xl border border-slate-300 mb-8">
                       <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><span>➕</span> إضافة مستخدم جديد للنظام</h3>
                       <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">الاسم الكامل:</label><input type="text" required className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} /></div>
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستخدم (للدخول):</label><input type="text" required className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={newUserUsername} onChange={(e) => setNewUserUsername(e.target.value.toLowerCase().replace(/\s/g, ''))} /></div>
-                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">كلمة المرور:</label><input type="password" required className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">الاسم الكامل:</label><input type="text" required className="w-full rounded-lg border border-slate-400 p-2" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستخدم:</label><input type="text" required className="w-full rounded-lg border border-slate-400 p-2" value={newUserUsername} onChange={(e) => setNewUserUsername(e.target.value.toLowerCase().replace(/\s/g, ''))} /></div>
+                         <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">كلمة المرور:</label><input type="password" required className="w-full rounded-lg border border-slate-400 p-2" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} /></div>
                          <div>
-                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الدور / الصلاحية:</label>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الدور:</label>
                            <select className="w-full rounded-lg border border-slate-400 p-2 bg-white" value={newUserRole} onChange={(e) => { setNewUserRole(e.target.value); if(e.target.value === "مدير") setNewUserAllowedTabs([]); }}>
                              <option value="موظف">موظف (محدد الصلاحيات)</option><option value="مدير">مدير (صلاحيات كاملة مطلقة)</option>
                            </select>
                          </div>
-
-                         {newUserRole === "موظف" && (
-                           <div className="md:col-span-2 bg-white p-4 rounded-lg border border-slate-300 mt-2">
-                             <label className="block mb-3 font-semibold text-slate-800 text-xs border-b border-slate-100 pb-2">حدد الشاشات المسموحة لهذا الموظف:</label>
-                             <div className="flex flex-wrap gap-4">
-                               {allTabs.filter(t => !t.adminOnly).map(tab => (
-                                 <label key={tab.id} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50 p-1.5 rounded transition-colors">
-                                   <input type="checkbox" checked={newUserAllowedTabs.includes(tab.id)} onChange={() => handleTabToggle(tab.id, true)} className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-600" />
-                                   {tab.label}
-                                 </label>
-                               ))}
-                             </div>
-                           </div>
-                         )}
-                         <button type="submit" className="md:col-span-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm transition-colors mt-2 shadow-md">حفظ المستخدم ومنح الصلاحية</button>
+                         <button type="submit" className="md:col-span-2 bg-blue-700 text-white font-bold py-2.5 rounded-lg transition-colors mt-2 shadow-md">حفظ المستخدم ومنح الصلاحية</button>
                       </form>
-                   </div>
-
-                   <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><span>👥</span> قائمة المستخدمين المسجلين</h3>
-                   <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
-                     <table className="w-full text-right text-slate-800 text-xs">
-                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
-                         <tr><th className="p-3">الاسم الكامل</th><th className="p-3">اسم الدخول</th><th className="p-3">الصلاحية</th><th className="p-3 text-center">إجراءات</th></tr>
-                       </thead>
-                       <tbody>
-                         {usersDB.map(user => (
-                           <tr key={user.id} className="border-b border-slate-200 hover:bg-slate-100">
-                             <td className="p-3 font-bold text-slate-900">{user.name}</td>
-                             <td className="p-3 text-slate-600">{user.username}</td>
-                             <td className="p-3"><span className={`px-2 py-1 rounded text-[10px] font-bold ${user.role === 'مدير' ? 'bg-blue-100 text-blue-800 border border-blue-300' : 'bg-slate-200 text-slate-700 border border-slate-300'}`}>{user.role}</span></td>
-                             <td className="p-3 text-center">
-                               {currentUser.id !== user.id ? (
-                                 <div className="flex justify-center gap-2">
-                                   {user.role === "موظف" && (<button onClick={() => setEditingUser(user)} className="text-blue-700 hover:text-blue-900 font-bold text-[10px] bg-blue-50 border border-blue-200 px-2 py-1 rounded transition-colors shadow-sm">تعديل الصلاحيات</button>)}
-                                   <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-800 font-bold text-[10px] bg-red-50 border border-red-200 px-2 py-1 rounded transition-colors shadow-sm">حذف</button>
-                                 </div>
-                               ) : (<span className="text-slate-500 text-[10px] font-bold">(أنت)</span>)}
-                             </td>
-                           </tr>
-                         ))}
-                       </tbody>
-                     </table>
                    </div>
                  </div>
                )}
