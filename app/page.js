@@ -201,9 +201,17 @@ const DashboardIndicators = ({ dashboardYear, setDashboardYear, dashboardAvailab
   );
 };
 
-// ==================== مكوّن قسم التحصيل المالي وسندات القبض ====================
+// ==================== مكوّن قسم التحصيل المالي وسندات القبض (مستقل) ====================
 const FinancialCollection = ({
-  paymentSubTab, setPaymentSubTab, newPayShop, setNewPayShop, newPayMethod, setNewPayMethod, newPayTarget, setNewPayTarget, newPayAmount, setNewPayAmount, updatePayReceipt, setUpdatePayReceipt, updatePayMethod, setUpdatePayMethod, updatePayAmount, setUpdatePayAmount, instShop, setInstShop, instAmount, setInstAmount, instDate, setInstDate, handleNewPayment, handleUpdatePayment, handleNewInstallment, handleDeleteInstallment, handleTransferToPayment, shopsDB, transactionsDB, installmentsDB, todayDateObj, searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears, filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum, printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF
+  paymentSubTab, setPaymentSubTab,
+  newPayShop, setNewPayShop, newPayMethod, setNewPayMethod, newPayTarget, setNewPayTarget, newPayAmount, setNewPayAmount,
+  updatePayReceipt, setUpdatePayReceipt, updatePayMethod, setUpdatePayMethod, updatePayAmount, setUpdatePayAmount,
+  instShop, setInstShop, instAmount, setInstAmount, instDate, setInstDate,
+  handleNewPayment, handleUpdatePayment, handleNewInstallment, handleDeleteInstallment, handleTransferToPayment,
+  shopsDB, transactionsDB, installmentsDB, isContractExpired, todayDateObj,
+  searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears,
+  filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum,
+  printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF
 }) => {
   return (
     <div className="animate-fade-in text-sm">
@@ -216,19 +224,37 @@ const FinancialCollection = ({
       {paymentSubTab === "new" && (
         <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف (العقود السارية):</label>
+            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف (العقود السارية الموحدة):</label>
             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
               <option value="">-- اختر المستأجر / العقد --</option>
-              {shopsDB.filter(s => (s.status === "مؤجر" || s.status === "مدمج") && !s.status.includes("أرشيف")).map(s => {
-                const isFullyPaid = s.collected >= s.annualRent;
-                const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops || []).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-                return (<option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>{displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}</option>);
+              {shopsDB.filter(s => (s.status === "مؤجر" || s.status === "مدمج") && !(s.status || "").includes("أرشيف")).map(s => {
+                const isFullyPaid = (s.collected || 0) >= (s.annualRent || 0);
+                const safeGroupShops = Array.isArray(s.groupShops) ? s.groupShops : [];
+                const displayName = s.isGroupMain && safeGroupShops.length > 0 ? `${s.tenant} (${safeGroupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                return (
+                  <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
+                    {displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}
+                  </option>
+                );
               })}
             </select>
           </div>
-          <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}><option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option><option value="حوالة بنكية">حوالة بنكية</option></select></div>
-          <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ الكلي للسند:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayTarget} onChange={(e) => setNewPayTarget(e.target.value)} required /></div>
-          <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required /></div>
+          <div>
+            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
+            <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
+              <option value="نقد">نقد</option>
+              <option value="إيداع بنكي">إيداع بنكي</option>
+              <option value="حوالة بنكية">حوالة بنكية</option>
+            </select>
+          </div>
+          <div>
+            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ الكلي للسند:</label>
+            <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayTarget} onChange={(e) => setNewPayTarget(e.target.value)} required />
+          </div>
+          <div>
+            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label>
+            <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required />
+          </div>
           <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">➕ حفظ السند</button>
         </form>
       )}
@@ -244,8 +270,18 @@ const FinancialCollection = ({
           </div>
           {updatePayReceipt && (
             <>
-              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}><option value="نقد">نقد</option><option value="إيداع بنكي">إيداع بنكي</option><option value="حوالة بنكية">حوالة بنكية</option></select></div>
-              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required /></div>
+              <div>
+                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
+                <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
+                  <option value="نقد">نقد</option>
+                  <option value="إيداع بنكي">إيداع بنكي</option>
+                  <option value="حوالة بنكية">حوالة بنكية</option>
+                </select>
+              </div>
+              <div>
+                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label>
+                <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required />
+              </div>
               <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">🔄 اعتماد الإغلاق</button>
             </>
           )}
@@ -259,15 +295,26 @@ const FinancialCollection = ({
                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تحديد الكيان:</label>
                 <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instShop} onChange={(e) => setInstShop(e.target.value)} required>
                   <option value="">-- اختر المستأجر / العقد --</option>
-                  {shopsDB.filter(s => (s.status === "مؤجر" || s.status === "مدمج") && !s.status.includes("أرشيف")).map(s => {
-                    const isFullyPaid = s.collected >= s.annualRent;
-                    const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops || []).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-                    return (<option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>{displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}</option>);
+                  {shopsDB.filter(s => (s.status === "مؤجر" || s.status === "مدمج") && !(s.status || "").includes("أرشيف")).map(s => {
+                    const isFullyPaid = (s.collected || 0) >= (s.annualRent || 0);
+                    const safeGroupShops = Array.isArray(s.groupShops) ? s.groupShops : [];
+                    const displayName = s.isGroupMain && safeGroupShops.length > 0 ? `${s.tenant} (${safeGroupShops.join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                    return (
+                      <option key={s.id} value={s.shopNumber} disabled={isFullyPaid}>
+                        {displayName} {isFullyPaid ? "- (مسدد 🚫)" : ""}
+                      </option>
+                    );
                   })}
                 </select>
               </div>
-              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">مبلغ الدفعة:</label><input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instAmount} onChange={(e) => setInstAmount(e.target.value)} required /></div>
-              <div><label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ الاستحقاق:</label><input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instDate} onChange={(e) => setInstDate(e.target.value)} required /></div>
+              <div>
+                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">مبلغ الدفعة:</label>
+                <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instAmount} onChange={(e) => setInstAmount(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ الاستحقاق:</label>
+                <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instDate} onChange={(e) => setInstDate(e.target.value)} required />
+              </div>
               <button type="submit" className="md:col-span-3 mt-1 bg-teal-700 hover:bg-teal-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">📅 جدولة الدفعة</button>
            </form>
 
@@ -279,35 +326,52 @@ const FinancialCollection = ({
            <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
              <table className="w-full text-right text-slate-800 text-xs">
                <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
-                 <tr><th className="p-3 font-semibold">المستأجر (الكيان)</th><th className="p-3 font-semibold text-blue-700">المبلغ</th><th className="p-3 font-semibold text-teal-700">التاريخ</th><th className="p-3 font-semibold">المحصل الكلي</th><th className="p-3 font-semibold text-red-600">المتبقي من العقد</th><th className="p-3 font-semibold text-center">الإجراء</th></tr>
+                 <tr>
+                   <th className="p-3 font-semibold">المستأجر (الكيان)</th>
+                   <th className="p-3 font-semibold text-blue-700">المبلغ</th>
+                   <th className="p-3 font-semibold text-teal-700">التاريخ</th>
+                   <th className="p-3 font-semibold">المحصل الكلي</th>
+                   <th className="p-3 font-semibold text-red-600">المتبقي من العقد</th>
+                   <th className="p-3 font-semibold text-center">الإجراء</th>
+                 </tr>
                </thead>
                <tbody>
                  {installmentsDB.length === 0 ? (
                    <tr><td colSpan="6" className="p-4 text-center text-slate-500">لا توجد دفعات مجدولة حالياً.</td></tr>
                  ) : (
                    installmentsDB.map(inst => {
-                     const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !s.status.includes("أرشيف")) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
+                     const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !(s.status || "").includes("أرشيف")) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
                      const collected = shopData.collected || 0;
                      const remaining = (shopData.annualRent || 0) - collected;
-                     const instDateObj = new Date(inst.date); instDateObj.setHours(0, 0, 0, 0);
+                     
+                     const instDateObj = new Date(inst.date);
+                     instDateObj.setHours(0, 0, 0, 0);
                      const isDueOrOverdue = instDateObj <= todayDateObj;
-                     const displayName = shopData.isGroupMain ? `${shopData.tenant} (${(shopData.groupShops || []).join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
+
+                     const safeGroupShops = Array.isArray(shopData.groupShops) ? shopData.groupShops : [];
+                     const displayName = shopData.isGroupMain && safeGroupShops.length > 0 ? `${shopData.tenant} (${safeGroupShops.join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
 
                      return (
                        <tr key={inst.id} className="border-b border-slate-200 hover:bg-slate-100">
                          <td className="p-3 font-bold">{displayName}</td>
-                         <td className="p-3 font-bold text-blue-700">{inst.amount.toLocaleString()} ريال</td>
+                         <td className="p-3 font-bold text-blue-700">{(inst.amount || 0).toLocaleString()} ريال</td>
                          <td className="p-3 font-bold">{inst.date}</td>
                          <td className="p-3 text-teal-700">{collected.toLocaleString()} ريال</td>
                          <td className="p-3 text-red-600 font-bold">{remaining.toLocaleString()} ريال</td>
                          <td className="p-3 text-center">
                            {isDueOrOverdue ? (
                              <div className="flex flex-col gap-1.5 items-center">
-                               <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-teal-100 text-teal-800 border border-teal-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-teal-700 hover:text-white transition-all shadow-sm">سداد الآن</button>
-                               <button onClick={() => handleDeleteInstallment(inst.id)} className="text-slate-500 hover:text-red-600 text-[10px] underline font-semibold">حذف</button>
+                               <button onClick={() => handleTransferToPayment(inst.shop, inst.amount, inst.id)} className="bg-teal-100 text-teal-800 border border-teal-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-teal-700 hover:text-white transition-all shadow-sm">
+                                 سداد الآن
+                               </button>
+                               <button onClick={() => handleDeleteInstallment(inst.id)} className="text-slate-500 hover:text-red-600 text-[10px] underline font-semibold">
+                                 حذف
+                               </button>
                              </div>
                            ) : (
-                             <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 hover:text-white transition-all shadow-sm">إلغاء</button>
+                             <button onClick={() => handleDeleteInstallment(inst.id)} className="bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-600 hover:text-white transition-all shadow-sm">
+                               إلغاء
+                             </button>
                            )}
                          </td>
                        </tr>
@@ -321,6 +385,7 @@ const FinancialCollection = ({
       )}
 
       <hr className="my-8 border-slate-300" />
+      
       <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
          <h3 className="text-base font-bold text-slate-900">📋 أرشيف السندات</h3>
          <div className="flex gap-2">
@@ -330,15 +395,49 @@ const FinancialCollection = ({
       </div>
 
       <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
-        <div className="flex-1 min-w-[200px]"><input type="text" placeholder="🔍 بحث برقم السند، المحل..." className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors text-xs" value={searchReceipt} onChange={(e) => setSearchReceipt(e.target.value)} /></div>
-        <div className="flex-1 min-w-[150px]"><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}><option value="الكل">حالة السند (الكل)</option><option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option><option value="سداد جزئي (مديونية)">سداد جزئي</option><option value="مغلق (مكتمل)">مغلق (مكتمل)</option><option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option></select></div>
-        <div className="flex-1 min-w-[120px]"><select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterReceiptYear} onChange={(e) => setFilterReceiptYear(e.target.value)}><option value="الكل">السنة (الكل)</option>{receiptYears.map(year => (<option key={year} value={year}>{year}</option>))}</select></div>
+        <div className="flex-1 min-w-[200px]">
+          <input 
+            type="text" 
+            placeholder="🔍 بحث برقم السند، المحل..." 
+            className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors text-xs" 
+            value={searchReceipt} 
+            onChange={(e) => setSearchReceipt(e.target.value)} 
+          />
+        </div>
+
+        <div className="flex-1 min-w-[150px]">
+          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterReceiptStatus} onChange={(e) => setFilterReceiptStatus(e.target.value)}>
+            <option value="الكل">حالة السند (الكل)</option>
+            <option value="مفتوح (قيد التحصيل)">مفتوح (قيد التحصيل)</option>
+            <option value="سداد جزئي (مديونية)">سداد جزئي</option>
+            <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
+            <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
+          </select>
+        </div>
+        
+        <div className="flex-1 min-w-[120px]">
+          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={filterReceiptYear} onChange={(e) => setFilterReceiptYear(e.target.value)}>
+            <option value="الكل">السنة (الكل)</option>
+            {receiptYears.map(year => (
+                <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+        </div>
       </div>
       
       <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
         <table className="w-full text-right text-slate-800 text-xs">
           <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
-            <tr><th className="p-3 font-semibold">السند</th><th className="p-3 font-semibold">الاعتماد</th><th className="p-3 font-semibold">الجهة / الكيان</th><th className="p-3 font-semibold">المطلوب</th><th className="p-3 font-semibold text-teal-700">المدفوع</th><th className="p-3 font-semibold text-red-600">المتبقي</th><th className="p-3 font-semibold">الحالة</th><th className="p-3 font-semibold text-center">الإجراء</th></tr>
+            <tr>
+              <th className="p-3 font-semibold">السند</th>
+              <th className="p-3 font-semibold">الاعتماد</th>
+              <th className="p-3 font-semibold">الجهة / الكيان</th>
+              <th className="p-3 font-semibold">المطلوب</th>
+              <th className="p-3 font-semibold text-teal-700">المدفوع</th>
+              <th className="p-3 font-semibold text-red-600">المتبقي</th>
+              <th className="p-3 font-semibold">الحالة</th>
+              <th className="p-3 font-semibold text-center">الإجراء</th>
+            </tr>
           </thead>
           <tbody>
             {filteredTransactions.length > 0 ? (
@@ -348,16 +447,28 @@ const FinancialCollection = ({
                     <td className="p-3 font-bold text-slate-900">{t.id}</td>
                     <td className="p-3 text-slate-600">{t.updateDate}</td>
                     <td className="p-3 text-slate-600 truncate max-w-[150px]" title={t.tenant}>{t.tenant}</td>
-                    <td className="p-3">{t.targetAmount.toLocaleString()}</td>
-                    <td className="p-3 font-bold text-teal-700">{t.paidAmount.toLocaleString()}</td>
-                    <td className="p-3 font-bold text-red-600">{t.remainingAmount.toLocaleString()}</td>
-                    <td className="p-3"><span className={`px-2 py-1 rounded text-[10px] font-bold ${t.status.includes('مغلق') ? 'bg-teal-100 text-teal-800 border border-teal-300' : 'bg-red-100 text-red-700 border border-red-300'}`}>{t.status}</span></td>
-                    <td className="p-3 text-center">{t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-blue-100 text-blue-800 border border-blue-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 hover:text-white transition-all shadow-sm">طباعة</button>}</td>
+                    <td className="p-3">{(t.targetAmount || 0).toLocaleString()}</td>
+                    <td className="p-3 font-bold text-teal-700">{(t.paidAmount || 0).toLocaleString()}</td>
+                    <td className="p-3 font-bold text-red-600">{(t.remainingAmount || 0).toLocaleString()}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-1 rounded text-[10px] font-bold ${(t.status || "").includes('مغلق') ? 'bg-teal-100 text-teal-800 border border-teal-300' : 'bg-red-100 text-red-700 border border-red-300'}`}>{t.status}</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      {(t.status || "").includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-blue-100 text-blue-800 border border-blue-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 hover:text-white transition-all shadow-sm">طباعة</button>}
+                    </td>
                   </tr>
                 ))}
-                <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900"><td className="p-3" colSpan="3">المجموع للفرز الحالي</td><td className="p-3">{filteredTxTargetSum.toLocaleString()}</td><td className="p-3 text-teal-700">{filteredTxPaidSum.toLocaleString()}</td><td className="p-3 text-red-600">{filteredTxRemainingSum.toLocaleString()}</td><td className="p-3" colSpan="2"></td></tr>
+                <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900">
+                    <td className="p-3" colSpan="3">المجموع للفرز الحالي</td>
+                    <td className="p-3">{filteredTxTargetSum.toLocaleString()}</td>
+                    <td className="p-3 text-teal-700">{filteredTxPaidSum.toLocaleString()}</td>
+                    <td className="p-3 text-red-600">{filteredTxRemainingSum.toLocaleString()}</td>
+                    <td className="p-3" colSpan="2"></td>
+                </tr>
               </>
-            ) : (<tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سندات.</td></tr>)}
+            ) : (
+              <tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سندات.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
