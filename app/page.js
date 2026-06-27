@@ -2111,8 +2111,8 @@ export default function ShubramiSystem() {
          </div>
       )}
 
-      <div dir="rtl" className="flex h-screen overflow-hidden font-tajawal text-slate-900 bg-slate-100 relative">
-        <aside className="relative z-10 w-64 bg-slate-50 border-l border-slate-300 flex flex-col shadow-md shrink-0">
+      <div dir="rtl" className="flex min-h-screen font-tajawal text-slate-900 bg-slate-100 relative">
+        <aside className="sticky top-0 h-screen relative z-10 w-64 bg-slate-50 border-l border-slate-300 flex flex-col shadow-md shrink-0">
            <div className="p-6 text-center border-b border-slate-300">
               <div className="text-3xl mb-2 text-blue-700">🏢</div>
               <h1 className="text-lg font-extrabold text-slate-900 tracking-wide">أسواق الشبرمي</h1>
@@ -2148,8 +2148,8 @@ export default function ShubramiSystem() {
            </div>
         </aside>
 
-        <main className="relative z-10 flex-1 flex flex-col h-screen overflow-hidden bg-transparent">
-            <header className="flex justify-between items-center px-6 py-4 border-b border-slate-300 bg-white shadow-sm shrink-0">
+        <main className="relative z-10 flex-1 flex flex-col bg-transparent">
+            <header className="sticky top-0 z-20 flex justify-between items-center px-6 py-4 border-b border-slate-300 bg-white shadow-sm shrink-0">
                <h2 className="text-xl font-extrabold text-slate-900">
                    {visibleTabs.find(t => t.id === activeTab)?.label || "بدون صلاحية"}
                </h2>
@@ -2167,7 +2167,7 @@ export default function ShubramiSystem() {
                </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-5 md:p-6 custom-scrollbar">
+            <div className="flex-1 p-5 md:p-6 custom-scrollbar">
                
                {activeTab === "dashboard" && (
                   <DashboardIndicators 
