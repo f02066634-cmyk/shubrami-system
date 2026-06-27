@@ -628,116 +628,189 @@ export default function ShubramiSystem() {
   const [instDate, setInstDate] = useState("");
   const [payingInstId, setPayingInstId] = useState("");
 
-  const fetchAllData = async () => {
-    try {
-      setLoading(true);
+  // بيانات النظام التشغيلية (محلات/سندات/مديونيات/مصروفات/جدولة)
+  // تُجلب فقط بعد وجود جلسة Supabase Auth صالحة، وتعتمد سياسات RLS على دور المستخدم
+  const fetchAppData = async (sessionUser) => {
+    let { data: shops } = await supabase.from('shops').select('*');
 
-      let { data: shops } = await supabase.from('shops').select('*');
-      if (shops && shops.length === 0) {
-        const generatedShops = Array.from({ length: 166 }, (_, i) => ({
-          id: `row-${i + 1}`, 
-          shopNumber: `محل ${i + 1}`,
-          area: 60,
-          status: "شاغر",
-          tenant: "-",
-          ejarNumber: "-", 
-          annualRent: 15000,
-          startDate: "-",
-          endDate: "-",
-          collected: 0,
-          isGroupMain: false,
-          groupShops: null
-        }));
-        await supabase.from('shops').insert(generatedShops);
-        const { data: updatedShops } = await supabase.from('shops').select('*');
-        shops = updatedShops;
-      }
+    // عمليات التهيئة الأولية والأرشفة التلقائية للعقود المنتهية تتطلب صلاحية "مدير"
+    // (تتوافق مع سياسة RLS الخاصة بجدول shops لمنع أخطاء صلاحيات صامتة لدى الموظفين)
+    if (sessionUser?.role === "مدير") {
+      if (shops && shops.length === 0) {
+        const generatedShops = Array.from({ length: 166 }, (_, i) => ({
+          id: `row-${i + 1}`,
+          shopNumber: `محل ${i + 1}`,
+          area: 60,
+          status: "شاغر",
+          tenant: "-",
+          ejarNumber: "-",
+          annualRent: 15000,
+          startDate: "-",
+          endDate: "-",
+          collected: 0,
+          isGroupMain: false,
+          groupShops: null
+        }));
+        await supabase.from('shops').insert(generatedShops);
+        const { data: updatedShops } = await supabase.from('shops').select('*');
+        shops = updatedShops;
+      }
 
-      if (shops && shops.length > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const newVacantShops = [];
-        let madeChanges = false;
+      if (shops && shops.length > 0) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const newVacantShops = [];
 
-        for (let i = 0; i < shops.length; i++) {
-          const s = shops[i];
-          if ((s.status === "مؤجر" || s.status === "مدمج") && s.endDate && s.endDate !== "-") {
-            const endD = new Date(s.endDate);
-            if (endD < today) {
-              await supabase.from('shops').update({ status: "أرشيف - منتهي" }).eq('id', s.id);
-              shops[i].status = "أرشيف - منتهي";
-              madeChanges = true;
+        for (let i = 0; i < shops.length; i++) {
+          const s = shops[i];
+          if ((s.status === "مؤجر" || s.status === "مدمج") && s.endDate && s.endDate !== "-") {
+            const endD = new Date(s.endDate);
+            if (endD < today) {
+              await supabase.from('shops').update({ status: "أرشيف - منتهي" }).eq('id', s.id);
+              shops[i].status = "أرشيف - منتهي";
 
-              const hasVacant = shops.some(other => other.shopNumber === s.shopNumber && other.status === "شاغر");
-              const hasPendingNew = newVacantShops.some(n => n.shopNumber === s.shopNumber);
-              
-              if (!hasVacant && !hasPendingNew) {
-                newVacantShops.push({
-                  id: `row-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                  shopNumber: s.shopNumber,
-                  area: s.area || 60,
-                  status: "شاغر",
-                  tenant: "-",
-                  ejarNumber: "-",
-                  annualRent: s.status === "مؤجر" ? s.annualRent : 0,
-                  startDate: "-",
-                  endDate: "-",
-                  collected: 0,
-                  isGroupMain: false,
-                  groupShops: null
-                });
-              }
-            }
-          }
-        }
+              const hasVacant = shops.some(other => other.shopNumber === s.shopNumber && other.status === "شاغر");
+              const hasPendingNew = newVacantShops.some(n => n.shopNumber === s.shopNumber);
 
-        if (newVacantShops.length > 0) {
-          await supabase.from('shops').insert(newVacantShops);
-          shops = [...shops, ...newVacantShops];
-        }
-      }
+              if (!hasVacant && !hasPendingNew) {
+                newVacantShops.push({
+                  id: `row-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                  shopNumber: s.shopNumber,
+                  area: s.area || 60,
+                  status: "شاغر",
+                  tenant: "-",
+                  ejarNumber: "-",
+                  annualRent: s.status === "مؤجر" ? s.annualRent : 0,
+                  startDate: "-",
+                  endDate: "-",
+                  collected: 0,
+                  isGroupMain: false,
+                  groupShops: null
+                });
+              }
+            }
+          }
+        }
 
-      setShopsDB(shops || []);
+        if (newVacantShops.length > 0) {
+          await supabase.from('shops').insert(newVacantShops);
+          shops = [...shops, ...newVacantShops];
+        }
+      }
+    }
 
-      let { data: users } = await supabase.from('users').select('*');
-      if (users && users.length === 0) {
-        const initialUsers = [
-          { id: "u-1", username: "admin", password: "123", name: "مدير النظام", role: "مدير", allowedTabs: [] },
-          { id: "u-2", username: "emp", password: "123", name: "موظف التحصيل", role: "موظف", allowedTabs: ["payments", "debts"] }
-        ];
-        await supabase.from('users').insert(initialUsers);
-        const { data: updatedUsers } = await supabase.from('users').select('*');
-        users = updatedUsers;
-      }
-      setUsersDB(users || []);
+    setShopsDB(shops || []);
 
-      const { data: txs } = await supabase.from('transactions').select('*');
-      setTransactionsDB(txs || []);
+    const { data: txs } = await supabase.from('transactions').select('*');
+    setTransactionsDB(txs || []);
 
-      const { data: debts } = await supabase.from('debts').select('*');
-      setDebtsDB(debts || []);
+    const { data: debts } = await supabase.from('debts').select('*');
+    setDebtsDB(debts || []);
 
-      const { data: exps } = await supabase.from('expenses').select('*');
-      setExpensesDB(exps || []);
+    const { data: exps } = await supabase.from('expenses').select('*');
+    setExpensesDB(exps || []);
 
-      try {
-        const { data: insts } = await supabase.from('installments').select('*');
-        setInstallmentsDB(insts || []);
-      } catch (instErr) {
-        console.log("جدول installments غير موجود بعد أو به مشكلة، يرجى إنشاؤه.");
-        setInstallmentsDB([]);
-      }
+    try {
+      const { data: insts } = await supabase.from('installments').select('*');
+      setInstallmentsDB(insts || []);
+    } catch (instErr) {
+      console.log("جدول installments غير موجود بعد أو به مشكلة، يرجى إنشاؤه.");
+      setInstallmentsDB([]);
+    }
+  };
 
-    } catch (err) {
-      console.error("Error connecting to database:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // قائمة المستخدمين (من جدول profiles المرتبط بـ Supabase Auth) — لتبويب "إدارة المستخدمين"
+  const fetchUsersList = async () => {
+    const { data: profiles, error } = await supabase.from('profiles').select('*').order('created_at');
+    if (error) {
+      console.error("Error fetching profiles:", error);
+      setUsersDB([]);
+      return;
+    }
+    setUsersDB((profiles || []).map(p => ({
+      id: p.id,
+      username: p.username,
+      name: p.name,
+      role: p.role,
+      allowedTabs: p.allowed_tabs || []
+    })));
+  };
 
-  useEffect(() => {
-    fetchAllData();
-  }, []);
+  // تُستدعى عند وجود جلسة Auth صالحة (تسجيل دخول جديد أو استرجاع جلسة محفوظة)
+  const loadSessionAndData = async (session) => {
+    try {
+      const { data: profile, error: profErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      if (profErr || !profile) {
+        setAuthError("تعذر تحميل بيانات حسابك. تواصل مع مدير النظام.");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      const userObj = {
+        id: session.user.id,
+        username: profile.username,
+        name: profile.name,
+        role: profile.role,
+        allowedTabs: profile.allowed_tabs || []
+      };
+
+      setCurrentUser(userObj);
+      setAuthError("");
+
+      if (userObj.role === "مدير") {
+        setActiveTab("dashboard");
+        await fetchUsersList();
+      } else {
+        const allowed = userObj.allowedTabs || [];
+        setActiveTab(allowed.length > 0 ? allowed[0] : "");
+      }
+
+      await fetchAppData(userObj);
+    } catch (err) {
+      console.error("Error loading session/data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted) return;
+      if (session) {
+        loadSessionAndData(session);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        setLoading(true);
+        loadSessionAndData(session);
+      } else if (event === "SIGNED_OUT") {
+        setCurrentUser(null);
+        setUsersDB([]);
+        setShopsDB([]);
+        setTransactionsDB([]);
+        setDebtsDB([]);
+        setExpensesDB([]);
+        setInstallmentsDB([]);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
 
   const allTabs = [
     { id: "dashboard", label: "📊 لوحة المؤشرات" },
@@ -748,95 +821,109 @@ export default function ShubramiSystem() {
     { id: "users", label: "👥 إدارة المستخدمين", adminOnly: true }
   ];
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    const user = usersDB.find(u => u.username === loginUser && u.password === loginPass);
-    if (user) {
-      setCurrentUser(user);
-      setAuthError("");
-      if (user.role === "مدير") {
-         setActiveTab("dashboard");
-      } else {
-         const allowed = user.allowedTabs || [];
-         if (allowed.length > 0) {
-             setActiveTab(allowed[0]); 
-         } else {
-             setActiveTab(""); 
-         }
-      }
-    } else {
-      setAuthError("اسم المستخدم أو كلمة المرور غير صحيحة");
-    }
-  };
+  // ⚠️ يجب أن يطابق هذا النطاق نفس القيمة المستخدمة في Edge Function (admin-users)
+  // اسم المستخدم يُحوَّل داخلياً إلى بريد وهمي لأن Supabase Auth يتطلب بريداً للدخول
+  const AUTH_EMAIL_DOMAIN = "shubrami.internal";
+  const usernameToEmail = (username) => `${String(username).trim().toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setLoginUser("");
-    setLoginPass("");
-  };
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    const { error } = await supabase.auth.signInWithPassword({
+      email: usernameToEmail(loginUser),
+      password: loginPass
+    });
+    if (error) {
+      setAuthError("اسم المستخدم أو كلمة المرور غير صحيحة");
+    }
+    // عند النجاح، يتولى مستمع onAuthStateChange تحميل الجلسة والبيانات تلقائياً
+  };
 
-  const handleTabToggle = (tabId, isNewUser = true) => {
-    if (isNewUser) {
-      setNewUserAllowedTabs(prev => 
-        prev.includes(tabId) ? prev.filter(t => t !== tabId) : [...prev, tabId]
-      );
-    } else {
-      setEditingUser(prev => ({
-        ...prev,
-        allowedTabs: prev.allowedTabs?.includes(tabId) 
-          ? prev.allowedTabs.filter(t => t !== tabId) 
-          : [...(prev.allowedTabs || []), tabId]
-      }));
-    }
-  };
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setLoginUser("");
+    setLoginPass("");
+  };
 
-  const handleAddUser = async (e) => {
-    e.preventDefault();
-    if (usersDB.find(u => u.username === newUserUsername)) {
-      return alert("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.");
-    }
-    if (newUserRole === "موظف" && newUserAllowedTabs.length === 0) {
-      return alert("يرجى تحديد شاشة واحدة على الأقل كصلاحية دخول للموظف.");
-    }
+  const handleTabToggle = (tabId, isNewUser = true) => {
+    if (isNewUser) {
+      setNewUserAllowedTabs(prev => 
+        prev.includes(tabId) ? prev.filter(t => t !== tabId) : [...prev, tabId]
+      );
+    } else {
+      setEditingUser(prev => ({
+        ...prev,
+        allowedTabs: prev.allowedTabs?.includes(tabId) 
+          ? prev.allowedTabs.filter(t => t !== tabId) 
+          : [...(prev.allowedTabs || []), tabId]
+      }));
+    }
+  };
 
-    const newUser = {
-      id: `u-${Date.now()}`,
-      username: newUserUsername,
-      password: newUserPassword,
-      name: newUserName,
-      role: newUserRole,
-      allowedTabs: newUserRole === "مدير" ? [] : newUserAllowedTabs 
-    };
+  // إنشاء المستخدمين يتم عبر Edge Function بصلاحية service_role (لا يمكن إنشاء مستخدمي Auth من المتصفح مباشرة)
+  const handleAddUser = async (e) => {
+    e.preventDefault();
+    if (usersDB.find(u => u.username === newUserUsername)) {
+      return alert("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.");
+    }
+    if (newUserRole === "موظف" && newUserAllowedTabs.length === 0) {
+      return alert("يرجى تحديد شاشة واحدة على الأقل كصلاحية دخول للموظف.");
+    }
+    if (!newUserPassword || newUserPassword.length < 6) {
+      return alert("كلمة المرور يجب ألا تقل عن 6 خانات (متطلبات Supabase Auth).");
+    }
 
-    const { error } = await supabase.from('users').insert([newUser]);
-    if (!error) {
-      setUsersDB([...usersDB, newUser]);
-      setNewUserName(""); setNewUserUsername(""); setNewUserPassword(""); setNewUserAllowedTabs([]);
-      alert("تم إضافة المستخدم بصلاحياته المحددة بنجاح.");
-    }
-  };
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: {
+        action: 'create',
+        username: newUserUsername,
+        password: newUserPassword,
+        name: newUserName,
+        role: newUserRole,
+        allowedTabs: newUserRole === "مدير" ? [] : newUserAllowedTabs
+      }
+    });
 
-  const handleSaveEditedPermissions = async () => {
-    if (!editingUser) return;
-    const { error } = await supabase.from('users').update({ allowedTabs: editingUser.allowedTabs }).eq('id', editingUser.id);
-    if (!error) {
-      setUsersDB(usersDB.map(u => u.id === editingUser.id ? editingUser : u));
-      setEditingUser(null);
-      alert("تم تحديث صلاحيات الموظف بنجاح!");
-    } else {
-      alert("حدث خطأ أثناء التحديث.");
-    }
-  };
+    if (error || data?.error) {
+      return alert(`تعذر إضافة المستخدم: ${data?.error || error.message}`);
+    }
 
-  const handleDeleteUser = async (id) => {
-    if (id === currentUser.id) return alert("لا يمكنك حذف حسابك وأنت مسجل الدخول به!");
-    if (window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟")) {
-      const { error } = await supabase.from('users').delete().eq('id', id);
-      if (!error) {
-        setUsersDB(usersDB.filter(u => u.id !== id));
-      }
-    }
-  };
+    await fetchUsersList();
+    setNewUserName(""); setNewUserUsername(""); setNewUserPassword(""); setNewUserAllowedTabs([]);
+    alert("تم إضافة المستخدم بصلاحياته المحددة بنجاح.");
+  };
+
+  // تعديل الصلاحيات فقط (وليس كلمة المرور) يبقى مباشرًا عبر RLS لأن سياسة profiles تسمح للمدير بالتعديل
+  const handleSaveEditedPermissions = async () => {
+    if (!editingUser) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ allowed_tabs: editingUser.allowedTabs })
+      .eq('id', editingUser.id);
+    if (!error) {
+      setUsersDB(usersDB.map(u => u.id === editingUser.id ? editingUser : u));
+      setEditingUser(null);
+      alert("تم تحديث صلاحيات الموظف بنجاح!");
+    } else {
+      alert("حدث خطأ أثناء التحديث.");
+    }
+  };
+
+  // حذف المستخدم يتم عبر Edge Function أيضاً (لحذف حساب Auth فعلياً، لا فقط سجل الصلاحيات)
+  const handleDeleteUser = async (id) => {
+    if (id === currentUser.id) return alert("لا يمكنك حذف حسابك وأنت مسجل الدخول به!");
+    if (!window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟")) return;
+
+    const { data, error } = await supabase.functions.invoke('admin-users', {
+      body: { action: 'delete', id }
+    });
+
+    if (error || data?.error) {
+      return alert(`تعذر حذف المستخدم: ${data?.error || error.message}`);
+    }
+    setUsersDB(usersDB.filter(u => u.id !== id));
+  };
+
 
   const getYear = (dateStr) => {
     if (!dateStr || dateStr === "-") return null;
@@ -2533,7 +2620,7 @@ export default function ShubramiSystem() {
                          </div>
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">كلمة المرور:</label>
-                           <input type="password" required className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
+                           <input type="password" required minLength={6} className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
                          </div>
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الدور / الصلاحية:</label>
