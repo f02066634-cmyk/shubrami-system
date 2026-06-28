@@ -2339,19 +2339,18 @@ export default function ShubramiSystem() {
                            }
                          }} required>
                            <option value="">-- المحلات المؤجرة المتاحة --</option>
-                           {shopsDB.filter(s => {
-                             if (s.status !== "مؤجر") return false;
+                           {shopsDB.filter(s => s.status === "مؤجر").map(s => {
                              const isExpired = isContractExpired(s.endDate);
                              const remainingBalance = s.annualRent - s.collected;
-                             // 🛡️ التحديث: إخفاء العقد المنتهي والمديون تماماً من القائمة
-                             if (isExpired && remainingBalance > 0) return false;
-                             return true;
-                           }).map(s => {
-                             const isExpired = isContractExpired(s.endDate);
                              const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                             const statusLabel = isExpired && remainingBalance > 0
+                               ? '(⚠️ منتهي ومديون - يتطلب قرار يجدّد/يغادر)'
+                               : isExpired
+                                 ? '(⚠️ منتهي - متاح للتجديد)'
+                                 : '(ساري)';
                              return (
                                <option key={s.id} value={s.id}>
-                                 {displayName} {isExpired ? '(⚠️ منتهي - متاح للتجديد)' : '(ساري)'}
+                                 {displayName} {statusLabel}
                                </option>
                              );
                            })}
