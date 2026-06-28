@@ -628,75 +628,59 @@ export default function ShubramiSystem() {
   const [instDate, setInstDate] = useState("");
   const [payingInstId, setPayingInstId] = useState("");
 
+  // ⚠️ دالة يدوية فقط — ستُربط بزر "إخلاء/أرشفة" يدوي في مهمة لاحقة.
+  // لا تُستدعى تلقائياً عند تحميل النظام؛ تحوّل العقد المنتهي لـ"أرشيف - منتهي"
+  // وتولّد محل "شاغر" بديل، بقرار صريح من المستخدم فقط.
+  const archiveExpiredContract = async (shop, allShops) => {
+    await supabase.from('shops').update({ status: "أرشيف - منتهي" }).eq('id', shop.id);
+
+    const hasVacant = allShops.some(other => other.shopNumber === shop.shopNumber && other.status === "شاغر");
+    if (!hasVacant) {
+      const newVacantShop = {
+        id: `row-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        shopNumber: shop.shopNumber,
+        area: shop.area || 60,
+        status: "شاغر",
+        tenant: "-",
+        ejarNumber: "-",
+        annualRent: shop.status === "مؤجر" ? shop.annualRent : 0,
+        startDate: "-",
+        endDate: "-",
+        collected: 0,
+        isGroupMain: false,
+        groupShops: null
+      };
+      await supabase.from('shops').insert([newVacantShop]);
+      return newVacantShop;
+    }
+    return null;
+  };
+
   // بيانات النظام التشغيلية (محلات/سندات/مديونيات/مصروفات/جدولة)
   // تُجلب فقط بعد وجود جلسة Supabase Auth صالحة، وتعتمد سياسات RLS على دور المستخدم
   const fetchAppData = async (sessionUser) => {
     let { data: shops } = await supabase.from('shops').select('*');
 
-    // عمليات التهيئة الأولية والأرشفة التلقائية للعقود المنتهية تتطلب صلاحية "مدير"
+    // التهيئة الأولية تتطلب صلاحية "مدير"
     // (تتوافق مع سياسة RLS الخاصة بجدول shops لمنع أخطاء صلاحيات صامتة لدى الموظفين)
-    if (sessionUser?.role === "مدير") {
-      if (shops && shops.length === 0) {
-        const generatedShops = Array.from({ length: 166 }, (_, i) => ({
-          id: `row-${i + 1}`,
-          shopNumber: `محل ${i + 1}`,
-          area: 60,
-          status: "شاغر",
-          tenant: "-",
-          ejarNumber: "-",
-          annualRent: 15000,
-          startDate: "-",
-          endDate: "-",
-          collected: 0,
-          isGroupMain: false,
-          groupShops: null
-        }));
-        await supabase.from('shops').insert(generatedShops);
-        const { data: updatedShops } = await supabase.from('shops').select('*');
-        shops = updatedShops;
-      }
-
-      if (shops && shops.length > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const newVacantShops = [];
-
-        for (let i = 0; i < shops.length; i++) {
-          const s = shops[i];
-          if ((s.status === "مؤجر" || s.status === "مدمج") && s.endDate && s.endDate !== "-") {
-            const endD = new Date(s.endDate);
-            if (endD < today) {
-              await supabase.from('shops').update({ status: "أرشيف - منتهي" }).eq('id', s.id);
-              shops[i].status = "أرشيف - منتهي";
-
-              const hasVacant = shops.some(other => other.shopNumber === s.shopNumber && other.status === "شاغر");
-              const hasPendingNew = newVacantShops.some(n => n.shopNumber === s.shopNumber);
-
-              if (!hasVacant && !hasPendingNew) {
-                newVacantShops.push({
-                  id: `row-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-                  shopNumber: s.shopNumber,
-                  area: s.area || 60,
-                  status: "شاغر",
-                  tenant: "-",
-                  ejarNumber: "-",
-                  annualRent: s.status === "مؤجر" ? s.annualRent : 0,
-                  startDate: "-",
-                  endDate: "-",
-                  collected: 0,
-                  isGroupMain: false,
-                  groupShops: null
-                });
-              }
-            }
-          }
-        }
-
-        if (newVacantShops.length > 0) {
-          await supabase.from('shops').insert(newVacantShops);
-          shops = [...shops, ...newVacantShops];
-        }
-      }
+    if (sessionUser?.role === "مدير" && shops && shops.length === 0) {
+      const generatedShops = Array.from({ length: 166 }, (_, i) => ({
+        id: `row-${i + 1}`,
+        shopNumber: `محل ${i + 1}`,
+        area: 60,
+        status: "شاغر",
+        tenant: "-",
+        ejarNumber: "-",
+        annualRent: 15000,
+        startDate: "-",
+        endDate: "-",
+        collected: 0,
+        isGroupMain: false,
+        groupShops: null
+      }));
+      await supabase.from('shops').insert(generatedShops);
+      const { data: updatedShops } = await supabase.from('shops').select('*');
+      shops = updatedShops;
     }
 
     setShopsDB(shops || []);
