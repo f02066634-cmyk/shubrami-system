@@ -64,6 +64,7 @@ const DashboardIndicators = ({
   let expected31To60Days = 0;
 
   installmentsDB.forEach(inst => {
+    if (inst.status === "ملغى") return;
     if (!inst.date) return;
     const instDate = new Date(inst.date);
     instDate.setHours(0, 0, 0, 0);
@@ -628,32 +629,32 @@ export default function ShubramiSystem() {
   const [instDate, setInstDate] = useState("");
   const [payingInstId, setPayingInstId] = useState("");
 
-  // ⚠️ دالة يدوية فقط — ستُربط بزر "إخلاء/أرشفة" يدوي في مهمة لاحقة.
-  // لا تُستدعى تلقائياً عند تحميل النظام؛ تحوّل العقد المنتهي لـ"أرشيف - منتهي"
-  // وتولّد محل "شاغر" بديل، بقرار صريح من المستخدم فقط.
-  const archiveExpiredContract = async (shop, allShops) => {
-    await supabase.from('shops').update({ status: "أرشيف - منتهي" }).eq('id', shop.id);
+  // ⚠️ دالة يدوية فقط — تُستدعى حصراً من إجراء "مغادرة المستأجر" اليدوي داخل
+  // handleEditContract. تنقل أي دين متبقٍ على المحل إلى سجل مديونية مستقل باسم
+  // المستأجر، ثم تُفرّغ نفس صف المحل في قاعدة البيانات (دون توليد صف مكرر).
+  // تُرجع نتيجة كل خطوة على حدة (error/stage) ليتمكن المستدعي من إيقاف العملية
+  // والإبلاغ بدقة عند فشل أي خطوة دون تحديث الحالة المحلية كأنها نجحت.
+  const archiveExpiredContract = async (shop) => {
+    const remaining = Math.max(0, (shop.annualRent || 0) - (shop.collected || 0));
+    let debt = null;
 
-    const hasVacant = allShops.some(other => other.shopNumber === shop.shopNumber && other.status === "شاغر");
-    if (!hasVacant) {
-      const newVacantShop = {
-        id: `row-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-        shopNumber: shop.shopNumber,
-        area: shop.area || 60,
-        status: "شاغر",
-        tenant: "-",
-        ejarNumber: "-",
-        annualRent: shop.status === "مؤجر" ? shop.annualRent : 0,
-        startDate: "-",
-        endDate: "-",
-        collected: 0,
-        isGroupMain: false,
-        groupShops: null
+    if (remaining > 0) {
+      debt = {
+        id: `D-${Date.now()}-${shop.shopNumber}`,
+        year: new Date().toISOString().split('T')[0],
+        tenant: shop.tenant,
+        details: `دين متبقٍ من مغادرة المستأجر - المحل ${shop.shopNumber} (عقد سابق رقم ${shop.ejarNumber})`,
+        amount: remaining
       };
-      await supabase.from('shops').insert([newVacantShop]);
-      return newVacantShop;
+      const { error: debtErr } = await supabase.from('debts').insert([debt]);
+      if (debtErr) return { error: debtErr, stage: "debt", debt: null };
     }
-    return null;
+
+    const vacatedFields = { status: "شاغر", tenant: "-", ejarNumber: "-", startDate: "-", endDate: "-", collected: 0 };
+    const { error: vacateErr } = await supabase.from('shops').update(vacatedFields).eq('id', shop.id);
+    if (vacateErr) return { error: vacateErr, stage: "vacate", debt };
+
+    return { error: null, debt, updatedShop: { ...shop, ...vacatedFields } };
   };
 
   // بيانات النظام التشغيلية (محلات/سندات/مديونيات/مصروفات/جدولة)
@@ -922,6 +923,7 @@ export default function ShubramiSystem() {
   tomorrowDateObj.setHours(0, 0, 0, 0);
 
   const installmentAlerts = installmentsDB.filter(inst => {
+    if (inst.status === "ملغى") return false;
     if (!inst.date) return false;
     const instDateObj = new Date(inst.date);
     instDateObj.setHours(0, 0, 0, 0);
@@ -1075,15 +1077,6 @@ export default function ShubramiSystem() {
        }
     }
 
-    // التحديث: منع التواريخ العكسية للمنتهي
-    if (isRenewal && editContractStatus === "مؤجر") {
-       const newStartD = new Date(editContractStart);
-       const oldEndD = new Date(originalRow.endDate);
-       if (newStartD <= oldEndD) {
-           return alert(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`);
-       }
-    }
-
     if (!isRenewal && remainingBalance > 0) {
        if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
            return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
@@ -1107,7 +1100,7 @@ export default function ShubramiSystem() {
           return alert(`🚫 منع مالي: الكيان مرتبط بسند معلق برقم (${openTx.id}). يرجى إغلاقه أولاً.`);
        }
 
-       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber);
+       const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber && i.status !== "ملغى");
        if (pendingInst) {
           return alert(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`);
        }
@@ -1157,23 +1150,140 @@ export default function ShubramiSystem() {
     }
 
     if (isRenewal) {
+      // 🧭 إخلاء ذكي: كل محل في الكيان يُعالج بدينه الخاص، والمستأجر يبقى مرتبطاً
+      // بديونه عبر كل محلاته. إن وُجد دين متبقٍ، يُسأل المستخدم صراحةً هل المستأجر
+      // يجدّد ويبقى أم يغادر، بدل تمرير التجديد دون معالجة الدين.
+      const groupShopNumbers = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
+      const groupShopRows = groupShopNumbers
+        .map(sNum => shopsDB.find(s => s.shopNumber === sNum && s.tenant === originalRow.tenant && (s.status === "مؤجر" || s.status === "مدمج" || s.status === "أرشيف - منتهي")))
+        .filter(Boolean);
+      const groupTotalDebt = groupShopRows.reduce((sum, s) => sum + Math.max(0, (s.annualRent || 0) - (s.collected || 0)), 0);
+
+      let tenantLeaving = false;
+      if (remainingBalance > 0) {
+        tenantLeaving = !window.confirm(
+          `⚠️ يوجد دين متبقٍ بإجمالي (${groupTotalDebt} ريال) على عقد المستأجر "${originalRow.tenant}" المنتهي.\n\n` +
+          `اضغط "موافق" إذا كان المستأجر سيجدّد ويبقى (يُنقل الدين إلى سجل مديونية مستقل باسمه، ويبدأ العقد الجديد نظيفاً تماماً مع بقاء المحل "مؤجر").\n` +
+          `اضغط "إلغاء" إذا كان المستأجر سيغادر (يُنقل الدين إلى سجل المديونية المستقل، وتُفرَّغ محلات الكيان لتصبح "شاغرة").`
+        );
+      }
+
+      if (tenantLeaving) {
+        // ===== مسار "يغادر" =====
+        const pendingInsts = installmentsDB.filter(i => groupShopNumbers.includes(i.shop) && i.status !== "ملغى");
+
+        let hardDeleteInstallments = false;
+        if (pendingInsts.length > 0) {
+          const totalInstAmount = pendingInsts.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+          hardDeleteInstallments = window.confirm(
+            `⚠️ يوجد ${pendingInsts.length} استحقاق/استحقاقات مجدولة معلّقة على هذا الكيان بإجمالي (${totalInstAmount} ريال).\n\n` +
+            `اضغط "موافق" للحذف النهائي لهذه الاستحقاقات من قاعدة البيانات.\n` +
+            `اضغط "إلغاء" لإلغائها مع حفظ سجلها التاريخي (ستتحول حالتها إلى "ملغى").`
+          );
+        }
+
+        const instSummary = pendingInsts.length === 0
+          ? "لا توجد استحقاقات مجدولة معلّقة."
+          : (hardDeleteInstallments
+              ? `سيتم حذف ${pendingInsts.length} استحقاق/استحقاقات مجدولة نهائياً.`
+              : `سيتم إلغاء ${pendingInsts.length} استحقاق/استحقاقات مجدولة مع حفظ سجلها التاريخي.`);
+
+        const finalConfirm = window.confirm(
+          `🚪 تأكيد نهائي لمغادرة المستأجر "${originalRow.tenant}":\n\n` +
+          `• سيُنقل دين بقيمة (${groupTotalDebt} ريال) إلى سجل المديونية المستقل باسم المستأجر.\n` +
+          `• ${instSummary}\n` +
+          `• ستصبح محلات الكيان (${groupShopNumbers.join('، ')}) شاغرة فوراً.\n\n` +
+          `هل أنت متأكد من المتابعة؟`
+        );
+        if (!finalConfirm) return;
+
+        const processedShopNumbers = [];
+        for (const shopRow of groupShopRows) {
+          const result = await archiveExpiredContract(shopRow);
+          if (result.error) {
+            const stageMsg = result.stage === "debt" ? "فشل تسجيل الدين" : "تم تسجيل الدين بنجاح لكن فشل تفريغ المحل";
+            return alert(`🚫 ${stageMsg} للمحل ${shopRow.shopNumber}. تم إيقاف عملية المغادرة بالكامل.\nالمحلات التي اكتملت معالجتها قبل التوقف: ${processedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${result.error.message}`);
+          }
+          if (result.debt) setDebtsDB(prev => [...prev, result.debt]);
+          setShopsDB(prev => prev.map(s => s.id === shopRow.id ? result.updatedShop : s));
+          processedShopNumbers.push(shopRow.shopNumber);
+        }
+
+        if (pendingInsts.length > 0) {
+          if (hardDeleteInstallments) {
+            for (const inst of pendingInsts) {
+              const { error: delErr } = await supabase.from('installments').delete().eq('id', inst.id);
+              if (delErr) {
+                return alert(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل حذف الاستحقاق رقم ${inst.id}. الرجاء حذفه يدوياً.\n\nالخطأ: ${delErr.message}`);
+              }
+              setInstallmentsDB(prev => prev.filter(i => i.id !== inst.id));
+            }
+          } else {
+            const cancelledAt = new Date().toISOString();
+            for (const inst of pendingInsts) {
+              const cancelFields = { status: "ملغى", cancel_reason: "مغادرة المستأجر", cancelled_at: cancelledAt };
+              const { error: cancelErr } = await supabase.from('installments').update(cancelFields).eq('id', inst.id);
+              if (cancelErr) {
+                return alert(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل إلغاء الاستحقاق رقم ${inst.id}. الرجاء إلغاؤه يدوياً.\n\nالخطأ: ${cancelErr.message}`);
+              }
+              setInstallmentsDB(prev => prev.map(i => i.id === inst.id ? { ...i, ...cancelFields } : i));
+            }
+          }
+        }
+
+        alert(`🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وتفريغ محلات الكيان بالكامل.`);
+        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+        return;
+      }
+
+      // ===== مسار "يجدّد ويبقى" (أو لا يوجد دين على الإطلاق) =====
       if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: يجب إدخال رقم عقد إيجار جديد!");
       if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
       if (!editContractStart || !editContractEnd) return alert("خطأ: الرجاء إدخال تواريخ بداية ونهاية العقد الجديد!");
 
-      const groupToRenew = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
+      const newStartD = new Date(editContractStart);
+      const oldEndD = new Date(originalRow.endDate);
+      if (newStartD <= oldEndD) {
+          return alert(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`);
+      }
+
+      for (const shopRow of groupShopRows) {
+        const remaining = Math.max(0, (shopRow.annualRent || 0) - (shopRow.collected || 0));
+        if (remaining > 0) {
+          const debtRecord = {
+            id: `D-${Date.now()}-${shopRow.shopNumber}`,
+            year: new Date().toISOString().split('T')[0],
+            tenant: shopRow.tenant,
+            details: `دين متبقٍ من تجديد عقد (المستأجر باقٍ) - المحل ${shopRow.shopNumber} (عقد سابق رقم ${shopRow.ejarNumber})`,
+            amount: remaining
+          };
+          const { error: debtErr } = await supabase.from('debts').insert([debtRecord]);
+          if (debtErr) {
+            return alert(`🚫 فشل تسجيل الدين المتبقي للمحل ${shopRow.shopNumber}. تم إيقاف عملية التجديد بالكامل قبل أي تعديل.\n\nالخطأ: ${debtErr.message}`);
+          }
+          setDebtsDB(prev => [...prev, debtRecord]);
+        }
+      }
+
+      const groupToRenew = groupShopNumbers;
       const newRows = [];
-      
+      const archivedShopNumbers = [];
+
       for (let i = 0; i < groupToRenew.length; i++) {
          const sNum = groupToRenew[i];
          const shopToArchive = shopsDB.find(s => s.shopNumber === sNum && (s.status === "أرشيف - منتهي" || s.status === "مؤجر" || s.status === "مدمج"));
-         
+
          if (shopToArchive) {
-             await supabase.from('shops').update({ status: "أرشيف - مجدد" }).eq('id', shopToArchive.id);
-             
+             const { error: archiveErr } = await supabase.from('shops').update({ status: "أرشيف - مجدد" }).eq('id', shopToArchive.id);
+             if (archiveErr) {
+                return alert(`🚫 فشل أرشفة المحل ${sNum} أثناء التجديد. تم إيقاف العملية.\nالمحلات التي أُرشفت بنجاح قبل التوقف: ${archivedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${archiveErr.message}`);
+             }
+             setShopsDB(prev => prev.map(s => s.id === shopToArchive.id ? { ...s, status: "أرشيف - مجدد" } : s));
+             archivedShopNumbers.push(sNum);
+
              const isMain = i === 0;
              newRows.push({
-                id: `row-${Date.now()}-${i}`, 
+                id: `row-${Date.now()}-${i}`,
                 shopNumber: sNum,
                 area: 60,
                 status: isMain ? "مؤجر" : "مدمج",
@@ -1189,22 +1299,18 @@ export default function ShubramiSystem() {
          }
       }
 
-      const { error } = await supabase.from('shops').insert(newRows);
-      if (!error) {
-        setShopsDB(prev => {
-            const archivedState = prev.map(s => {
-                if (groupToRenew.includes(s.shopNumber) && (s.status === "أرشيف - منتهي" || s.status === "مؤجر" || s.status === "مدمج")) {
-                    return { ...s, status: "أرشيف - مجدد" };
-                }
-                return s;
-            });
-            return [...archivedState, ...newRows];
-        });
-        alert(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`);
-        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+      const { error: insertErr } = await supabase.from('shops').insert(newRows);
+      if (insertErr) {
+        return alert(`🚫 تمت أرشفة العقود القديمة بنجاح، لكن فشل إنشاء صفوف العقد الجديد. الرجاء مراجعة قاعدة البيانات يدوياً لإكمال التجديد.\n\nالخطأ: ${insertErr.message}`);
       }
+      setShopsDB(prev => [...prev, ...newRows]);
+      alert(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`);
+      setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
     } else {
-      await supabase.from('shops').update({ status: editContractStatus }).eq('id', editContractId);
+      const { error: statusErr } = await supabase.from('shops').update({ status: editContractStatus }).eq('id', editContractId);
+      if (statusErr) {
+        return alert(`🚫 فشل تحديث حالة العقد. الخطأ: ${statusErr.message}`);
+      }
       setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, status: editContractStatus } : s));
       alert("تم تحديث حالة العقد على السحابة بنجاح!");
     }
@@ -1258,9 +1364,9 @@ export default function ShubramiSystem() {
       const updatedCollected = activeShop.collected + amountNum;
       await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
       
-      const instToDelete = payingInstId 
+      const instToDelete = payingInstId
           ? installmentsDB.find(i => i.id === payingInstId)
-          : installmentsDB.find(i => i.shop === activeShop.shopNumber);
+          : installmentsDB.find(i => i.shop === activeShop.shopNumber && i.status !== "ملغى");
 
       if (instToDelete) {
          await supabase.from('installments').delete().eq('id', instToDelete.id);
@@ -1310,7 +1416,7 @@ export default function ShubramiSystem() {
         setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
       }
 
-      const instToDelete = installmentsDB.find(i => i.shop === tx.shop);
+      const instToDelete = installmentsDB.find(i => i.shop === tx.shop && i.status !== "ملغى");
       if (instToDelete) {
          await supabase.from('installments').delete().eq('id', instToDelete.id);
          setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
@@ -2417,7 +2523,7 @@ export default function ShubramiSystem() {
                         handleTransferToPayment={handleTransferToPayment}
                         shopsDB={shopsDB}
                         transactionsDB={transactionsDB}
-                        installmentsDB={installmentsDB}
+                        installmentsDB={installmentsDB.filter(i => i.status !== "ملغى")}
                         isContractExpired={isContractExpired}
                         todayDateObj={todayDateObj}
                         searchReceipt={searchReceipt} setSearchReceipt={setSearchReceipt}
