@@ -619,7 +619,14 @@ export default function ShubramiSystem() {
   const [archiveActionFilter, setArchiveActionFilter] = useState("الكل");
   const [archiveYearFilter, setArchiveYearFilter] = useState("الكل");
   const [archiveTenantFilter, setArchiveTenantFilter] = useState("الكل");
-   
+
+  const [auditLogsDB, setAuditLogsDB] = useState([]);
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditUserFilter, setAuditUserFilter] = useState("الكل");
+  const [auditActionFilter, setAuditActionFilter] = useState("الكل");
+  const [auditYearFilter, setAuditYearFilter] = useState("الكل");
+  const [viewingAuditDetails, setViewingAuditDetails] = useState(null);
+
   const [dashboardYear, setDashboardYear] = useState("الكل");
   const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
   const [filterReceiptYear, setFilterReceiptYear] = useState("الكل");
@@ -798,6 +805,17 @@ export default function ShubramiSystem() {
     })));
   };
 
+  // سجل التدقيق (audit_log) — يُجلب فقط للمدير (RLS يمنع القراءة لغيره)، لتبويب "سجل التدقيق"
+  const fetchAuditLogs = async () => {
+    const { data, error } = await supabase.from('audit_log').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error("Error fetching audit_log:", error);
+      setAuditLogsDB([]);
+      return;
+    }
+    setAuditLogsDB(data || []);
+  };
+
   // تُستدعى عند وجود جلسة Auth صالحة (تسجيل دخول جديد أو استرجاع جلسة محفوظة)
   const loadSessionAndData = async (session) => {
     try {
@@ -828,6 +846,7 @@ export default function ShubramiSystem() {
       if (userObj.role === "مدير") {
         setActiveTab("dashboard");
         await fetchUsersList();
+        await fetchAuditLogs();
       } else {
         const allowed = userObj.allowedTabs || [];
         setActiveTab(allowed.length > 0 ? allowed[0] : "");
@@ -881,6 +900,7 @@ export default function ShubramiSystem() {
     { id: "debts", label: "📂 مديونيات مستحقة" },
     { id: "expenses", label: "🛠️ إدارة المصروفات" },
     { id: "archive", label: "🗄️ أرشيف العقود" },
+    { id: "audit", label: "📜 سجل التدقيق", adminOnly: true },
     { id: "users", label: "👥 إدارة المستخدمين", adminOnly: true }
   ];
 
@@ -1793,6 +1813,32 @@ export default function ShubramiSystem() {
     return bTime - aTime;
   });
 
+  const formatAuditDateTime = (isoStr) => {
+    if (!isoStr) return "-";
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "-";
+    return `${d.toLocaleDateString('ar-EG')} - ${d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
+  };
+
+  const auditUsers = [...new Set(auditLogsDB.map(l => l.user_name).filter(Boolean))].sort();
+  const auditActionTypes = [...new Set(auditLogsDB.map(l => l.action_type).filter(Boolean))].sort();
+  const auditYears = [...new Set(
+    auditLogsDB.map(l => l.created_at ? String(l.created_at).slice(0, 4) : null).filter(Boolean)
+  )].sort((a, b) => b.localeCompare(a));
+
+  const filteredAuditLogs = auditLogsDB.filter(l => {
+    if (auditUserFilter !== "الكل" && l.user_name !== auditUserFilter) return false;
+    if (auditActionFilter !== "الكل" && l.action_type !== auditActionFilter) return false;
+    if (auditYearFilter !== "الكل" && (!l.created_at || String(l.created_at).slice(0, 4) !== auditYearFilter)) return false;
+    const searchLower = auditSearch.toLowerCase().trim();
+    if (searchLower !== "") {
+      const matchSummary = String(l.summary || "").toLowerCase().includes(searchLower);
+      const matchRef = String(l.entity_ref || "").toLowerCase().includes(searchLower);
+      if (!matchSummary && !matchRef) return false;
+    }
+    return true;
+  });
+
   const filteredTransactions = transactionsDB.filter(t => {
     const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
     const parts = String(t.id).split('-');
@@ -2399,6 +2445,50 @@ export default function ShubramiSystem() {
          </div>
       )}
 
+      {viewingAuditDetails && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-2xl relative max-h-[85vh] overflow-y-auto custom-scrollbar">
+               <button onClick={() => setViewingAuditDetails(null)} className="absolute top-4 left-5 text-slate-400 hover:text-red-500 text-2xl font-bold transition-colors">&times;</button>
+               <h3 className="text-slate-900 font-extrabold mb-4 flex items-center gap-2 text-lg border-b border-slate-200 pb-3">
+                 <span>📜</span> تفاصيل سجل التدقيق
+               </h3>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 text-xs">
+                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><span className="font-bold text-slate-600">التاريخ والوقت: </span><span dir="ltr" className="inline-block">{formatAuditDateTime(viewingAuditDetails.created_at)}</span></div>
+                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><span className="font-bold text-slate-600">المستخدم: </span>{viewingAuditDetails.user_name || "-"}</div>
+                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><span className="font-bold text-slate-600">نوع الإجراء: </span>{viewingAuditDetails.action_type}</div>
+                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><span className="font-bold text-slate-600">الكيان المتأثر: </span>{viewingAuditDetails.entity_type ? `${viewingAuditDetails.entity_type} - ${viewingAuditDetails.entity_ref || "-"}` : (viewingAuditDetails.entity_ref || "-")}</div>
+               </div>
+
+               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4 text-xs">
+                 <span className="font-bold text-slate-600 block mb-1">الملخص:</span>
+                 <span className="text-slate-800">{viewingAuditDetails.summary || "-"}</span>
+               </div>
+
+               {viewingAuditDetails.details && viewingAuditDetails.details.before && viewingAuditDetails.details.after && (
+                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs">
+                   <span className="font-bold text-amber-800 block mb-2">ملخّص التغيير (قبل ← بعد):</span>
+                   <div className="flex flex-col gap-1">
+                     {Object.keys({ ...viewingAuditDetails.details.before, ...viewingAuditDetails.details.after }).map(key => (
+                       <div key={key} className="flex flex-wrap gap-1">
+                         <span className="font-semibold text-slate-700">{key}:</span>
+                         <span className="text-red-600">{String(viewingAuditDetails.details.before[key])}</span>
+                         <span className="text-slate-500">←</span>
+                         <span className="text-teal-700 font-bold">{String(viewingAuditDetails.details.after[key])}</span>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               )}
+
+               <div>
+                 <span className="font-bold text-slate-600 block mb-1 text-xs">التفاصيل الكاملة (JSON):</span>
+                 <pre className="bg-slate-900 text-slate-100 rounded-lg p-3 text-[11px] whitespace-pre-wrap overflow-x-auto" dir="ltr">{JSON.stringify(viewingAuditDetails.details, null, 2)}</pre>
+               </div>
+            </div>
+         </div>
+      )}
+
       {confirmState && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
           <div className={`bg-white border-2 ${confirmState.tone === "danger" ? "border-red-400" : "border-amber-400"} p-6 rounded-2xl shadow-2xl w-full max-w-md relative`}>
@@ -2816,6 +2906,76 @@ export default function ShubramiSystem() {
                          ))}
                          {filteredArchive.length === 0 && (
                            <tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سجلات أرشيفية.</td></tr>
+                         )}
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
+               )}
+
+               {activeTab === "audit" && currentUser.role === "مدير" && (
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                   <h3 className="text-base font-bold text-slate-900 mb-4">📜 سجل التدقيق (للقراءة فقط - غير قابل للتغيير)</h3>
+
+                   <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
+                     <div className="flex-1 min-w-[200px]">
+                       <input type="text" placeholder="🔍 بحث في الملخص أو مرجع الكيان..." className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={auditSearch} onChange={(e) => setAuditSearch(e.target.value)} />
+                     </div>
+                     <div className="flex-1 min-w-[150px]">
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={auditUserFilter} onChange={(e) => setAuditUserFilter(e.target.value)}>
+                         <option value="الكل">المستخدم (الكل)</option>
+                         {auditUsers.map(u => (<option key={u} value={u}>{u}</option>))}
+                       </select>
+                     </div>
+                     <div className="flex-1 min-w-[170px]">
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)}>
+                         <option value="الكل">نوع الإجراء (الكل)</option>
+                         {auditActionTypes.map(a => (<option key={a} value={a}>{a}</option>))}
+                       </select>
+                     </div>
+                     <div className="flex-1 min-w-[150px]">
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={auditYearFilter} onChange={(e) => setAuditYearFilter(e.target.value)}>
+                         <option value="الكل">السنة (الكل)</option>
+                         {auditYears.map(year => (<option key={year} value={year}>{year}</option>))}
+                       </select>
+                     </div>
+                   </div>
+
+                   <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                     <table className="w-full text-right text-slate-800 text-xs">
+                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                         <tr>
+                           <th className="p-3 font-semibold">التاريخ والوقت</th>
+                           <th className="p-3 font-semibold">المستخدم</th>
+                           <th className="p-3 font-semibold">نوع الإجراء</th>
+                           <th className="p-3 font-semibold">الكيان المتأثر</th>
+                           <th className="p-3 font-semibold">الملخص</th>
+                           <th className="p-3 font-semibold">التفاصيل</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {filteredAuditLogs.map((log) => (
+                           <tr key={log.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                             <td className="p-3 whitespace-nowrap"><span dir="ltr" className="inline-block">{formatAuditDateTime(log.created_at)}</span></td>
+                             <td className="p-3 font-bold text-slate-900">{log.user_name || "-"}</td>
+                             <td className="p-3">
+                               <span className={`px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap border ${
+                                 log.action_type === "إخلاء مستأجر" ? "bg-red-100 text-red-700 border-red-200" :
+                                 log.action_type === "تجديد عقد" ? "bg-teal-100 text-teal-700 border-teal-200" :
+                                 log.action_type === "تعديل دفعة" ? "bg-blue-100 text-blue-700 border-blue-200" :
+                                 log.action_type === "حذف استحقاق" ? "bg-amber-100 text-amber-700 border-amber-200" :
+                                 "bg-slate-100 text-slate-700 border-slate-200"
+                               }`}>{log.action_type}</span>
+                             </td>
+                             <td className="p-3">{log.entity_type ? `${log.entity_type} - ${log.entity_ref || "-"}` : (log.entity_ref || "-")}</td>
+                             <td className="p-3 max-w-[320px] truncate" title={log.summary}>{log.summary}</td>
+                             <td className="p-3">
+                               <button onClick={() => setViewingAuditDetails(log)} className="text-blue-700 hover:text-blue-900 font-bold underline text-xs whitespace-nowrap">🔍 التفاصيل</button>
+                             </td>
+                           </tr>
+                         ))}
+                         {filteredAuditLogs.length === 0 && (
+                           <tr><td colSpan="6" className="p-5 text-center text-slate-500">لا توجد سجلات تدقيق.</td></tr>
                          )}
                        </tbody>
                      </table>
