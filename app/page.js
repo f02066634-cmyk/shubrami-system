@@ -569,6 +569,32 @@ export default function ShubramiSystem() {
   const [editingUser, setEditingUser] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  const [confirmState, setConfirmState] = useState(null);
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = (message, type = "success", critical = false) => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts(prev => [...prev, { id, message, type, critical }]);
+    if (!critical) {
+      const duration = type === "error" ? 7000 : 4000;
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+    }
+  };
+  const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
+
+  const showConfirm = (options) => new Promise(resolve => {
+    setConfirmState({
+      title: options.title || "تأكيد",
+      message: options.message,
+      tone: options.tone || "warning",
+      buttons: options.buttons || [
+        { label: "تأكيد", value: true, style: "danger" },
+        { label: "إلغاء", value: false, style: "neutral" }
+      ],
+      onChoice: (value) => { setConfirmState(null); resolve(value); }
+    });
+  });
+
   const [activeTab, setActiveTab] = useState("dashboard");
   const [contractSubTab, setContractSubTab] = useState("new");
   const [paymentSubTab, setPaymentSubTab] = useState("new");
@@ -860,13 +886,13 @@ export default function ShubramiSystem() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (usersDB.find(u => u.username === newUserUsername)) {
-      return alert("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.");
+      return showToast("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.", "success");
     }
     if (newUserRole === "موظف" && newUserAllowedTabs.length === 0) {
-      return alert("يرجى تحديد شاشة واحدة على الأقل كصلاحية دخول للموظف.");
+      return showToast("يرجى تحديد شاشة واحدة على الأقل كصلاحية دخول للموظف.", "success");
     }
     if (!newUserPassword || newUserPassword.length < 6) {
-      return alert("كلمة المرور يجب ألا تقل عن 6 خانات (متطلبات Supabase Auth).");
+      return showToast("كلمة المرور يجب ألا تقل عن 6 خانات (متطلبات Supabase Auth).", "success");
     }
 
     const { data, error } = await supabase.functions.invoke('admin-users', {
@@ -881,12 +907,12 @@ export default function ShubramiSystem() {
     });
 
     if (error || data?.error) {
-      return alert(`تعذر إضافة المستخدم: ${data?.error || error.message}`);
+      return showToast(`تعذر إضافة المستخدم: ${data?.error || error.message}`, "error");
     }
 
     await fetchUsersList();
     setNewUserName(""); setNewUserUsername(""); setNewUserPassword(""); setNewUserAllowedTabs([]);
-    alert("تم إضافة المستخدم بصلاحياته المحددة بنجاح.");
+    showToast("تم إضافة المستخدم بصلاحياته المحددة بنجاح.", "success");
   };
 
   // تعديل الصلاحيات فقط (وليس كلمة المرور) يبقى مباشرًا عبر RLS لأن سياسة profiles تسمح للمدير بالتعديل
@@ -899,23 +925,23 @@ export default function ShubramiSystem() {
     if (!error) {
       setUsersDB(usersDB.map(u => u.id === editingUser.id ? editingUser : u));
       setEditingUser(null);
-      alert("تم تحديث صلاحيات الموظف بنجاح!");
+      showToast("تم تحديث صلاحيات الموظف بنجاح!", "success");
     } else {
-      alert("حدث خطأ أثناء التحديث.");
+      showToast("حدث خطأ أثناء التحديث.", "error");
     }
   };
 
   // حذف المستخدم يتم عبر Edge Function أيضاً (لحذف حساب Auth فعلياً، لا فقط سجل الصلاحيات)
   const handleDeleteUser = async (id) => {
-    if (id === currentUser.id) return alert("لا يمكنك حذف حسابك وأنت مسجل الدخول به!");
-    if (!window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟")) return;
+    if (id === currentUser.id) return showToast("لا يمكنك حذف حسابك وأنت مسجل الدخول به!", "error");
+    if (!(await showConfirm({ message: "هل أنت متأكد من حذف هذا المستخدم نهائياً من السحابة؟" }))) return;
 
     const { data, error } = await supabase.functions.invoke('admin-users', {
       body: { action: 'delete', id }
     });
 
     if (error || data?.error) {
-      return alert(`تعذر حذف المستخدم: ${data?.error || error.message}`);
+      return showToast(`تعذر حذف المستخدم: ${data?.error || error.message}`, "error");
     }
     setUsersDB(usersDB.filter(u => u.id !== id));
   };
@@ -999,8 +1025,8 @@ export default function ShubramiSystem() {
       const formattedVal = val.startsWith("محل") ? val : `محل ${val}`;
       
       const shopExists = shopsDB.find(s => s.shopNumber === formattedVal && s.status === "شاغر");
-      if (!shopExists) return alert(`المحل ${formattedVal} غير متاح! تأكد أنه (شاغر) قبل إضافته للكيان.`);
-      if (newContractShops.includes(formattedVal)) return alert(`المحل ${formattedVal} مضاف مسبقاً للقائمة.`);
+      if (!shopExists) return showToast(`المحل ${formattedVal} غير متاح! تأكد أنه (شاغر) قبل إضافته للكيان.`, "success");
+      if (newContractShops.includes(formattedVal)) return showToast(`المحل ${formattedVal} مضاف مسبقاً للقائمة.`, "success");
 
       setNewContractShops([...newContractShops, formattedVal]);
       setShopInputValue("");
@@ -1011,13 +1037,13 @@ export default function ShubramiSystem() {
   const handleNewContract = async (e) => {
     e.preventDefault();
     if (newContractShops.length === 0 || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") {
-        return alert("الرجاء تعبئة جميع البيانات واختيار محل واحد على الأقل من خلال حقل التأجير المجمع.");
+        return showToast("الرجاء تعبئة جميع البيانات واختيار محل واحد على الأقل من خلال حقل التأجير المجمع.", "error");
     }
     
     const startD = new Date(newContractStart);
     const endD = new Date(newContractEnd);
     if (endD <= startD) {
-        return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
+        return showToast("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!", "error");
     }
 
     const mainShopName = newContractShops[0];
@@ -1048,7 +1074,7 @@ export default function ShubramiSystem() {
     for (const shopNum of newContractShops) {
        const shopRecord = shopsDB.find(s => s.shopNumber === shopNum && s.status === "شاغر");
        if (!shopRecord) {
-           return alert(`خطأ: المحل ${shopNum} غير متاح حالياً! لم يتم حفظ العقد لحماية البيانات.`);
+           return showToast(`خطأ: المحل ${shopNum} غير متاح حالياً! لم يتم حفظ العقد لحماية البيانات.`, "error");
        }
        targetIDs.push({ id: shopRecord.id, num: shopNum });
     }
@@ -1067,12 +1093,12 @@ export default function ShubramiSystem() {
     }));
 
     setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
-    alert(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`);
+    showToast(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`, "success");
   };
 
   const handleEditContract = async (e) => {
     e.preventDefault();
-    if (!editContractId) return alert("الرجاء تحديد الكيان أولاً");
+    if (!editContractId) return showToast("الرجاء تحديد الكيان أولاً", "error");
 
     const originalRow = shopsDB.find(s => s.id === editContractId);
     if (!originalRow) return;
@@ -1084,41 +1110,41 @@ export default function ShubramiSystem() {
        const startD = new Date(editContractStart);
        const endD = new Date(editContractEnd);
        if (endD <= startD) {
-           return alert("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!");
+           return showToast("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!", "error");
        }
     }
 
     if (!isRenewal && remainingBalance > 0) {
        if (editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate) {
-           return alert("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.");
+           return showToast("🚫 مهم: يمنع النظام تجديد أو تمديد تواريخ عقد ساري وعليه مبلغ متبقي!\nالرجاء تحصيل المديونية أولاً.", "error");
        }
     }
 
     if (!isRenewal && editContractStatus === "مؤجر") {
        if (editContractTenant !== originalRow.tenant || editContractEjarNumber !== originalRow.ejarNumber || editContractEnd !== originalRow.endDate || editContractStart !== originalRow.startDate || Number(editContractRent) !== originalRow.annualRent) {
-           return alert("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات.");
+           return showToast("🚫 مهم: يمنع النظام تعديل بيانات العقد الأساسية لأي عقد ساري المفعول حفاظاً على استقرار السجلات.", "error");
        }
     }
 
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
        
        if (remainingBalance > 0) {
-          return alert(`🚫 منع مالي: لا يمكن إخلاء الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`);
+          return showToast(`🚫 منع مالي: لا يمكن إخلاء الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`, "error");
        }
 
        const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
        if (openTx) {
-          return alert(`🚫 منع مالي: الكيان مرتبط بسند معلق برقم (${openTx.id}). يرجى إغلاقه أولاً.`);
+          return showToast(`🚫 منع مالي: الكيان مرتبط بسند معلق برقم (${openTx.id}). يرجى إغلاقه أولاً.`, "error");
        }
 
        const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber && i.status !== "ملغى");
        if (pendingInst) {
-          return alert(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`);
+          return showToast(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`, "error");
        }
 
        const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان التعاقدي.\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
-       if (!window.confirm(confirmMsg)) {
-         return; 
+       if (!(await showConfirm({ message: confirmMsg }))) {
+         return;
        }
 
        const groupToUpdate = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
@@ -1157,7 +1183,7 @@ export default function ShubramiSystem() {
           return [...archivedState, ...newVacantRows];
        });
 
-       return alert("تم الإخلاء بنجاح! السجل القديم الآن في الأرشيف وتم تفكيك وتوليد المحلات الشاغرة.");
+       return showToast("تم الإخلاء بنجاح! السجل القديم الآن في الأرشيف وتم تفكيك وتوليد المحلات الشاغرة.", "success");
     }
 
     if (isRenewal) {
@@ -1172,11 +1198,17 @@ export default function ShubramiSystem() {
 
       let tenantLeaving = false;
       if (remainingBalance > 0) {
-        tenantLeaving = !window.confirm(
-          `⚠️ يوجد دين متبقٍ بإجمالي (${groupTotalDebt} ريال) على عقد المستأجر "${originalRow.tenant}" المنتهي.\n\n` +
-          `اضغط "موافق" إذا كان المستأجر سيجدّد ويبقى (يُنقل الدين إلى سجل مديونية مستقل باسمه، ويبدأ العقد الجديد نظيفاً تماماً مع بقاء المحل "مؤجر").\n` +
-          `اضغط "إلغاء" إذا كان المستأجر سيغادر (يُنقل الدين إلى سجل المديونية المستقل، وتُفرَّغ محلات الكيان لتصبح "شاغرة").`
-        );
+        tenantLeaving = await showConfirm({
+          title: "دين متبقٍ على المستأجر",
+          message:
+            `⚠️ يوجد دين متبقٍ بإجمالي (${groupTotalDebt} ريال) على عقد المستأجر "${originalRow.tenant}" المنتهي.\n\n` +
+            `اختر "يجدّد ويبقى" إذا كان المستأجر سيجدّد ويبقى (يُنقل الدين إلى سجل مديونية مستقل باسمه، ويبدأ العقد الجديد نظيفاً تماماً مع بقاء المحل "مؤجر").\n` +
+            `اختر "يغادر" إذا كان المستأجر سيغادر (يُنقل الدين إلى سجل المديونية المستقل، وتُفرَّغ محلات الكيان لتصبح "شاغرة").`,
+          buttons: [
+            { label: "يجدّد ويبقى", value: false, style: "neutral" },
+            { label: "يغادر", value: true, style: "danger" }
+          ]
+        });
       }
 
       if (tenantLeaving) {
@@ -1186,11 +1218,17 @@ export default function ShubramiSystem() {
         let hardDeleteInstallments = false;
         if (pendingInsts.length > 0) {
           const totalInstAmount = pendingInsts.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
-          hardDeleteInstallments = window.confirm(
-            `⚠️ يوجد ${pendingInsts.length} استحقاق/استحقاقات مجدولة معلّقة على هذا الكيان بإجمالي (${totalInstAmount} ريال).\n\n` +
-            `اضغط "موافق" للحذف النهائي لهذه الاستحقاقات من قاعدة البيانات.\n` +
-            `اضغط "إلغاء" لإلغائها مع حفظ سجلها التاريخي (ستتحول حالتها إلى "ملغى").`
-          );
+          hardDeleteInstallments = await showConfirm({
+            title: "استحقاقات معلّقة على الكيان",
+            message:
+              `⚠️ يوجد ${pendingInsts.length} استحقاق/استحقاقات مجدولة معلّقة على هذا الكيان بإجمالي (${totalInstAmount} ريال).\n\n` +
+              `اختر "حذف نهائي" لحذف هذه الاستحقاقات نهائياً من قاعدة البيانات.\n` +
+              `اختر "إلغاء مع حفظ السجل" لإلغائها مع حفظ سجلها التاريخي (ستتحول حالتها إلى "ملغى").`,
+            buttons: [
+              { label: "حذف نهائي", value: true, style: "danger" },
+              { label: "إلغاء مع حفظ السجل", value: false, style: "neutral" }
+            ]
+          });
         }
 
         const instSummary = pendingInsts.length === 0
@@ -1199,13 +1237,15 @@ export default function ShubramiSystem() {
               ? `سيتم حذف ${pendingInsts.length} استحقاق/استحقاقات مجدولة نهائياً.`
               : `سيتم إلغاء ${pendingInsts.length} استحقاق/استحقاقات مجدولة مع حفظ سجلها التاريخي.`);
 
-        const finalConfirm = window.confirm(
-          `🚪 تأكيد نهائي لمغادرة المستأجر "${originalRow.tenant}":\n\n` +
-          `• سيُنقل دين بقيمة (${groupTotalDebt} ريال) إلى سجل المديونية المستقل باسم المستأجر.\n` +
-          `• ${instSummary}\n` +
-          `• ستصبح محلات الكيان (${groupShopNumbers.join('، ')}) شاغرة فوراً.\n\n` +
-          `هل أنت متأكد من المتابعة؟`
-        );
+        const finalConfirm = await showConfirm({
+          title: "تأكيد نهائي للمغادرة",
+          message:
+            `🚪 تأكيد نهائي لمغادرة المستأجر "${originalRow.tenant}":\n\n` +
+            `• سيُنقل دين بقيمة (${groupTotalDebt} ريال) إلى سجل المديونية المستقل باسم المستأجر.\n` +
+            `• ${instSummary}\n` +
+            `• ستصبح محلات الكيان (${groupShopNumbers.join('، ')}) شاغرة فوراً.\n\n` +
+            `هل أنت متأكد من المتابعة؟`
+        });
         if (!finalConfirm) return;
 
         const processedShopNumbers = [];
@@ -1213,7 +1253,7 @@ export default function ShubramiSystem() {
           const result = await archiveExpiredContract(shopRow);
           if (result.error) {
             const stageMsg = result.stage === "debt" ? "فشل تسجيل الدين" : "تم تسجيل الدين بنجاح لكن فشل تفريغ المحل";
-            return alert(`🚫 ${stageMsg} للمحل ${shopRow.shopNumber}. تم إيقاف عملية المغادرة بالكامل.\nالمحلات التي اكتملت معالجتها قبل التوقف: ${processedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${result.error.message}`);
+            return showToast(`🚫 ${stageMsg} للمحل ${shopRow.shopNumber}. تم إيقاف عملية المغادرة بالكامل.\nالمحلات التي اكتملت معالجتها قبل التوقف: ${processedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${result.error.message}`, "error", true);
           }
           if (result.debt) setDebtsDB(prev => [...prev, result.debt]);
           setShopsDB(prev => prev.map(s => s.id === shopRow.id ? result.updatedShop : s));
@@ -1225,7 +1265,7 @@ export default function ShubramiSystem() {
             for (const inst of pendingInsts) {
               const { error: delErr } = await supabase.from('installments').delete().eq('id', inst.id);
               if (delErr) {
-                return alert(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل حذف الاستحقاق رقم ${inst.id}. الرجاء حذفه يدوياً.\n\nالخطأ: ${delErr.message}`);
+                return showToast(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل حذف الاستحقاق رقم ${inst.id}. الرجاء حذفه يدوياً.\n\nالخطأ: ${delErr.message}`, "error", true);
               }
               setInstallmentsDB(prev => prev.filter(i => i.id !== inst.id));
             }
@@ -1235,27 +1275,27 @@ export default function ShubramiSystem() {
               const cancelFields = { status: "ملغى", cancel_reason: "مغادرة المستأجر", cancelled_at: cancelledAt };
               const { error: cancelErr } = await supabase.from('installments').update(cancelFields).eq('id', inst.id);
               if (cancelErr) {
-                return alert(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل إلغاء الاستحقاق رقم ${inst.id}. الرجاء إلغاؤه يدوياً.\n\nالخطأ: ${cancelErr.message}`);
+                return showToast(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل إلغاء الاستحقاق رقم ${inst.id}. الرجاء إلغاؤه يدوياً.\n\nالخطأ: ${cancelErr.message}`, "error", true);
               }
               setInstallmentsDB(prev => prev.map(i => i.id === inst.id ? { ...i, ...cancelFields } : i));
             }
           }
         }
 
-        alert(`🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وتفريغ محلات الكيان بالكامل.`);
+        showToast(`🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وتفريغ محلات الكيان بالكامل.`, "success");
         setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
         return;
       }
 
       // ===== مسار "يجدّد ويبقى" (أو لا يوجد دين على الإطلاق) =====
-      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return alert("خطأ: يجب إدخال رقم عقد إيجار جديد!");
-      if (editContractEjarNumber === originalRow.ejarNumber) return alert("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!");
-      if (!editContractStart || !editContractEnd) return alert("خطأ: الرجاء إدخال تواريخ بداية ونهاية العقد الجديد!");
+      if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return showToast("خطأ: يجب إدخال رقم عقد إيجار جديد!", "error");
+      if (editContractEjarNumber === originalRow.ejarNumber) return showToast("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!", "error");
+      if (!editContractStart || !editContractEnd) return showToast("خطأ: الرجاء إدخال تواريخ بداية ونهاية العقد الجديد!", "error");
 
       const newStartD = new Date(editContractStart);
       const oldEndD = new Date(originalRow.endDate);
       if (newStartD <= oldEndD) {
-          return alert(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`);
+          return showToast(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`, "error");
       }
 
       for (const shopRow of groupShopRows) {
@@ -1270,7 +1310,7 @@ export default function ShubramiSystem() {
           };
           const { error: debtErr } = await supabase.from('debts').insert([debtRecord]);
           if (debtErr) {
-            return alert(`🚫 فشل تسجيل الدين المتبقي للمحل ${shopRow.shopNumber}. تم إيقاف عملية التجديد بالكامل قبل أي تعديل.\n\nالخطأ: ${debtErr.message}`);
+            return showToast(`🚫 فشل تسجيل الدين المتبقي للمحل ${shopRow.shopNumber}. تم إيقاف عملية التجديد بالكامل قبل أي تعديل.\n\nالخطأ: ${debtErr.message}`, "error", true);
           }
           setDebtsDB(prev => [...prev, debtRecord]);
         }
@@ -1287,7 +1327,7 @@ export default function ShubramiSystem() {
          if (shopToArchive) {
              const { error: archiveErr } = await supabase.from('shops').update({ status: "أرشيف - مجدد" }).eq('id', shopToArchive.id);
              if (archiveErr) {
-                return alert(`🚫 فشل أرشفة المحل ${sNum} أثناء التجديد. تم إيقاف العملية.\nالمحلات التي أُرشفت بنجاح قبل التوقف: ${archivedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${archiveErr.message}`);
+                return showToast(`🚫 فشل أرشفة المحل ${sNum} أثناء التجديد. تم إيقاف العملية.\nالمحلات التي أُرشفت بنجاح قبل التوقف: ${archivedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${archiveErr.message}`, "error", true);
              }
              setShopsDB(prev => prev.map(s => s.id === shopToArchive.id ? { ...s, status: "أرشيف - مجدد" } : s));
              archivedShopNumbers.push(sNum);
@@ -1312,18 +1352,18 @@ export default function ShubramiSystem() {
 
       const { error: insertErr } = await supabase.from('shops').insert(newRows);
       if (insertErr) {
-        return alert(`🚫 تمت أرشفة العقود القديمة بنجاح، لكن فشل إنشاء صفوف العقد الجديد. الرجاء مراجعة قاعدة البيانات يدوياً لإكمال التجديد.\n\nالخطأ: ${insertErr.message}`);
+        return showToast(`🚫 تمت أرشفة العقود القديمة بنجاح، لكن فشل إنشاء صفوف العقد الجديد. الرجاء مراجعة قاعدة البيانات يدوياً لإكمال التجديد.\n\nالخطأ: ${insertErr.message}`, "error", true);
       }
       setShopsDB(prev => [...prev, ...newRows]);
-      alert(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`);
+      showToast(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`, "success");
       setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
     } else {
       const { error: statusErr } = await supabase.from('shops').update({ status: editContractStatus }).eq('id', editContractId);
       if (statusErr) {
-        return alert(`🚫 فشل تحديث حالة العقد. الخطأ: ${statusErr.message}`);
+        return showToast(`🚫 فشل تحديث حالة العقد. الخطأ: ${statusErr.message}`, "error");
       }
       setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, status: editContractStatus } : s));
-      alert("تم تحديث حالة العقد على السحابة بنجاح!");
+      showToast("تم تحديث حالة العقد على السحابة بنجاح!", "success");
     }
   };
 
@@ -1334,22 +1374,22 @@ export default function ShubramiSystem() {
     const targetNum = Number(newPayTarget);
     const amountNum = Number(newPayAmount);
 
-    if (amountNum > targetNum) return alert("خطأ: المدفوع أكبر من المتفق عليه بالسند!");
+    if (amountNum > targetNum) return showToast("خطأ: المدفوع أكبر من المتفق عليه بالسند!", "error");
     
     const activeShop = shopsDB.find(s => s.shopNumber === newPayShop && s.status === "مؤجر" && !isContractExpired(s.endDate));
-    if (!activeShop) return alert("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا الكيان لتسجيل الدفعة عليه.");
+    if (!activeShop) return showToast("خطأ: لا يوجد عقد ساري المفعول حالياً لهذا الكيان لتسجيل الدفعة عليه.", "error");
 
     if (activeShop.collected >= activeShop.annualRent) {
-      return alert("هذا العقد مسدد بالكامل ولا يمكن تسجيل دفعات إضافية عليه!");
+      return showToast("هذا العقد مسدد بالكامل ولا يمكن تسجيل دفعات إضافية عليه!", "error");
     }
 
     if (activeShop.collected + amountNum > activeShop.annualRent) {
       const actualRemaining = activeShop.annualRent - activeShop.collected;
-      return alert(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية للكيان!\n\nالمتبقي الفعلي للإيجار هو: ${actualRemaining} ريال فقط.`);
+      return showToast(`❌ خطأ: المبلغ المدفوع يتجاوز قيمة الإيجار السنوي المتبقية للكيان!\n\nالمتبقي الفعلي للإيجار هو: ${actualRemaining} ريال فقط.`, "error");
     }
 
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
-    if (existingOpen) return alert(`الكيان مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`);
+    if (existingOpen) return showToast(`الكيان مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`, "success");
 
     const remaining = targetNum - amountNum;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
@@ -1388,7 +1428,7 @@ export default function ShubramiSystem() {
       setTransactionsDB([...transactionsDB, newTx]); 
       setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
       
-      alert(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.");
+      showToast(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.", "success");
     }
   };
 
@@ -1397,13 +1437,13 @@ export default function ShubramiSystem() {
     if (!updatePayReceipt) return;
     const tx = transactionsDB.find(t => t.id === updatePayReceipt);
     if (!tx) return;
-    if (Number(updatePayAmount) > tx.remainingAmount) return alert("خطأ: المدفوع أكبر من المتبقي في هذا السند!");
+    if (Number(updatePayAmount) > tx.remainingAmount) return showToast("خطأ: المدفوع أكبر من المتبقي في هذا السند!", "error");
 
     const activeShop = shopsDB.find(s => s.shopNumber === tx.shop && s.status === "مؤجر" && !isContractExpired(s.endDate));
     
     if (activeShop && (activeShop.collected + Number(updatePayAmount) > activeShop.annualRent)) {
         const actualRemaining = activeShop.annualRent - activeShop.collected;
-        return alert(`❌ خطأ: المبلغ المدفوع يتجاوز المتبقي للكيان! المتبقي الفعلي هو: ${actualRemaining} ريال.`);
+        return showToast(`❌ خطأ: المبلغ المدفوع يتجاوز المتبقي للكيان! المتبقي الفعلي هو: ${actualRemaining} ريال.`, "error");
     }
 
     const updatedPaid = tx.paidAmount + Number(updatePayAmount);
@@ -1434,7 +1474,7 @@ export default function ShubramiSystem() {
       }
 
       setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
-      alert("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.");
+      showToast("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.", "success");
     }
   };
 
@@ -1446,7 +1486,7 @@ export default function ShubramiSystem() {
     if (!error) {
       setDebtsDB([...debtsDB, newDebt]);
       setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
-      alert("تم إدراج المديونية السابقة في قاعدة البيانات السحابية.");
+      showToast("تم إدراج المديونية السابقة في قاعدة البيانات السحابية.", "success");
     }
   };
 
@@ -1456,7 +1496,7 @@ export default function ShubramiSystem() {
     const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
     if (!targetDebt) return;
     const payAmt = Number(payDebtAmount);
-    if (payAmt > targetDebt.amount) return alert("خطأ: المبلغ المدفوع أكبر من المديونية!");
+    if (payAmt > targetDebt.amount) return showToast("خطأ: المبلغ المدفوع أكبر من المديونية!", "error");
 
     const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
 
@@ -1507,7 +1547,7 @@ export default function ShubramiSystem() {
       setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
     }
 
-    alert(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند سحابياً.");
+    showToast(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند سحابياً.", "success");
     setPayDebtId(""); setPayDebtAmount("");
   };
 
@@ -1519,13 +1559,13 @@ export default function ShubramiSystem() {
     if (!error) {
       setExpensesDB([...expensesDB, newExpense]);
       setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
-      alert("تم تسجيل وتوثيق المصروف سحابياً.");
+      showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
     }
   };
 
   const handleNewInstallment = async (e) => {
     e.preventDefault();
-    if (!instShop || !instAmount || !instDate) return alert("الرجاء تعبئة جميع بيانات الجدولة");
+    if (!instShop || !instAmount || !instDate) return showToast("الرجاء تعبئة جميع بيانات الجدولة", "error");
 
     const newInst = {
       id: `INST-${Date.now()}`,
@@ -1538,14 +1578,14 @@ export default function ShubramiSystem() {
     if (!error) {
       setInstallmentsDB([...installmentsDB, newInst]);
       setInstShop(""); setInstAmount(""); setInstDate("");
-      alert("تمت جدولة استحقاق الدفعة القادمة بنجاح!");
+      showToast("تمت جدولة استحقاق الدفعة القادمة بنجاح!", "success");
     } else {
-      alert("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟");
+      showToast("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟", "error");
     }
   };
 
   const handleDeleteInstallment = async (id) => {
-    if (window.confirm("هل أنت متأكد من حذف هذه الجدولة؟")) {
+    if (await showConfirm({ message: "هل أنت متأكد من حذف هذه الجدولة؟" })) {
       const { error = null } = await supabase.from('installments').delete().eq('id', id);
       if (!error) {
         setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
@@ -1627,7 +1667,7 @@ export default function ShubramiSystem() {
   // جميع دوال الطباعة والتصدير الأصلية بالكامل
   // ==========================================
   const printInstallmentsPDF = (data) => {
-    if (data.length === 0) return alert("لا توجد دفعات مجدولة للطباعة حالياً");
+    if (data.length === 0) return showToast("لا توجد دفعات مجدولة للطباعة حالياً", "error");
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
@@ -1689,7 +1729,7 @@ export default function ShubramiSystem() {
   };
 
   const printDebtsPDF = (data) => {
-    if (data.length === 0) return alert("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً");
+    if (data.length === 0) return showToast("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً", "error");
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
@@ -1741,7 +1781,7 @@ export default function ShubramiSystem() {
   };
 
   const printRentedShopsPDF = (filteredData) => {
-    if (filteredData.length === 0) return alert("لا توجد محلات في الفرز الحالي لطباعتها");
+    if (filteredData.length === 0) return showToast("لا توجد محلات في الفرز الحالي لطباعتها", "error");
     
     // نفلتر فقط المحلات المؤجرة (الرئيسية)
     const mainShops = filteredData.filter(s => s.status === "مؤجر");
@@ -1819,7 +1859,7 @@ export default function ShubramiSystem() {
   };
 
   const printTablePDF = (data) => {
-    if (data.length === 0) return alert("لا توجد بيانات لطباعتها في التقرير");
+    if (data.length === 0) return showToast("لا توجد بيانات لطباعتها في التقرير", "error");
     const sumTarget = data.reduce((s, t) => s + t.targetAmount, 0);
     const sumPaid = data.reduce((s, t) => s + t.paidAmount, 0);
     const sumRemaining = data.reduce((s, t) => s + t.remainingAmount, 0);
@@ -1893,7 +1933,7 @@ export default function ShubramiSystem() {
   };
 
   const exportToCSV = (data, filename) => {
-    if (data.length === 0) return alert("لا توجد سجلات لتصديرها حالياً");
+    if (data.length === 0) return showToast("لا توجد سجلات لتصديرها حالياً", "error");
     const headers = ["رقم السند", "تاريخ البدء", "تاريخ التحديث", "رقم المحل", "المستأجر", "المبلغ الكلي المتفق عليه", "إجمالي المدفوع حتى الآن", "المبلغ المتبقي", "طريقة الدفع", "الحالة"].join(",");
     const rows = data.map(row => [
       row.id, row.startDate, row.updateDate, row.shop, row.tenant, row.targetAmount, row.paidAmount, row.remainingAmount, row.method, row.status
@@ -2211,6 +2251,55 @@ export default function ShubramiSystem() {
             </div>
          </div>
       )}
+
+      {confirmState && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className={`bg-white border-2 ${confirmState.tone === "danger" ? "border-red-400" : "border-amber-400"} p-6 rounded-2xl shadow-2xl w-full max-w-md relative`}>
+            <h3 className={`font-extrabold mb-3 flex items-center gap-2 text-lg border-b pb-3 ${confirmState.tone === "danger" ? "text-red-700 border-red-200" : "text-amber-700 border-amber-200"}`}>
+              <span>{confirmState.tone === "danger" ? "🚫" : "⚠️"}</span> {confirmState.title}
+            </h3>
+            <p className="text-sm text-slate-700 mb-6 whitespace-pre-line leading-relaxed">{confirmState.message}</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              {confirmState.buttons.map((btn, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => confirmState.onChoice(btn.value)}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors ${
+                    btn.style === "danger"
+                      ? "bg-red-600 hover:bg-red-700 text-white"
+                      : btn.style === "primary"
+                      ? "bg-blue-700 hover:bg-blue-800 text-white"
+                      : "bg-slate-200 hover:bg-slate-300 text-slate-800"
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="fixed bottom-6 inset-x-0 z-[70] flex flex-col items-center gap-2 px-4 pointer-events-none">
+        {toasts.map(t => (
+          <div
+            key={t.id}
+            className={`pointer-events-auto w-full max-w-md border-2 rounded-xl shadow-2xl px-4 py-3 flex items-start gap-3 animate-fade-in ${
+              t.critical
+                ? "bg-red-50 border-red-500"
+                : t.type === "error"
+                ? "bg-red-50 border-red-300"
+                : "bg-green-50 border-green-300"
+            }`}
+          >
+            <span className="text-lg shrink-0">{t.critical ? "🚫" : t.type === "error" ? "❌" : "✅"}</span>
+            <p className={`text-sm font-semibold whitespace-pre-line flex-1 ${t.critical ? "text-red-800" : t.type === "error" ? "text-red-700" : "text-green-800"}`}>
+              {t.message}
+            </p>
+            <button onClick={() => dismissToast(t.id)} className="text-slate-500 hover:text-red-600 text-xl font-bold leading-none shrink-0">&times;</button>
+          </div>
+        ))}
+      </div>
 
       <div dir="rtl" className="flex min-h-screen font-tajawal text-slate-900 bg-slate-100 relative">
         <aside className="sticky top-0 h-screen relative z-10 w-64 bg-slate-50 border-l border-slate-300 flex flex-col shadow-md shrink-0">
