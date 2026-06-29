@@ -1142,7 +1142,13 @@ export default function ShubramiSystem() {
 
     for (const target of targetIDs) {
        const payload = target.num === mainShopName ? mainUpdate : dependentUpdate;
-       await supabase.from('shops').update(payload).eq('id', target.id);
+       const { error: shopErr } = await supabase.from('shops').update(payload).eq('id', target.id);
+       if (shopErr) {
+         return showToast(
+           `🚫 فشل حفظ بيانات المحل ${target.num}. العقد لم يُحفظ بالكامل — يُنصح بتحديث الصفحة ومراجعة حالة المحلات قبل المتابعة.`,
+           "error", true
+         );
+       }
     }
 
     setShopsDB(shopsDB.map(s => {
@@ -1213,7 +1219,13 @@ export default function ShubramiSystem() {
        for (const sNum of groupToUpdate) {
           const shopToArchive = shopsDB.find(s => s.shopNumber === sNum && (s.status === "مؤجر" || s.status === "مدمج") && s.tenant === originalRow.tenant);
           if (shopToArchive) {
-              await supabase.from('shops').update({ status: "أرشيف - مخلى" }).eq('id', shopToArchive.id);
+              const { error: archErr } = await supabase.from('shops').update({ status: "أرشيف - مخلى" }).eq('id', shopToArchive.id);
+              if (archErr) {
+                return showToast(
+                  `🚫 فشل أرشفة المحل ${sNum} أثناء الإخلاء. العملية متوقفة — يُرجى مراجعة البيانات وإعادة المحاولة.`,
+                  "error", true
+                );
+              }
           }
        }
 
@@ -1232,7 +1244,13 @@ export default function ShubramiSystem() {
           groupShops: null
        }));
 
-       await supabase.from('shops').insert(newVacantRows);
+       const { error: insertVacantErr } = await supabase.from('shops').insert(newVacantRows);
+       if (insertVacantErr) {
+         return showToast(
+           `🚫 تمت أرشفة المحلات القديمة، لكن فشل توليد الصفوف الشاغرة. قاعدة البيانات تحتاج مراجعة يدوية لإتمام العملية.`,
+           "error", true
+         );
+       }
 
        setShopsDB(prev => {
           const archivedState = prev.map(s => {
@@ -1519,21 +1537,33 @@ export default function ShubramiSystem() {
     
     if (!txErr) {
       const updatedCollected = activeShop.collected + amountNum;
-      await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
-      
+      const { error: collectErr } = await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
+      if (collectErr) {
+        return showToast(
+          `⚠️ تحذير حرج: تم تسجيل السند ${newTx.id} بنجاح، لكن فشل تحديث رصيد التحصيل للمحل ${activeShop.shopNumber}. يُنصح بمراجعة بيانات التحصيل يدوياً.`,
+          "error", true
+        );
+      }
+      setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
+
       const instToDelete = payingInstId
           ? installmentsDB.find(i => i.id === payingInstId)
           : installmentsDB.find(i => i.shop === activeShop.shopNumber && i.status !== "ملغى");
 
       if (instToDelete) {
-         await supabase.from('installments').delete().eq('id', instToDelete.id);
+         const { error: delInstErr } = await supabase.from('installments').delete().eq('id', instToDelete.id);
+         if (delInstErr) {
+           return showToast(
+             `⚠️ تحذير: تم تسجيل السند ${newTx.id} وتحديث الرصيد، لكن فشل حذف الاستحقاق المرتبط بالمحل ${activeShop.shopNumber}. يُرجى حذفه يدوياً.`,
+             "error", true
+           );
+         }
          setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
       }
-      setPayingInstId(""); 
+      setPayingInstId("");
 
-      setTransactionsDB([...transactionsDB, newTx]); 
-      setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
-      
+      setTransactionsDB([...transactionsDB, newTx]);
+
       showToast(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.", "success");
     }
   };
@@ -1569,13 +1599,25 @@ export default function ShubramiSystem() {
     if (!txErr) {
       if (activeShop) {
         const updatedCollected = activeShop.collected + Number(updatePayAmount);
-        await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
+        const { error: collectErr } = await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
+        if (collectErr) {
+          return showToast(
+            `⚠️ تحذير حرج: تم تحديث السند ${updatePayReceipt} بنجاح، لكن فشل تحديث رصيد التحصيل للمحل ${tx.shop}. يُنصح بمراجعة البيانات يدوياً.`,
+            "error", true
+          );
+        }
         setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
       }
 
       const instToDelete = installmentsDB.find(i => i.shop === tx.shop && i.status !== "ملغى");
       if (instToDelete) {
-         await supabase.from('installments').delete().eq('id', instToDelete.id);
+         const { error: delInstErr } = await supabase.from('installments').delete().eq('id', instToDelete.id);
+         if (delInstErr) {
+           return showToast(
+             `⚠️ تحذير: تم تحديث السند ${updatePayReceipt} والرصيد، لكن فشل حذف الاستحقاق المرتبط بالمحل ${tx.shop}. يُرجى حذفه يدوياً.`,
+             "error", true
+           );
+         }
          setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
       }
 
@@ -1633,7 +1675,8 @@ export default function ShubramiSystem() {
         status: updatedRemaining === 0 ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
       };
 
-      await supabase.from('transactions').update(updatedTx).eq('id', existingTx.id);
+      const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', existingTx.id);
+      if (txErr) return showToast(`🚫 فشل تحديث سند سداد المديونية ${existingTx.id}. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
       const newTxDB = [...transactionsDB];
       newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
       setTransactionsDB(newTxDB);
@@ -1652,17 +1695,26 @@ export default function ShubramiSystem() {
         method: payDebtMethod,
         status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
       };
-      await supabase.from('transactions').insert([newTx]);
+      const { error: txErr } = await supabase.from('transactions').insert([newTx]);
+      if (txErr) return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
       setTransactionsDB([...transactionsDB, newTx]);
     }
 
     if (targetDebt.isShopDebt) {
       const currentShop = shopsDB.find(s => s.id === targetDebt.id);
       const newCollected = (currentShop?.collected || 0) + payAmt;
-      await supabase.from('shops').update({ collected: newCollected }).eq('id', targetDebt.id);
+      const { error: shopErr } = await supabase.from('shops').update({ collected: newCollected }).eq('id', targetDebt.id);
+      if (shopErr) return showToast(
+        `⚠️ تحذير حرج: تم إنشاء السند، لكن فشل تحديث رصيد التحصيل للمحل ${currentShop?.shopNumber || targetDebt.id}. يُنصح بمراجعة البيانات يدوياً.`,
+        "error", true
+      );
       setShopsDB(shopsDB.map(s => s.id === targetDebt.id ? { ...s, collected: newCollected } : s));
     } else {
-      await supabase.from('debts').update({ amount: targetDebt.amount - payAmt }).eq('id', targetDebt.id);
+      const { error: debtErr } = await supabase.from('debts').update({ amount: targetDebt.amount - payAmt }).eq('id', targetDebt.id);
+      if (debtErr) return showToast(
+        `⚠️ تحذير حرج: تم إنشاء السند، لكن فشل تحديث رصيد المديونية (${targetDebt.id}). يُنصح بمراجعة البيانات يدوياً.`,
+        "error", true
+      );
       setDebtsDB(debtsDB.map(d => d.id === targetDebt.id ? { ...d, amount: d.amount - payAmt } : d));
     }
 
