@@ -714,6 +714,26 @@ export default function ShubramiSystem() {
     return { error: null, debt, archivedShop: { ...shop, status: "أرشيف - مخلى" }, vacantShop };
   };
 
+  // سجل تدقيق مركزي وغير معطّل للمسار الرئيسي: تُستدعى فقط بعد التأكد من نجاح
+  // العملية المالية/الإدارية الأساسية في Supabase. أي فشل في الكتابة هنا يُسجَّل
+  // في console فقط ولا يُفشل أو يوقف العملية الأساسية التي استدعتها.
+  const logAction = async ({ actionType, entityType, entityRef, details, summary }) => {
+    try {
+      const { error } = await supabase.from('audit_log').insert([{
+        user_id: currentUser?.id || null,
+        user_name: currentUser?.name || null,
+        action_type: actionType,
+        entity_type: entityType || null,
+        entity_ref: entityRef || null,
+        details: details || null,
+        summary: summary || null,
+      }]);
+      if (error) console.error('logAction: فشل تسجيل سجل التدقيق', error);
+    } catch (err) {
+      console.error('logAction: استثناء غير متوقع', err);
+    }
+  };
+
   // بيانات النظام التشغيلية (محلات/سندات/مديونيات/مصروفات/جدولة)
   // تُجلب فقط بعد وجود جلسة Supabase Auth صالحة، وتعتمد سياسات RLS على دور المستخدم
   const fetchAppData = async (sessionUser) => {
@@ -1296,6 +1316,13 @@ export default function ShubramiSystem() {
                 return showToast(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل حذف الاستحقاق رقم ${inst.id}. الرجاء حذفه يدوياً.\n\nالخطأ: ${delErr.message}`, "error", true);
               }
               setInstallmentsDB(prev => prev.filter(i => i.id !== inst.id));
+              await logAction({
+                actionType: "حذف استحقاق",
+                entityType: "استحقاق",
+                entityRef: inst.shop,
+                summary: `حذف استحقاق مجدول نهائياً للمحل ${inst.shop} بقيمة ${inst.amount} ريال (تاريخ الاستحقاق ${inst.date}) ضمن مغادرة المستأجر "${originalRow.tenant}".`,
+                details: { ...inst, reason: "مغادرة المستأجر" }
+              });
             }
           } else {
             const cancelledAt = new Date().toISOString();
@@ -1310,6 +1337,19 @@ export default function ShubramiSystem() {
           }
         }
 
+        await logAction({
+          actionType: "إخلاء مستأجر",
+          entityType: "عقد",
+          entityRef: groupShopNumbers.join('، '),
+          summary: `إخلاء المستأجر "${originalRow.tenant}" من المحل/المحلات (${groupShopNumbers.join('، ')}) - نقل دين متبقٍ (${groupTotalDebt} ريال) إلى سجل المديونية المستقل.`,
+          details: {
+            tenant: originalRow.tenant,
+            shopNumbers: groupShopNumbers,
+            transferredDebt: groupTotalDebt,
+            pendingInstallmentsCount: pendingInsts.length,
+            installmentsAction: pendingInsts.length === 0 ? "لا يوجد" : (hardDeleteInstallments ? "حذف نهائي" : "إلغاء مع حفظ السجل")
+          }
+        });
         showToast(`🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وتفريغ محلات الكيان بالكامل.`, "success");
         setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
         return;
@@ -1326,6 +1366,7 @@ export default function ShubramiSystem() {
           return showToast(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`, "error");
       }
 
+      let renewalTransferredDebt = 0;
       for (const shopRow of groupShopRows) {
         const remaining = Math.max(0, (shopRow.annualRent || 0) - (shopRow.collected || 0));
         if (remaining > 0) {
@@ -1341,6 +1382,7 @@ export default function ShubramiSystem() {
             return showToast(`🚫 فشل تسجيل الدين المتبقي للمحل ${shopRow.shopNumber}. تم إيقاف عملية التجديد بالكامل قبل أي تعديل.\n\nالخطأ: ${debtErr.message}`, "error", true);
           }
           setDebtsDB(prev => [...prev, debtRecord]);
+          renewalTransferredDebt += remaining;
         }
       }
 
@@ -1383,6 +1425,22 @@ export default function ShubramiSystem() {
         return showToast(`🚫 تمت أرشفة العقود القديمة بنجاح، لكن فشل إنشاء صفوف العقد الجديد. الرجاء مراجعة قاعدة البيانات يدوياً لإكمال التجديد.\n\nالخطأ: ${insertErr.message}`, "error", true);
       }
       setShopsDB(prev => [...prev, ...newRows]);
+      await logAction({
+        actionType: "تجديد عقد",
+        entityType: "عقد",
+        entityRef: groupToRenew.join('، '),
+        summary: `تجديد عقد المستأجر "${editContractTenant}" للمحل/المحلات (${groupToRenew.join('، ')}) - عقد جديد رقم ${editContractEjarNumber}.`,
+        details: {
+          tenant: editContractTenant,
+          shopNumbers: groupToRenew,
+          oldEjarNumber: originalRow.ejarNumber,
+          newEjarNumber: editContractEjarNumber,
+          oldEndDate: originalRow.endDate,
+          newStartDate: editContractStart,
+          newEndDate: editContractEnd,
+          transferredDebtTotal: renewalTransferredDebt
+        }
+      });
       showToast(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`, "success");
       setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
     } else {
@@ -1502,6 +1560,19 @@ export default function ShubramiSystem() {
       }
 
       setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
+      await logAction({
+        actionType: "تعديل دفعة",
+        entityType: "دفعة",
+        entityRef: tx.shop,
+        summary: `تعديل تحصيل المحل ${tx.shop} من ${tx.paidAmount} إلى ${updatedPaid} (دفعة إضافية ${updatePayAmount} ريال) على السند ${updatePayReceipt}.`,
+        details: {
+          receiptId: updatePayReceipt,
+          shop: tx.shop,
+          before: { paidAmount: tx.paidAmount, remainingAmount: tx.remainingAmount, status: tx.status },
+          after: { paidAmount: updatedPaid, remainingAmount: updatedRemaining, status: updatedStatus },
+          addedAmount: Number(updatePayAmount)
+        }
+      });
       showToast("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.", "success");
     }
   };
@@ -1614,9 +1685,19 @@ export default function ShubramiSystem() {
 
   const handleDeleteInstallment = async (id) => {
     if (await showConfirm({ message: "هل أنت متأكد من حذف هذه الجدولة؟" })) {
+      const instToLog = installmentsDB.find(i => i.id === id);
       const { error = null } = await supabase.from('installments').delete().eq('id', id);
       if (!error) {
         setInstallmentsDB(installmentsDB.filter(i => i.id !== id));
+        if (instToLog) {
+          await logAction({
+            actionType: "حذف استحقاق",
+            entityType: "استحقاق",
+            entityRef: instToLog.shop,
+            summary: `حذف استحقاق مجدول نهائياً للمحل ${instToLog.shop} بقيمة ${instToLog.amount} ريال (تاريخ الاستحقاق ${instToLog.date}).`,
+            details: { ...instToLog }
+          });
+        }
       }
     }
   };
