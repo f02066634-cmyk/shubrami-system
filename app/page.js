@@ -576,7 +576,7 @@ export default function ShubramiSystem() {
     const id = `toast-${Date.now()}-${Math.random()}`;
     setToasts(prev => [...prev, { id, message, type, critical }]);
     if (!critical) {
-      const duration = type === "error" ? 7000 : 4000;
+      const duration = type === "error" ? 7000 : type === "warning" ? 5000 : 4000;
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
     }
   };
@@ -1667,7 +1667,7 @@ export default function ShubramiSystem() {
   // جميع دوال الطباعة والتصدير الأصلية بالكامل
   // ==========================================
   const printInstallmentsPDF = (data) => {
-    if (data.length === 0) return showToast("لا توجد دفعات مجدولة للطباعة حالياً", "error");
+    if (data.length === 0) return showToast("لا توجد دفعات مجدولة للطباعة حالياً", "warning");
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
@@ -1729,7 +1729,7 @@ export default function ShubramiSystem() {
   };
 
   const printDebtsPDF = (data) => {
-    if (data.length === 0) return showToast("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً", "error");
+    if (data.length === 0) return showToast("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً", "warning");
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <html dir="rtl">
@@ -1781,7 +1781,7 @@ export default function ShubramiSystem() {
   };
 
   const printRentedShopsPDF = (filteredData) => {
-    if (filteredData.length === 0) return showToast("لا توجد محلات في الفرز الحالي لطباعتها", "error");
+    if (filteredData.length === 0) return showToast("لا توجد محلات في الفرز الحالي لطباعتها", "warning");
     
     // نفلتر فقط المحلات المؤجرة (الرئيسية)
     const mainShops = filteredData.filter(s => s.status === "مؤجر");
@@ -1859,7 +1859,7 @@ export default function ShubramiSystem() {
   };
 
   const printTablePDF = (data) => {
-    if (data.length === 0) return showToast("لا توجد بيانات لطباعتها في التقرير", "error");
+    if (data.length === 0) return showToast("لا توجد بيانات لطباعتها في التقرير", "warning");
     const sumTarget = data.reduce((s, t) => s + t.targetAmount, 0);
     const sumPaid = data.reduce((s, t) => s + t.paidAmount, 0);
     const sumRemaining = data.reduce((s, t) => s + t.remainingAmount, 0);
@@ -1933,7 +1933,7 @@ export default function ShubramiSystem() {
   };
 
   const exportToCSV = (data, filename) => {
-    if (data.length === 0) return showToast("لا توجد سجلات لتصديرها حالياً", "error");
+    if (data.length === 0) return showToast("لا توجد سجلات لتصديرها حالياً", "warning");
     const headers = ["رقم السند", "تاريخ البدء", "تاريخ التحديث", "رقم المحل", "المستأجر", "المبلغ الكلي المتفق عليه", "إجمالي المدفوع حتى الآن", "المبلغ المتبقي", "طريقة الدفع", "الحالة"].join(",");
     const rows = data.map(row => [
       row.id, row.startDate, row.updateDate, row.shop, row.tenant, row.targetAmount, row.paidAmount, row.remainingAmount, row.method, row.status
@@ -2280,25 +2280,30 @@ export default function ShubramiSystem() {
         </div>
       )}
 
-      <div className="fixed bottom-6 inset-x-0 z-[70] flex flex-col items-center gap-2 px-4 pointer-events-none">
-        {toasts.map(t => (
+      <div className="fixed top-4 inset-x-0 z-[70] flex flex-col items-center gap-2 px-4 pointer-events-none">
+        {toasts.map(t => {
+          const toastStyle = t.critical
+            ? { box: "bg-red-50 border-red-500", text: "text-red-800", icon: "🚫" }
+            : t.type === "error"
+            ? { box: "bg-red-50 border-red-300", text: "text-red-700", icon: "❌" }
+            : t.type === "warning"
+            ? { box: "bg-amber-50 border-amber-300", text: "text-amber-800", icon: "⚠️" }
+            : t.type === "info"
+            ? { box: "bg-blue-50 border-blue-300", text: "text-blue-800", icon: "ℹ️" }
+            : { box: "bg-green-50 border-green-300", text: "text-green-800", icon: "✅" };
+          return (
           <div
             key={t.id}
-            className={`pointer-events-auto w-full max-w-md border-2 rounded-xl shadow-2xl px-4 py-3 flex items-start gap-3 animate-fade-in ${
-              t.critical
-                ? "bg-red-50 border-red-500"
-                : t.type === "error"
-                ? "bg-red-50 border-red-300"
-                : "bg-green-50 border-green-300"
-            }`}
+            className={`pointer-events-auto w-full max-w-md border-2 rounded-xl shadow-2xl px-4 py-3 flex items-start gap-3 animate-slide-down ${toastStyle.box}`}
           >
-            <span className="text-lg shrink-0">{t.critical ? "🚫" : t.type === "error" ? "❌" : "✅"}</span>
-            <p className={`text-sm font-semibold whitespace-pre-line flex-1 ${t.critical ? "text-red-800" : t.type === "error" ? "text-red-700" : "text-green-800"}`}>
+            <span className="text-lg shrink-0">{toastStyle.icon}</span>
+            <p className={`text-sm font-semibold whitespace-pre-line flex-1 ${toastStyle.text}`}>
               {t.message}
             </p>
             <button onClick={() => dismissToast(t.id)} className="text-slate-500 hover:text-red-600 text-xl font-bold leading-none shrink-0">&times;</button>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div dir="rtl" className="flex min-h-screen font-tajawal text-slate-900 bg-slate-100 relative">
