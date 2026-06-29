@@ -687,11 +687,27 @@ export default function ShubramiSystem() {
       if (debtErr) return { error: debtErr, stage: "debt", debt: null };
     }
 
-    const vacatedFields = { status: "شاغر", tenant: "-", ejarNumber: "-", startDate: "-", endDate: "-", collected: 0 };
-    const { error: vacateErr } = await supabase.from('shops').update(vacatedFields).eq('id', shop.id);
-    if (vacateErr) return { error: vacateErr, stage: "vacate", debt };
+    const { error: archiveErr } = await supabase.from('shops').update({ status: "أرشيف - مخلى" }).eq('id', shop.id);
+    if (archiveErr) return { error: archiveErr, stage: "archive", debt };
 
-    return { error: null, debt, updatedShop: { ...shop, ...vacatedFields } };
+    const vacantShop = {
+      id: `row-${Date.now()}-${shop.shopNumber}`,
+      shopNumber: shop.shopNumber,
+      area: shop.area || 60,
+      status: "شاغر",
+      tenant: "-",
+      ejarNumber: "-",
+      annualRent: shop.annualRent || 15000,
+      startDate: "-",
+      endDate: "-",
+      collected: 0,
+      isGroupMain: false,
+      groupShops: null
+    };
+    const { error: vacantErr } = await supabase.from('shops').insert([vacantShop]);
+    if (vacantErr) return { error: vacantErr, stage: "vacant", debt };
+
+    return { error: null, debt, archivedShop: { ...shop, status: "أرشيف - مخلى" }, vacantShop };
   };
 
   // بيانات النظام التشغيلية (محلات/سندات/مديونيات/مصروفات/جدولة)
@@ -1252,11 +1268,18 @@ export default function ShubramiSystem() {
         for (const shopRow of groupShopRows) {
           const result = await archiveExpiredContract(shopRow);
           if (result.error) {
-            const stageMsg = result.stage === "debt" ? "فشل تسجيل الدين" : "تم تسجيل الدين بنجاح لكن فشل تفريغ المحل";
+            const stageMsg = result.stage === "debt"
+              ? "فشل تسجيل الدين"
+              : result.stage === "archive"
+              ? "تم تسجيل الدين بنجاح لكن فشل أرشفة المحل"
+              : "تم تسجيل الدين وأرشفة المحل بنجاح لكن فشل إنشاء المحل الشاغر الجديد";
             return showToast(`🚫 ${stageMsg} للمحل ${shopRow.shopNumber}. تم إيقاف عملية المغادرة بالكامل.\nالمحلات التي اكتملت معالجتها قبل التوقف: ${processedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${result.error.message}`, "error", true);
           }
           if (result.debt) setDebtsDB(prev => [...prev, result.debt]);
-          setShopsDB(prev => prev.map(s => s.id === shopRow.id ? result.updatedShop : s));
+          setShopsDB(prev => [
+            ...prev.map(s => s.id === shopRow.id ? result.archivedShop : s),
+            result.vacantShop
+          ]);
           processedShopNumbers.push(shopRow.shopNumber);
         }
 
