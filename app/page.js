@@ -47,11 +47,18 @@ const DashboardIndicators = ({
 
   const upcomingExpirations = shopsDB.filter(s => {
     if (s.status !== "مؤجر" || !s.endDate || s.endDate === "-") return false;
-    const end = new Date(s.endDate);
-    const diffTime = end - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 60; 
-  }).sort((a, b) => new Date(a.endDate) - new Date(b.endDate));
+    const diffDays = Math.ceil((new Date(s.endDate) - today) / (1000 * 60 * 60 * 24));
+    return diffDays <= 60;
+  }).map(s => {
+    const diffDays = Math.ceil((new Date(s.endDate) - today) / (1000 * 60 * 60 * 24));
+    const remainingRent = s.annualRent - s.collected;
+    const tier = diffDays <= 0 && remainingRent > 0 ? "red" : diffDays <= 0 ? "orange" : "yellow";
+    return { ...s, diffDays, remainingRent, tier };
+  }).sort((a, b) => {
+    const tierOrder = { red: 0, orange: 1, yellow: 2 };
+    if (tierOrder[a.tier] !== tierOrder[b.tier]) return tierOrder[a.tier] - tierOrder[b.tier];
+    return a.diffDays - b.diffDays;
+  });
 
   const next30Days = new Date(today);
   next30Days.setDate(next30Days.getDate() + 30);
@@ -244,18 +251,22 @@ const DashboardIndicators = ({
                   </thead>
                   <tbody>
                     {upcomingExpirations.map(shop => {
-                      const end = new Date(shop.endDate);
-                      const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
-                      const remainingRent = shop.annualRent - shop.collected;
-                      
+                      const { diffDays, remainingRent, tier } = shop;
                       const displayName = shop.isGroupMain ? `${shop.tenant} (${(shop.groupShops || []).join('، ')})` : `${shop.tenant} (${shop.shopNumber})`;
 
+                      const rowClass = tier === "red" ? "bg-red-50 hover:bg-red-100" : tier === "orange" ? "bg-orange-50 hover:bg-orange-100" : "hover:bg-slate-100";
+                      const statusText = tier === "yellow" ? `باقي ${diffDays} يوم` : `منتهٍ منذ ${Math.abs(diffDays)} يوم`;
+                      const statusClass = tier === "red" ? "bg-red-100 text-red-700 border-red-200" : tier === "orange" ? "bg-orange-100 text-orange-700 border-orange-200" : "bg-amber-100 text-amber-700 border-amber-200";
+
                       return (
-                        <tr key={shop.id} className="border-b border-slate-200 hover:bg-slate-100">
+                        <tr key={shop.id} className={`border-b border-slate-200 transition-colors ${rowClass}`}>
                           <td className="p-2 font-bold text-slate-900 truncate max-w-[150px]" title={displayName}>{displayName}</td>
                           <td className="p-2 text-slate-700">{shop.endDate}</td>
-                          <td className="p-2 font-bold text-amber-600">{diffDays} يوم</td>
-                          <td className="p-2 font-bold text-red-600">{remainingRent.toLocaleString()} ريال</td>
+                          <td className="p-2">
+                            <span className={`px-2 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${statusClass}`}>{statusText}</span>
+                            {tier === "red" && <div className="text-red-600 font-bold text-[10px] mt-1">⚠️ عليه دين - يتطلب قرار</div>}
+                          </td>
+                          <td className="p-2 font-bold text-red-600">{remainingRent > 0 ? `${remainingRent.toLocaleString()} ريال` : "—"}</td>
                         </tr>
                       );
                     })}
