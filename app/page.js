@@ -612,9 +612,13 @@ export default function ShubramiSystem() {
   const [expensesDB, setExpensesDB] = useState([]);
   const [installmentsDB, setInstallmentsDB] = useState([]); 
 
-  const [filterContractStatus, setFilterContractStatus] = useState("الكل"); 
-  const [filterContractYear, setFilterContractYear] = useState("الكل"); 
-  const [searchContract, setSearchContract] = useState(""); 
+  const [filterContractStatus, setFilterContractStatus] = useState("الكل");
+  const [filterContractYear, setFilterContractYear] = useState("الكل");
+  const [searchContract, setSearchContract] = useState("");
+  const [archiveSearch, setArchiveSearch] = useState("");
+  const [archiveActionFilter, setArchiveActionFilter] = useState("الكل");
+  const [archiveYearFilter, setArchiveYearFilter] = useState("الكل");
+  const [archiveTenantFilter, setArchiveTenantFilter] = useState("الكل");
    
   const [dashboardYear, setDashboardYear] = useState("الكل");
   const [filterReceiptStatus, setFilterReceiptStatus] = useState("الكل");
@@ -856,6 +860,7 @@ export default function ShubramiSystem() {
     { id: "payments", label: "💰 التحصيل وسندات القبض" },
     { id: "debts", label: "📂 مديونيات مستحقة" },
     { id: "expenses", label: "🛠️ إدارة المصروفات" },
+    { id: "archive", label: "🗄️ أرشيف العقود" },
     { id: "users", label: "👥 إدارة المستخدمين", adminOnly: true }
   ];
 
@@ -1668,6 +1673,44 @@ export default function ShubramiSystem() {
   const totalRentSum = filteredRentedShops.filter(s => s.status === "مؤجر").reduce((sum, s) => sum + s.annualRent, 0);
   const totalCollectedSum = filteredRentedShops.filter(s => s.status === "مؤجر").reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
+
+  const archivedShops = shopsDB.filter(s => s.status.includes("أرشيف"));
+
+  const archiveYears = [...new Set(
+    archivedShops.map(s => getYear(s.endDate) || getYear(s.startDate)).filter(Boolean)
+  )].sort((a, b) => b.localeCompare(a));
+
+  const archiveTenants = [...new Set(archivedShops.map(s => s.tenant).filter(Boolean))].sort();
+
+  const parseDateSafe = (dateStr) => {
+    if (!dateStr || dateStr === "-") return null;
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d.getTime();
+  };
+
+  const filteredArchive = archivedShops.filter(s => {
+    if (archiveActionFilter !== "الكل" && s.status !== archiveActionFilter) return false;
+    if (archiveTenantFilter !== "الكل" && s.tenant !== archiveTenantFilter) return false;
+    if (archiveYearFilter !== "الكل") {
+      const startY = getYear(s.startDate) || "";
+      const endY = getYear(s.endDate) || "";
+      if (startY !== archiveYearFilter && endY !== archiveYearFilter) return false;
+    }
+    const searchLower = archiveSearch.toLowerCase().trim();
+    if (searchLower !== "") {
+      const matchShop = String(s.shopNumber).toLowerCase().includes(searchLower);
+      const matchTenant = String(s.tenant).toLowerCase().includes(searchLower);
+      if (!matchShop && !matchTenant) return false;
+    }
+    return true;
+  }).sort((a, b) => {
+    const aTime = parseDateSafe(a.endDate) ?? parseDateSafe(a.startDate);
+    const bTime = parseDateSafe(b.endDate) ?? parseDateSafe(b.startDate);
+    if (aTime === null && bTime === null) return 0;
+    if (aTime === null) return 1;
+    if (bTime === null) return -1;
+    return bTime - aTime;
+  });
 
   const filteredTransactions = transactionsDB.filter(t => {
     const statusMatch = filterReceiptStatus === "الكل" || t.status === filterReceiptStatus;
@@ -2622,6 +2665,76 @@ export default function ShubramiSystem() {
                            </tr>
                          ) : (
                            <tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سجلات.</td></tr>
+                         )}
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
+               )}
+
+               {activeTab === "archive" && (
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                   <h3 className="text-base font-bold text-slate-900 mb-4">🗄️ أرشيف العقود (سجل تاريخي - للعرض فقط)</h3>
+
+                   <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
+                     <div className="flex-1 min-w-[200px]">
+                       <input type="text" placeholder="🔍 بحث برقم المحل أو المستأجر..." className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={archiveSearch} onChange={(e) => setArchiveSearch(e.target.value)} />
+                     </div>
+                     <div className="flex-1 min-w-[150px]">
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={archiveActionFilter} onChange={(e) => setArchiveActionFilter(e.target.value)}>
+                         <option value="الكل">نوع الإجراء (الكل)</option>
+                         <option value="أرشيف - مجدد">مجدد</option>
+                         <option value="أرشيف - مخلى">مخلى</option>
+                         <option value="أرشيف - منتهي">منتهي</option>
+                       </select>
+                     </div>
+                     <div className="flex-1 min-w-[170px]">
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={archiveYearFilter} onChange={(e) => setArchiveYearFilter(e.target.value)}>
+                         <option value="الكل">سنة انتهاء العقد (الكل)</option>
+                         {archiveYears.map(year => (<option key={year} value={year}>{year}</option>))}
+                       </select>
+                     </div>
+                     <div className="flex-1 min-w-[170px]">
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={archiveTenantFilter} onChange={(e) => setArchiveTenantFilter(e.target.value)}>
+                         <option value="الكل">المستأجر / الكيان (الكل)</option>
+                         {archiveTenants.map(tenant => (<option key={tenant} value={tenant}>{tenant}</option>))}
+                       </select>
+                     </div>
+                   </div>
+
+                   <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                     <table className="w-full text-right text-slate-800 text-xs">
+                       <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                         <tr>
+                           <th className="p-3 font-semibold">رقم المحل</th>
+                           <th className="p-3 font-semibold">المستأجر (الكيان)</th>
+                           <th className="p-3 font-semibold text-blue-700">رقم عقد إيجار</th>
+                           <th className="p-3 font-semibold">البداية</th>
+                           <th className="p-3 font-semibold">النهاية</th>
+                           <th className="p-3 font-semibold">الإيجار السنوي</th>
+                           <th className="p-3 font-semibold">المحصّل</th>
+                           <th className="p-3 font-semibold">نوع الإجراء</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         {filteredArchive.map((s) => (
+                           <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                             <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
+                             <td className="p-3 font-bold text-slate-900">{s.tenant}</td>
+                             <td className="p-3 font-bold text-blue-700">{s.ejarNumber}</td>
+                             <td className="p-3">{s.startDate}</td>
+                             <td className="p-3">{s.endDate}</td>
+                             <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
+                             <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
+                             <td className="p-3">
+                               {s.status === "أرشيف - مجدد" && (<span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🔄 مجدد</span>)}
+                               {s.status === "أرشيف - مخلى" && (<span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🚪 مخلى</span>)}
+                               {s.status === "أرشيف - منتهي" && (<span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>)}
+                             </td>
+                           </tr>
+                         ))}
+                         {filteredArchive.length === 0 && (
+                           <tr><td colSpan="8" className="p-5 text-center text-slate-500">لا توجد سجلات أرشيفية.</td></tr>
                          )}
                        </tbody>
                      </table>
