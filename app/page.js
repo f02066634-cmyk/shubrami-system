@@ -1256,6 +1256,18 @@ export default function ShubramiSystem() {
             "error"
           );
         }
+      } else {
+        tenantLeaving = await showConfirm({
+          title: "العقد المنتهي — اختر الإجراء",
+          message:
+            `⏰ انتهى عقد المستأجر "${originalRow.tenant}" للمحل/المحلات (${groupShopNumbers.join('، ')})، والإيجار مسدّد بالكامل.\n\n` +
+            `اختر "يجدّد ويبقى" لإنشاء دورة تعاقدية جديدة والمستأجر يستمر.\n` +
+            `اختر "يغادر" لتفريغ المحلات وجعلها شاغرة.`,
+          buttons: [
+            { label: "يجدّد ويبقى", value: false, style: "primary" },
+            { label: "يغادر", value: true, style: "danger" }
+          ]
+        });
       }
 
       if (tenantLeaving) {
