@@ -993,7 +993,10 @@ export default function ShubramiSystem() {
   });
 
   const expiredShopsDebts = shopsDB
-    .filter(s => s.status === "أرشيف - منتهي" && s.annualRent > s.collected)
+    .filter(s =>
+      (s.status === "أرشيف - منتهي" || (s.status === "مؤجر" && isContractExpired(s.endDate)))
+      && s.annualRent > s.collected
+    )
     .map(s => {
       const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops || []).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
       return {
@@ -1001,9 +1004,12 @@ export default function ShubramiSystem() {
         label: s.shopNumber,
         year: s.endDate,
         tenant: displayName,
-        details: `عقد منتهي يتطلب السداد - ${s.shopNumber}`,
+        details: s.status === "مؤجر"
+          ? `إيجار متبقٍ على عقد ساري منتهي التاريخ - ${s.shopNumber}`
+          : `إيجار متبقٍ على عقد مؤرشف - ${s.shopNumber}`,
         amount: s.annualRent - s.collected,
-        isShopDebt: true
+        isShopDebt: true,
+        debtType: s.status === "مؤجر" ? "active-expired" : "archived"
       };
     });
 
@@ -2647,14 +2653,15 @@ export default function ShubramiSystem() {
                              const isExpired = isContractExpired(s.endDate);
                              const remainingBalance = s.annualRent - s.collected;
                              const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
-                             const statusLabel = isExpired && remainingBalance > 0
-                               ? '(⚠️ منتهي ومديون - يتطلب قرار يجدّد/يغادر)'
+                             const isDebtBlocked = isExpired && remainingBalance > 0;
+                             const statusLabel = isDebtBlocked
+                               ? '⚠️ منتهي ومديون - يجب سداد الدين أولاً (غير متاح للتجديد)'
                                : isExpired
-                                 ? '(⚠️ منتهي - متاح للتجديد)'
-                                 : '(ساري)';
+                                 ? '⚠️ منتهي - متاح للتجديد'
+                                 : 'ساري';
                              return (
-                               <option key={s.id} value={s.id}>
-                                 {displayName} {statusLabel}
+                               <option key={s.id} value={s.id} disabled={isDebtBlocked}>
+                                 {displayName} ({statusLabel})
                                </option>
                              );
                            })}
@@ -3075,7 +3082,18 @@ export default function ShubramiSystem() {
                                <td className="p-3 font-bold text-slate-900">{d.isShopDebt ? d.label : d.id}</td>
                                <td className="p-3 text-slate-700">{d.year}</td>
                                <td className="p-3 text-slate-700">{d.tenant}</td>
-                               <td className="p-3 text-slate-600 truncate max-w-[150px]">{d.details}</td>
+                               <td className="p-3 text-slate-600 max-w-[180px]">
+                                 {d.isShopDebt && (
+                                   <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded mb-1 ${
+                                     d.debtType === "active-expired"
+                                       ? "bg-amber-100 text-amber-700 border border-amber-200"
+                                       : "bg-slate-100 text-slate-600 border border-slate-300"
+                                   }`}>
+                                     {d.debtType === "active-expired" ? "⏰ إيجار منتهٍ" : "📁 أرشيف"}
+                                   </span>
+                                 )}
+                                 <div className="truncate">{d.details}</div>
+                               </td>
                                <td className="p-3 font-bold text-red-600">{d.amount.toLocaleString()}</td>
                              </tr>
                            ))
