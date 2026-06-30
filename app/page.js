@@ -677,50 +677,6 @@ export default function ShubramiSystem() {
   const [instDate, setInstDate] = useState("");
   const [payingInstId, setPayingInstId] = useState("");
 
-  // ⚠️ دالة يدوية فقط — تُستدعى حصراً من إجراء "مغادرة المستأجر" اليدوي داخل
-  // handleEditContract. تنقل أي دين متبقٍ على المحل إلى سجل مديونية مستقل باسم
-  // المستأجر، ثم تُفرّغ نفس صف المحل في قاعدة البيانات (دون توليد صف مكرر).
-  // تُرجع نتيجة كل خطوة على حدة (error/stage) ليتمكن المستدعي من إيقاف العملية
-  // والإبلاغ بدقة عند فشل أي خطوة دون تحديث الحالة المحلية كأنها نجحت.
-  const archiveExpiredContract = async (shop) => {
-    const remaining = Math.max(0, (shop.annualRent || 0) - (shop.collected || 0));
-    let debt = null;
-
-    if (remaining > 0) {
-      debt = {
-        id: `D-${Date.now()}-${shop.shopNumber}`,
-        year: new Date().toISOString().split('T')[0],
-        tenant: shop.tenant,
-        details: `دين متبقٍ من مغادرة المستأجر - المحل ${shop.shopNumber} (عقد سابق رقم ${shop.ejarNumber})`,
-        amount: remaining
-      };
-      const { error: debtErr } = await supabase.from('debts').insert([debt]);
-      if (debtErr) return { error: debtErr, stage: "debt", debt: null };
-    }
-
-    const { error: archiveErr } = await supabase.from('shops').update({ status: "أرشيف - مخلى" }).eq('id', shop.id);
-    if (archiveErr) return { error: archiveErr, stage: "archive", debt };
-
-    const vacantShop = {
-      id: `row-${Date.now()}-${shop.shopNumber}`,
-      shopNumber: shop.shopNumber,
-      area: shop.area || 60,
-      status: "شاغر",
-      tenant: "-",
-      ejarNumber: "-",
-      annualRent: shop.annualRent || 15000,
-      startDate: "-",
-      endDate: "-",
-      collected: 0,
-      isGroupMain: false,
-      groupShops: null
-    };
-    const { error: vacantErr } = await supabase.from('shops').insert([vacantShop]);
-    if (vacantErr) return { error: vacantErr, stage: "vacant", debt };
-
-    return { error: null, debt, archivedShop: { ...shop, status: "أرشيف - مخلى" }, vacantShop };
-  };
-
   // سجل تدقيق مركزي وغير معطّل للمسار الرئيسي: تُستدعى فقط بعد التأكد من نجاح
   // العملية المالية/الإدارية الأساسية في Supabase. أي فشل في الكتابة هنا يُسجَّل
   // في console فقط ولا يُفشل أو يوقف العملية الأساسية التي استدعتها.
@@ -1281,13 +1237,19 @@ export default function ShubramiSystem() {
           title: "دين متبقٍ على المستأجر",
           message:
             `⚠️ يوجد دين متبقٍ بإجمالي (${groupTotalDebt} ريال) على عقد المستأجر "${originalRow.tenant}" المنتهي.\n\n` +
-            `اختر "يجدّد ويبقى" إذا كان المستأجر سيجدّد ويبقى (يُنقل الدين إلى سجل مديونية مستقل باسمه، ويبدأ العقد الجديد نظيفاً تماماً مع بقاء المحل "مؤجر").\n` +
-            `اختر "يغادر" إذا كان المستأجر سيغادر (يُنقل الدين إلى سجل المديونية المستقل، وتُفرَّغ محلات الكيان لتصبح "شاغرة").`,
+            `🚫 لا يمكن تجديد العقد ووجود دين متبقٍ — يجب سداد الدين بالكامل أولاً من شاشة "سداد الديون".\n\n` +
+            `اختر "يغادر" لنقل الدين إلى سجل المديونية المستقل باسم المستأجر وتفريغ محلات الكيان لتصبح "شاغرة".\n` +
+            `أو أغلق هذه النافذة، وبعد سداد المستأجر للدين بالكامل عُد لتجديد العقد من جديد.`,
           buttons: [
-            { label: "يجدّد ويبقى", value: false, style: "neutral" },
             { label: "يغادر", value: true, style: "danger" }
           ]
         });
+        if (!tenantLeaving) {
+          return showToast(
+            "تم إلغاء العملية. لا يمكن تجديد العقد قبل سداد الدين المتبقي بالكامل.",
+            "error"
+          );
+        }
       }
 
       if (tenantLeaving) {
@@ -1327,52 +1289,41 @@ export default function ShubramiSystem() {
         });
         if (!finalConfirm) return;
 
-        const processedShopNumbers = [];
-        for (const shopRow of groupShopRows) {
-          const result = await archiveExpiredContract(shopRow);
-          if (result.error) {
-            const stageMsg = result.stage === "debt"
-              ? "فشل تسجيل الدين"
-              : result.stage === "archive"
-              ? "تم تسجيل الدين بنجاح لكن فشل أرشفة المحل"
-              : "تم تسجيل الدين وأرشفة المحل بنجاح لكن فشل إنشاء المحل الشاغر الجديد";
-            return showToast(`🚫 ${stageMsg} للمحل ${shopRow.shopNumber}. تم إيقاف عملية المغادرة بالكامل.\nالمحلات التي اكتملت معالجتها قبل التوقف: ${processedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${result.error.message}`, "error", true);
-          }
-          if (result.debt) setDebtsDB(prev => [...prev, result.debt]);
-          setShopsDB(prev => [
-            ...prev.map(s => s.id === shopRow.id ? result.archivedShop : s),
-            result.vacantShop
-          ]);
-          processedShopNumbers.push(shopRow.shopNumber);
+        const { data: vacateResult, error: vacateRpcErr } = await supabase.rpc('rpc_vacate_contract', {
+          p_shop_ids:        groupShopRows.map(s => s.id),
+          p_installment_ids: pendingInsts.map(i => i.id),
+          p_hard_delete:     hardDeleteInstallments
+        });
+        if (vacateRpcErr) {
+          return showToast(
+            `🚫 فشلت عملية المغادرة بالكامل ولم يُحفظ أي تغيير في قاعدة البيانات.\n\nالخطأ: ${vacateRpcErr.message}`,
+            "error", true
+          );
         }
 
-        if (pendingInsts.length > 0) {
-          if (hardDeleteInstallments) {
-            for (const inst of pendingInsts) {
-              const { error: delErr } = await supabase.from('installments').delete().eq('id', inst.id);
-              if (delErr) {
-                return showToast(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل حذف الاستحقاق رقم ${inst.id}. الرجاء حذفه يدوياً.\n\nالخطأ: ${delErr.message}`, "error", true);
-              }
-              setInstallmentsDB(prev => prev.filter(i => i.id !== inst.id));
-              await logAction({
-                actionType: "حذف استحقاق",
-                entityType: "استحقاق",
-                entityRef: inst.shop,
-                summary: `حذف استحقاق مجدول نهائياً للمحل ${inst.shop} بقيمة ${inst.amount} ريال (تاريخ الاستحقاق ${inst.date}) ضمن مغادرة المستأجر "${originalRow.tenant}".`,
-                details: { ...inst, reason: "مغادرة المستأجر" }
-              });
-            }
-          } else {
-            const cancelledAt = new Date().toISOString();
-            for (const inst of pendingInsts) {
-              const cancelFields = { status: "ملغى", cancel_reason: "مغادرة المستأجر", cancelled_at: cancelledAt };
-              const { error: cancelErr } = await supabase.from('installments').update(cancelFields).eq('id', inst.id);
-              if (cancelErr) {
-                return showToast(`🚫 تم تفريغ جميع محلات الكيان ونقل الدين بنجاح، لكن فشل إلغاء الاستحقاق رقم ${inst.id}. الرجاء إلغاؤه يدوياً.\n\nالخطأ: ${cancelErr.message}`, "error", true);
-              }
-              setInstallmentsDB(prev => prev.map(i => i.id === inst.id ? { ...i, ...cancelFields } : i));
-            }
+        setDebtsDB(prev => [...prev, ...vacateResult.debts]);
+        setShopsDB(prev => [
+          ...prev.map(s => vacateResult.archived_shops.find(a => a.id === s.id) || s),
+          ...vacateResult.vacant_shops
+        ]);
+        if (hardDeleteInstallments) {
+          setInstallmentsDB(prev =>
+            prev.filter(i => !vacateResult.deleted_installment_ids.includes(i.id))
+          );
+          for (const id of vacateResult.deleted_installment_ids) {
+            const inst = pendingInsts.find(i => i.id === id);
+            if (inst) await logAction({
+              actionType: "حذف استحقاق",
+              entityType: "استحقاق",
+              entityRef: inst.shop,
+              summary: `حذف استحقاق مجدول نهائياً للمحل ${inst.shop} بقيمة ${inst.amount} ريال (تاريخ الاستحقاق ${inst.date}) ضمن مغادرة المستأجر "${originalRow.tenant}".`,
+              details: { ...inst, reason: "مغادرة المستأجر" }
+            });
           }
+        } else {
+          setInstallmentsDB(prev =>
+            prev.map(i => vacateResult.cancelled_installments.find(c => c.id === i.id) || i)
+          );
         }
 
         await logAction({
@@ -1404,79 +1355,38 @@ export default function ShubramiSystem() {
           return showToast(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`, "error");
       }
 
-      let renewalTransferredDebt = 0;
-      for (const shopRow of groupShopRows) {
-        const remaining = Math.max(0, (shopRow.annualRent || 0) - (shopRow.collected || 0));
-        if (remaining > 0) {
-          const debtRecord = {
-            id: `D-${Date.now()}-${shopRow.shopNumber}`,
-            year: new Date().toISOString().split('T')[0],
-            tenant: shopRow.tenant,
-            details: `دين متبقٍ من تجديد عقد (المستأجر باقٍ) - المحل ${shopRow.shopNumber} (عقد سابق رقم ${shopRow.ejarNumber})`,
-            amount: remaining
-          };
-          const { error: debtErr } = await supabase.from('debts').insert([debtRecord]);
-          if (debtErr) {
-            return showToast(`🚫 فشل تسجيل الدين المتبقي للمحل ${shopRow.shopNumber}. تم إيقاف عملية التجديد بالكامل قبل أي تعديل.\n\nالخطأ: ${debtErr.message}`, "error", true);
-          }
-          setDebtsDB(prev => [...prev, debtRecord]);
-          renewalTransferredDebt += remaining;
-        }
+      const { data: renewResult, error: renewRpcErr } = await supabase.rpc('rpc_renew_contract', {
+        p_shop_ids:    groupShopRows.map(s => s.id),
+        p_tenant:      editContractTenant,
+        p_ejar_number: editContractEjarNumber,
+        p_start_date:  editContractStart,
+        p_end_date:    editContractEnd,
+        p_annual_rent: Number(editContractRent)
+      });
+      if (renewRpcErr) {
+        return showToast(
+          `🚫 ${renewRpcErr.message}`,
+          "error", true
+        );
       }
 
-      const groupToRenew = groupShopNumbers;
-      const newRows = [];
-      const archivedShopNumbers = [];
-
-      for (let i = 0; i < groupToRenew.length; i++) {
-         const sNum = groupToRenew[i];
-         const shopToArchive = shopsDB.find(s => s.shopNumber === sNum && (s.status === "أرشيف - منتهي" || s.status === "مؤجر" || s.status === "مدمج"));
-
-         if (shopToArchive) {
-             const { error: archiveErr } = await supabase.from('shops').update({ status: "أرشيف - مجدد" }).eq('id', shopToArchive.id);
-             if (archiveErr) {
-                return showToast(`🚫 فشل أرشفة المحل ${sNum} أثناء التجديد. تم إيقاف العملية.\nالمحلات التي أُرشفت بنجاح قبل التوقف: ${archivedShopNumbers.join('، ') || 'لا يوجد'}.\n\nالخطأ: ${archiveErr.message}`, "error", true);
-             }
-             setShopsDB(prev => prev.map(s => s.id === shopToArchive.id ? { ...s, status: "أرشيف - مجدد" } : s));
-             archivedShopNumbers.push(sNum);
-
-             const isMain = i === 0;
-             newRows.push({
-                id: `row-${Date.now()}-${i}`,
-                shopNumber: sNum,
-                area: 60,
-                status: isMain ? "مؤجر" : "مدمج",
-                tenant: editContractTenant,
-                ejarNumber: editContractEjarNumber,
-                annualRent: isMain ? Number(editContractRent) : 0,
-                startDate: editContractStart,
-                endDate: editContractEnd,
-                collected: 0,
-                isGroupMain: groupToRenew.length > 1 ? isMain : false,
-                groupShops: groupToRenew.length > 1 ? groupToRenew : null
-             });
-         }
-      }
-
-      const { error: insertErr } = await supabase.from('shops').insert(newRows);
-      if (insertErr) {
-        return showToast(`🚫 تمت أرشفة العقود القديمة بنجاح، لكن فشل إنشاء صفوف العقد الجديد. الرجاء مراجعة قاعدة البيانات يدوياً لإكمال التجديد.\n\nالخطأ: ${insertErr.message}`, "error", true);
-      }
-      setShopsDB(prev => [...prev, ...newRows]);
+      setShopsDB(prev => [
+        ...prev.map(s => renewResult.archived_shops.find(a => a.id === s.id) || s),
+        ...renewResult.new_shops
+      ]);
       await logAction({
         actionType: "تجديد عقد",
         entityType: "عقد",
-        entityRef: groupToRenew.join('، '),
-        summary: `تجديد عقد المستأجر "${editContractTenant}" للمحل/المحلات (${groupToRenew.join('، ')}) - عقد جديد رقم ${editContractEjarNumber}.`,
+        entityRef: groupShopNumbers.join('، '),
+        summary: `تجديد عقد المستأجر "${editContractTenant}" للمحل/المحلات (${groupShopNumbers.join('، ')}) - عقد جديد رقم ${editContractEjarNumber}.`,
         details: {
           tenant: editContractTenant,
-          shopNumbers: groupToRenew,
+          shopNumbers: groupShopNumbers,
           oldEjarNumber: originalRow.ejarNumber,
           newEjarNumber: editContractEjarNumber,
           oldEndDate: originalRow.endDate,
           newStartDate: editContractStart,
-          newEndDate: editContractEnd,
-          transferredDebtTotal: renewalTransferredDebt
+          newEndDate: editContractEnd
         }
       });
       showToast(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`, "success");
