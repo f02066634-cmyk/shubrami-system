@@ -1300,7 +1300,7 @@ export default function ShubramiSystem() {
           title: "تأكيد نهائي للمغادرة",
           message:
             `🚪 تأكيد نهائي لمغادرة المستأجر "${originalRow.tenant}":\n\n` +
-            `• سيُنقل دين بقيمة (${groupTotalDebt} ريال) إلى سجل المديونية المستقل باسم المستأجر.\n` +
+            (groupTotalDebt > 0 ? `• سيُنقل دين بقيمة (${groupTotalDebt} ريال) إلى سجل المديونية المستقل باسم المستأجر.\n` : '') +
             `• ${instSummary}\n` +
             `• ستصبح محلات الكيان (${groupShopNumbers.join('، ')}) شاغرة فوراً.\n\n` +
             `هل أنت متأكد من المتابعة؟`
@@ -1348,7 +1348,9 @@ export default function ShubramiSystem() {
           actionType: "إخلاء مستأجر",
           entityType: "عقد",
           entityRef: groupShopNumbers.join('، '),
-          summary: `إخلاء المستأجر "${originalRow.tenant}" من المحل/المحلات (${groupShopNumbers.join('، ')}) - نقل دين متبقٍ (${groupTotalDebt} ريال) إلى سجل المديونية المستقل.`,
+          summary: groupTotalDebt > 0
+            ? `إخلاء المستأجر "${originalRow.tenant}" من المحل/المحلات (${groupShopNumbers.join('، ')}) - نقل دين متبقٍ (${groupTotalDebt} ريال) إلى سجل المديونية المستقل.`
+            : `إخلاء المستأجر "${originalRow.tenant}" من المحل/المحلات (${groupShopNumbers.join('، ')}) - الإيجار مسدّد بالكامل.`,
           details: {
             tenant: originalRow.tenant,
             shopNumbers: groupShopNumbers,
@@ -1357,7 +1359,12 @@ export default function ShubramiSystem() {
             installmentsAction: pendingInsts.length === 0 ? "لا يوجد" : (hardDeleteInstallments ? "حذف نهائي" : "إلغاء مع حفظ السجل")
           }
         });
-        showToast(`🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وتفريغ محلات الكيان بالكامل.`, "success");
+        showToast(
+          groupTotalDebt > 0
+            ? `🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وتفريغ محلات الكيان بالكامل.`
+            : `🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم تفريغ محلات الكيان بالكامل.`,
+          "success"
+        );
         setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
         return;
       }
