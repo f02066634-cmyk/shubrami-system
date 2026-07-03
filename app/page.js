@@ -1238,24 +1238,32 @@ export default function ShubramiSystem() {
       const groupTotalDebt = groupShopRows.reduce((sum, s) => sum + Math.max(0, (s.annualRent || 0) - (s.collected || 0)), 0);
 
       let tenantLeaving = false;
+      let adminOverride = false;
       if (remainingBalance > 0) {
-        tenantLeaving = await showConfirm({
+        const isAdmin = currentUser?.role === "مدير";
+        const debtButtons = [{ label: "يغادر", value: "vacate", style: "danger" }];
+        if (isAdmin) {
+          debtButtons.push({ label: "🔓 تجديد استثنائي (رغم الدين)", value: "override", style: "warning" });
+        }
+        const debtChoice = await showConfirm({
           title: "دين متبقٍ على المستأجر",
           message:
             `⚠️ يوجد دين متبقٍ بإجمالي (${groupTotalDebt} ريال) على عقد المستأجر "${originalRow.tenant}" المنتهي.\n\n` +
             `🚫 لا يمكن تجديد العقد ووجود دين متبقٍ — يجب سداد الدين بالكامل أولاً من شاشة "سداد الديون".\n\n` +
             `اختر "يغادر" لنقل الدين إلى سجل المديونية المستقل باسم المستأجر وتفريغ محلات الكيان لتصبح "شاغرة".\n` +
-            `أو أغلق هذه النافذة، وبعد سداد المستأجر للدين بالكامل عُد لتجديد العقد من جديد.`,
-          buttons: [
-            { label: "يغادر", value: true, style: "danger" }
-          ]
+            (isAdmin
+              ? `أو اختر "تجديد استثنائي" لنقل الدين إلى سجل المديونية المستقل وبدء عقد جديد (إجراء استثنائي بصلاحية المدير).`
+              : `أو أغلق هذه النافذة، وبعد سداد المستأجر للدين بالكامل عُد لتجديد العقد من جديد.`),
+          buttons: debtButtons
         });
-        if (!tenantLeaving) {
+        if (!debtChoice) {
           return showToast(
             "تم إلغاء العملية. لا يمكن تجديد العقد قبل سداد الدين المتبقي بالكامل.",
             "error"
           );
         }
+        if (debtChoice === "vacate") tenantLeaving = true;
+        else if (debtChoice === "override") adminOverride = true;
       } else {
         tenantLeaving = await showConfirm({
           title: "العقد المنتهي — اختر الإجراء",
@@ -1363,6 +1371,81 @@ export default function ShubramiSystem() {
           groupTotalDebt > 0
             ? `🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وتفريغ محلات الكيان بالكامل.`
             : `🚪 تمت مغادرة المستأجر "${originalRow.tenant}" بنجاح! تم تفريغ محلات الكيان بالكامل.`,
+          "success"
+        );
+        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+        return;
+      }
+
+      // ===== مسار التجديد الاستثنائي (المدير فقط — عند وجود دين) =====
+      if (adminOverride) {
+        if (editContractEjarNumber.trim() === "" || editContractEjarNumber === "-") return showToast("خطأ: يجب إدخال رقم عقد إيجار جديد!", "error");
+        if (editContractEjarNumber === originalRow.ejarNumber) return showToast("خطأ: يجب استحداث رقم عقد إيجار جديد مختلف تماماً!", "error");
+        if (!editContractStart || !editContractEnd) return showToast("خطأ: الرجاء إدخال تواريخ بداية ونهاية العقد الجديد!", "error");
+        const overrideStartD = new Date(editContractStart);
+        const overrideOldEndD = new Date(originalRow.endDate);
+        if (overrideStartD <= overrideOldEndD) {
+          return showToast(`🚫 خطأ زمني وتسلسل أرشيفي:\nالعقد السابق انتهى في (${originalRow.endDate}).\nيجب أن يبدأ العقد الجديد بعد تاريخ الانتهاء السابق!`, "error");
+        }
+
+        const overrideConfirm = await showConfirm({
+          title: "⚠️ تأكيد التجديد الاستثنائي",
+          message:
+            `🔓 أنت على وشك تجديد عقد عليه دين متبقٍّ قدره (${groupTotalDebt} ريال) للمستأجر "${originalRow.tenant}".\n\n` +
+            `• سيُنقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل باسم المستأجر.\n` +
+            `• سيبدأ العقد الجديد نظيفاً (بدون أي دين سابق).\n\n` +
+            `هذا إجراء استثنائي يتطلب صلاحية المدير وسيُسجَّل في سجل التدقيق.\n` +
+            `هل تريد المتابعة؟`,
+          tone: "warning",
+          buttons: [
+            { label: "تأكيد التجديد الاستثنائي", value: true, style: "danger" },
+            { label: "إلغاء", value: false, style: "neutral" }
+          ]
+        });
+        if (!overrideConfirm) return;
+
+        const { data: overrideResult, error: overrideRpcErr } = await supabase.rpc('rpc_renew_contract', {
+          p_shop_ids:       groupShopRows.map(s => s.id),
+          p_tenant:         editContractTenant,
+          p_ejar_number:    editContractEjarNumber,
+          p_start_date:     editContractStart,
+          p_end_date:       editContractEnd,
+          p_annual_rent:    Number(editContractRent),
+          p_admin_override: true
+        });
+        if (overrideRpcErr) {
+          return showToast(
+            `🚫 فشل التجديد الاستثنائي ولم يُحفظ أي تغيير في قاعدة البيانات.\n\nالخطأ: ${overrideRpcErr.message}`,
+            "error", true
+          );
+        }
+
+        setShopsDB(prev => [
+          ...prev.map(s => overrideResult.archived_shops.find(a => a.id === s.id) || s),
+          ...overrideResult.new_shops
+        ]);
+        if (overrideResult.debts && overrideResult.debts.length > 0) {
+          setDebtsDB(prev => [...prev, ...overrideResult.debts]);
+        }
+        await logAction({
+          actionType: "تجديد استثنائي (تجاوز دين)",
+          entityType: "عقد",
+          entityRef: groupShopNumbers.join('، '),
+          summary: `تجديد استثنائي بموافقة المدير للمستأجر "${editContractTenant}" من المحل/المحلات (${groupShopNumbers.join('، ')}) - نُقل دين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل. عقد جديد رقم ${editContractEjarNumber}.`,
+          details: {
+            tenant: editContractTenant,
+            shopNumbers: groupShopNumbers,
+            transferredDebt: groupTotalDebt,
+            oldEjarNumber: originalRow.ejarNumber,
+            newEjarNumber: editContractEjarNumber,
+            oldEndDate: originalRow.endDate,
+            newStartDate: editContractStart,
+            newEndDate: editContractEnd,
+            adminOverride: true
+          }
+        });
+        showToast(
+          `🔓 تم التجديد الاستثنائي للمستأجر "${editContractTenant}" بنجاح! تم نقل الدين (${groupTotalDebt} ريال) إلى سجل المديونية المستقل، وبدأ العقد الجديد نظيفاً.`,
           "success"
         );
         setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
