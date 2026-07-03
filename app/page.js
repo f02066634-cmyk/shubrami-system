@@ -2756,13 +2756,16 @@ export default function ShubramiSystem() {
                              const remainingBalance = s.annualRent - s.collected;
                              const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
                              const isDebtBlocked = isExpired && remainingBalance > 0;
+                             const isAdminUser = currentUser?.role === "مدير";
                              const statusLabel = isDebtBlocked
-                               ? '⚠️ منتهي ومديون - يجب سداد الدين أولاً (غير متاح للتجديد)'
+                               ? (isAdminUser
+                                   ? '⚠️ منتهي ومديون - (متاح للمدير: تجديد استثنائي أو مغادرة)'
+                                   : '⚠️ منتهي ومديون - يجب سداد الدين أولاً (غير متاح للتجديد)')
                                : isExpired
                                  ? '⚠️ منتهي - متاح للتجديد'
                                  : 'ساري';
                              return (
-                               <option key={s.id} value={s.id} disabled={isDebtBlocked}>
+                               <option key={s.id} value={s.id} disabled={isDebtBlocked && !isAdminUser}>
                                  {displayName} ({statusLabel})
                                </option>
                              );
