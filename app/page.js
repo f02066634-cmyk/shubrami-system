@@ -528,7 +528,12 @@ const FinancialCollection = ({
                   <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-100">
                     <td className="p-3 font-bold text-slate-900">{t.id}</td>
                     <td className="p-3 text-slate-600">{t.updateDate}</td>
-                    <td className="p-3 text-slate-600 truncate max-w-[150px]" title={t.tenant}>{t.tenant}</td>
+                    <td className="p-3 text-slate-600 max-w-[160px]" title={t.tenant + (t.shop && t.shop !== 'مديونية سابقة' ? ` - محل ${t.shop}` : '')}>
+                      <div className="truncate">{t.tenant}</div>
+                      {t.shop && t.shop !== 'مديونية سابقة' && (
+                        <div className="text-slate-400 text-[10px]">محل {t.shop}</div>
+                      )}
+                    </td>
                     <td className="p-3">{t.targetAmount.toLocaleString()}</td>
                     <td className="p-3 font-bold text-teal-700">{t.paidAmount.toLocaleString()}</td>
                     <td className="p-3 font-bold text-red-600">{t.remainingAmount.toLocaleString()}</td>
@@ -1536,14 +1541,12 @@ export default function ShubramiSystem() {
     const remaining = targetNum - amountNum;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
     
-    const displayTenantName = activeShop.isGroupMain ? `${activeShop.tenant} (${(activeShop.groupShops || []).join('، ')})` : `${activeShop.tenant} (${activeShop.shopNumber})`;
-
     const newTx = {
       id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
       startDate: new Date().toISOString().split('T')[0],
       updateDate: new Date().toISOString().split('T')[0],
       shop: newPayShop,
-      tenant: displayTenantName,
+      tenant: activeShop.tenant,
       targetAmount: targetNum,
       paidAmount: amountNum,
       remainingAmount: remaining,
@@ -1706,7 +1709,9 @@ export default function ShubramiSystem() {
         startDate: new Date().toISOString().split('T')[0],
         updateDate: new Date().toISOString().split('T')[0],
         shop: targetDebt.isShopDebt ? targetDebt.label : `مديونية سابقة`,
-        tenant: targetDebt.tenant,
+        tenant: targetDebt.isShopDebt
+          ? (shopsDB.find(s => s.id === targetDebt.id)?.tenant ?? targetDebt.tenant)
+          : targetDebt.tenant,
         targetAmount: targetDebt.amount,
         paidAmount: payAmt,
         remainingAmount: targetDebt.amount - payAmt,
