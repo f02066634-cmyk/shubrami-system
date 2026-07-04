@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 // استيراد اتصال Supabase
 import { supabase } from '../supabaseClient';
 
+const TX_TYPE_RENT = 'إيجار';
+const TX_TYPE_DEBT = 'مديونية';
+
 const isContractExpired = (endDate) => {
   if (!endDate || endDate === "-") return false;
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1583,56 +1586,58 @@ export default function ShubramiSystem() {
 
     const remaining = targetNum - amountNum;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
-    
-    const newTx = {
-      id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
-      startDate: new Date().toISOString().split('T')[0],
-      updateDate: new Date().toISOString().split('T')[0],
-      shop: newPayShop,
-      tenant: activeShop.tenant,
-      targetAmount: targetNum,
-      paidAmount: amountNum,
-      remainingAmount: remaining,
-      method: newPayMethod,
-      status: status
-    };
+    const today = new Date().toISOString().split('T')[0];
 
     setIsSaving(true);
     try {
-    const { error: txErr } = await supabase.from('transactions').insert([newTx]);
+      const { data: rpcData, error: txErr } = await supabase.rpc('rpc_next_receipt', {
+        p_type:          TX_TYPE_RENT,
+        p_start_date:    today,
+        p_update_date:   today,
+        p_shop:          newPayShop,
+        p_tenant:        activeShop.tenant,
+        p_target_amount: targetNum,
+        p_paid_amount:   amountNum,
+        p_remaining:     remaining,
+        p_method:        newPayMethod,
+        p_status:        status,
+      });
 
-    if (!txErr) {
+      if (txErr || !rpcData?.length) {
+        return showToast(`🚫 فشل إنشاء السند — لم يُسجَّل أي شيء. يُرجى المحاولة مجدداً.`, "error", true);
+      }
+
+      const inserted = rpcData[0];
+
       const updatedCollected = activeShop.collected + amountNum;
       const { error: collectErr } = await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
       if (collectErr) {
         return showToast(
-          `⚠️ تحذير حرج: تم تسجيل السند ${newTx.id} بنجاح، لكن فشل تحديث رصيد التحصيل للمحل ${activeShop.shopNumber}. يُنصح بمراجعة بيانات التحصيل يدوياً.`,
+          `⚠️ تحذير حرج: تم تسجيل السند ${inserted.id} بنجاح، لكن فشل تحديث رصيد التحصيل للمحل ${activeShop.shopNumber}. يُنصح بمراجعة بيانات التحصيل يدوياً.`,
           "error", true
         );
       }
       setShopsDB(shopsDB.map(s => s.id === activeShop.id ? { ...s, collected: updatedCollected } : s));
 
       const instToDelete = payingInstId
-          ? installmentsDB.find(i => i.id === payingInstId)
-          : installmentsDB.find(i => i.shop === activeShop.shopNumber && i.status !== "ملغى");
+        ? installmentsDB.find(i => i.id === payingInstId)
+        : installmentsDB.find(i => i.shop === activeShop.shopNumber && i.status !== "ملغى");
 
       if (instToDelete) {
-         const { error: delInstErr } = await supabase.from('installments').delete().eq('id', instToDelete.id);
-         if (delInstErr) {
-           return showToast(
-             `⚠️ تحذير: تم تسجيل السند ${newTx.id} وتحديث الرصيد، لكن فشل حذف الاستحقاق المرتبط بالمحل ${activeShop.shopNumber}. يُرجى حذفه يدوياً.`,
-             "error", true
-           );
-         }
-         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
+        const { error: delInstErr } = await supabase.from('installments').delete().eq('id', instToDelete.id);
+        if (delInstErr) {
+          return showToast(
+            `⚠️ تحذير: تم تسجيل السند ${inserted.id} وتحديث الرصيد، لكن فشل حذف الاستحقاق المرتبط بالمحل ${activeShop.shopNumber}. يُرجى حذفه يدوياً.`,
+            "error", true
+          );
+        }
+        setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
       }
+
       setPayingInstId("");
       setNewPayShop(""); setNewPayMethod(""); setNewPayTarget(""); setNewPayAmount("");
-
-      setTransactionsDB([...transactionsDB, newTx]);
-
+      setTransactionsDB([...transactionsDB, inserted]);
       showToast(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.", "success");
-    }
     } finally {
       setIsSaving(false);
     }
@@ -1767,25 +1772,25 @@ export default function ShubramiSystem() {
       newTxDB[existingTxIndex] = { ...existingTx, ...updatedTx };
       setTransactionsDB(newTxDB);
     } else {
-      const newTx = {
-        id: `SH-${new Date().getFullYear()}-D${String(transactionsDB.length + 1).padStart(3, '0')}`,
-        referenceId: targetDebt.id,
-        isDebtReceipt: true,
-        startDate: new Date().toISOString().split('T')[0],
-        updateDate: new Date().toISOString().split('T')[0],
-        shop: targetDebt.isShopDebt ? targetDebt.label : `مديونية سابقة`,
-        tenant: targetDebt.isShopDebt
-          ? (shopsDB.find(s => s.id === targetDebt.id)?.tenant ?? targetDebt.tenant)
-          : targetDebt.tenant,
-        targetAmount: targetDebt.amount,
-        paidAmount: payAmt,
-        remainingAmount: targetDebt.amount - payAmt,
-        method: payDebtMethod,
-        status: (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)"
-      };
-      const { error: txErr } = await supabase.from('transactions').insert([newTx]);
-      if (txErr) return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
-      setTransactionsDB([...transactionsDB, newTx]);
+      const today = new Date().toISOString().split('T')[0];
+      const { data: rpcData, error: txErr } = await supabase.rpc('rpc_next_receipt', {
+        p_type:          TX_TYPE_DEBT,
+        p_start_date:    today,
+        p_update_date:   today,
+        p_shop:          targetDebt.isShopDebt ? targetDebt.label : 'مديونية سابقة',
+        p_tenant:        targetDebt.isShopDebt
+                           ? (shopsDB.find(s => s.id === targetDebt.id)?.tenant ?? targetDebt.tenant)
+                           : targetDebt.tenant,
+        p_target_amount: targetDebt.amount,
+        p_paid_amount:   payAmt,
+        p_remaining:     targetDebt.amount - payAmt,
+        p_method:        payDebtMethod,
+        p_status:        (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)",
+        p_reference_id:  targetDebt.id,
+        p_is_debt:       true,
+      });
+      if (txErr || !rpcData?.length) return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
+      setTransactionsDB([...transactionsDB, rpcData[0]]);
     }
 
     if (targetDebt.isShopDebt) {
