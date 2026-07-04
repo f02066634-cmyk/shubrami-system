@@ -326,7 +326,8 @@ const FinancialCollection = ({
           </div>
           <div>
             <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
-            <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
+            <select required className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayMethod} onChange={(e) => setNewPayMethod(e.target.value)}>
+              <option value="">-- اختر طريقة الدفع --</option>
               <option value="نقد">نقد</option>
               <option value="إيداع بنكي">إيداع بنكي</option>
               <option value="حوالة بنكية">حوالة بنكية</option>
@@ -357,7 +358,8 @@ const FinancialCollection = ({
             <>
               <div>
                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
-                <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
+                <select required className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayMethod} onChange={(e) => setUpdatePayMethod(e.target.value)}>
+                  <option value="">-- اختر طريقة الدفع --</option>
                   <option value="نقد">نقد</option>
                   <option value="إيداع بنكي">إيداع بنكي</option>
                   <option value="حوالة بنكية">حوالة بنكية</option>
@@ -642,7 +644,7 @@ export default function ShubramiSystem() {
   const [shopInputValue, setShopInputValue] = useState(""); 
   const [newContractTenant, setNewContractTenant] = useState("");
   const [newContractEjarNumber, setNewContractEjarNumber] = useState(""); 
-  const [newContractRent, setNewContractRent] = useState(15000);
+  const [newContractRent, setNewContractRent] = useState("");
   const [newContractStart, setNewContractStart] = useState("");
   const [newContractEnd, setNewContractEnd] = useState("");
 
@@ -656,13 +658,13 @@ export default function ShubramiSystem() {
   const [editContractEnd, setEditContractEnd] = useState("");
 
   const [newPayShop, setNewPayShop] = useState("");
-  const [newPayMethod, setNewPayMethod] = useState("نقد");
-  const [newPayTarget, setNewPayTarget] = useState(1000);
-  const [newPayAmount, setNewPayAmount] = useState(500);
+  const [newPayMethod, setNewPayMethod] = useState("");
+  const [newPayTarget, setNewPayTarget] = useState("");
+  const [newPayAmount, setNewPayAmount] = useState("");
 
   const [updatePayReceipt, setUpdatePayReceipt] = useState("");
-  const [updatePayMethod, setUpdatePayMethod] = useState("نقد");
-  const [updatePayAmount, setUpdatePayAmount] = useState(0);
+  const [updatePayMethod, setUpdatePayMethod] = useState("");
+  const [updatePayAmount, setUpdatePayAmount] = useState("");
 
   const [debtYear, setDebtYear] = useState("");
   const [debtTenant, setDebtTenant] = useState("");
@@ -671,7 +673,7 @@ export default function ShubramiSystem() {
   
   const [payDebtId, setPayDebtId] = useState("");
   const [payDebtAmount, setPayDebtAmount] = useState("");
-  const [payDebtMethod, setPayDebtMethod] = useState("نقد");
+  const [payDebtMethod, setPayDebtMethod] = useState("");
 
   const [expDate, setExpDate] = useState("");
   const [expCat, setExpCat] = useState("");
@@ -1150,7 +1152,7 @@ export default function ShubramiSystem() {
       }));
 
       setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
-      setNewContractRent(15000); setNewContractStart(""); setNewContractEnd("");
+      setNewContractRent(""); setNewContractStart(""); setNewContractEnd("");
       showToast(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`, "success");
     } finally {
       setIsSaving(false);
@@ -1625,7 +1627,7 @@ export default function ShubramiSystem() {
          setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
       }
       setPayingInstId("");
-      setNewPayShop(""); setNewPayMethod("نقد"); setNewPayTarget(1000); setNewPayAmount(500);
+      setNewPayShop(""); setNewPayMethod(""); setNewPayTarget(""); setNewPayAmount("");
 
       setTransactionsDB([...transactionsDB, newTx]);
 
@@ -1706,7 +1708,7 @@ export default function ShubramiSystem() {
           addedAmount: Number(updatePayAmount)
         }
       });
-      setUpdatePayReceipt(""); setUpdatePayMethod("نقد"); setUpdatePayAmount(0);
+      setUpdatePayReceipt(""); setUpdatePayMethod(""); setUpdatePayAmount("");
       showToast("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.", "success");
     }
     } finally {
@@ -1805,7 +1807,7 @@ export default function ShubramiSystem() {
     }
 
     showToast(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند سحابياً.", "success");
-    setPayDebtId(""); setPayDebtAmount(""); setPayDebtMethod("نقد");
+    setPayDebtId(""); setPayDebtAmount(""); setPayDebtMethod("");
     } finally {
       setIsSaving(false);
     }
@@ -4075,7 +4077,8 @@ export default function ShubramiSystem() {
                            <>
                              <div>
                                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الدفع:</label>
-                               <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtMethod} onChange={(e) => setPayDebtMethod(e.target.value)}>
+                               <select required className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtMethod} onChange={(e) => setPayDebtMethod(e.target.value)}>
+                                 <option value="">-- اختر طريقة الدفع --</option>
                                  <option value="نقد">نقد</option>
                                  <option value="إيداع بنكي">إيداع بنكي</option>
                                </select>
