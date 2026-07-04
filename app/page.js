@@ -1601,6 +1601,8 @@ export default function ShubramiSystem() {
         p_remaining:     remaining,
         p_method:        newPayMethod,
         p_status:        status,
+        p_reference_id:  null,
+        p_is_debt:       false,
       });
 
       if (txErr || !rpcData?.length) {
