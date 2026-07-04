@@ -2073,202 +2073,173 @@ export default function ShubramiSystem() {
       .replace(/'/g, "&#039;");
 
   // ==========================================
+  // قالب الطباعة الموحّد — يُستخدم بجميع دوال الطباعة
+  // ==========================================
+  const printPage = (reportTitle, bodyContent, subtitle = '') => {
+    const today = new Date().toLocaleDateString('ar-EG');
+    const e = escapeHtml;
+    const w = window.open('', '_blank');
+    if (!w) return showToast("تعذّر فتح نافذة الطباعة — تأكد من السماح بالنوافذ المنبثقة", "error");
+    w.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8">
+        <title>${e(reportTitle)}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+          /* الرأس والتذييل */
+          .page-header { border-bottom: 3px solid #1d4ed8; padding-bottom: 14px; margin-bottom: 22px; }
+          .page-header h1 { font-size: 22px; font-weight: 800; color: #1d4ed8; }
+          .page-header h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin-top: 5px; }
+          .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
+          .page-footer { border-top: 1px solid #e2e8f0; margin-top: 26px; padding-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
+          /* الأقسام */
+          .section { margin-bottom: 24px; }
+          .section-title { font-size: 14px; font-weight: 700; border-right: 4px solid #1d4ed8; padding-right: 9px; margin-bottom: 10px; color: #1e293b; }
+          /* الجداول */
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th { background: #e2e8f0; padding: 9px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px; }
+          td { padding: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          tfoot.total-row td, tr.total-row td { background: #cbd5e1 !important; font-weight: 700; color: #0f172a; border-color: #94a3b8; }
+          /* الألوان */
+          .text-red { color: #dc2626; font-weight: 700; }
+          .text-teal { color: #0f766e; font-weight: 700; }
+          .text-green { color: #0f766e; font-weight: 700; }
+          .text-blue { color: #1d4ed8; font-weight: 700; }
+          .text-gray { color: #94a3b8; }
+          /* البطاقات الملخّصة */
+          .summary-grid { display: grid; gap: 10px; }
+          .summary-card { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; }
+          .summary-card .lbl { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+          .summary-card .val { font-size: 17px; font-weight: 800; color: #1d4ed8; }
+          /* شارات الحالة */
+          .badge-closed { background: #ccfbf1; color: #0f766e; padding: 3px 8px; border-radius: 20px; font-weight: 700; font-size: 11px; border: 1px solid #99f6e4; }
+          .badge-open { background: #fee2e2; color: #b91c1c; padding: 3px 8px; border-radius: 20px; font-weight: 700; font-size: 11px; border: 1px solid #fecaca; }
+          /* كشف المستأجر */
+          .legacy-note { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; margin-bottom: 8px; }
+          .legacy-row td { opacity: 0.82; }
+          /* التقارير المالية */
+          .group-header td { background: #f1f5f9 !important; font-weight: 700; border-top: 2px solid #94a3b8; }
+          .group-item td { padding-right: 22px; }
+          .notice { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; }
+          .arrears-total { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 8px; padding: 16px 20px; margin-bottom: 10px; }
+          /* مساعد */
+          .no-data { text-align: center; color: #94a3b8; padding: 14px; font-style: italic; }
+          /* زر الطباعة */
+          .btn { display: block; padding: 12px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 240px; font-size: 15px; font-weight: 700; margin: 0 auto 24px; font-family: inherit; }
+          @media print { .btn { display: none !important; } body { padding: 14px; } }
+        </style>
+      </head>
+      <body>
+        <button class="btn" onclick="window.print()">🖨️ اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+        <div class="page-header">
+          <h1>🏢 أسواق الشبرمي</h1>
+          <h2>${e(reportTitle)}</h2>
+          <div class="meta">${subtitle ? e(subtitle) + ' &nbsp;|&nbsp; ' : ''}تاريخ الطباعة: ${today} م</div>
+        </div>
+        ${bodyContent}
+        <div class="page-footer">أسواق الشبرمي — طُبع بتاريخ ${today} م</div>
+      </body>
+      </html>
+    `);
+    w.document.close();
+  };
+
+  // ==========================================
   // جميع دوال الطباعة والتصدير الأصلية بالكامل
   // ==========================================
   const printInstallmentsPDF = (data) => {
     if (data.length === 0) return showToast("لا توجد دفعات مجدولة للطباعة حالياً", "warning");
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html dir="rtl">
-      <head>
-          <title>جدول استحقاق الدفعات القادمة</title>
-          <style>
-              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #1e293b; background-color: white; }
-              h2 { text-align: center; color: #1d4ed8; margin-bottom: 5px; }
-              h4 { text-align: center; color: #475569; margin-top: 5px; margin-bottom: 25px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-              th, td { border: 1px solid #cbd5e1; padding: 12px 10px; text-align: center; font-size: 14px; }
-              th { background-color: #e2e8f0; color: #0f172a; font-weight: bold; }
-              tr:nth-child(even) { background-color: #f8fafc; }
-              .text-green { color: #0f766e; font-weight: bold; }
-              .text-red { color: #dc2626; font-weight: bold; }
-              .text-blue { color: #1d4ed8; font-weight: bold; }
-              .btn { display: block; padding: 14px; background-color: #1d4ed8; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);}
-              @media print { .btn { display: none !important; } body { padding: 0; } }
-          </style>
-      </head>
-      <body>
-          <h2>📅 جدول استحقاق الدفعات القادمة - أسواق الشبرمي</h2>
-          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م</h4>
-          <table>
-              <thead>
-                  <tr>
-                      <th>رقم المحل (الكيان)</th>
-                      <th>المستأجر</th>
-                      <th>مبلغ الدفعة القادمة</th>
-                      <th>تاريخ الاستحقاق</th>
-                      <th>إجمالي المحصل</th>
-                      <th>إجمالي المتبقي</th>
-                  </tr>
-              </thead>
-              <tbody>
-                  ${data.map(inst => {
-                      const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !s.status.includes("أرشيف")) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
-                      const collected = shopData.collected || 0;
-                      const remaining = (shopData.annualRent || 0) - collected;
-                      const displayName = shopData.isGroupMain
-                        ? `${escapeHtml(shopData.tenant)} (${(shopData.groupShops||[]).map(escapeHtml).join('، ')})`
-                        : `${escapeHtml(shopData.tenant || "-")} (${escapeHtml(shopData.shopNumber)})`;
-                      return `
-                      <tr>
-                          <td><b>${escapeHtml(inst.shop)}</b></td>
-                          <td>${displayName}</td>
-                          <td class="text-blue">${inst.amount.toLocaleString()} ريال</td>
-                          <td>${escapeHtml(inst.date)}</td>
-                          <td class="text-green">${collected.toLocaleString()} ريال</td>
-                          <td class="text-red">${remaining.toLocaleString()} ريال</td>
-                      </tr>
-                      `;
-                  }).join('')}
-              </tbody>
-          </table>
-          <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const e = escapeHtml;
+    const rows = data.map(inst => {
+      const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !s.status.includes("أرشيف")) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
+      const collected = shopData.collected || 0;
+      const remaining = (shopData.annualRent || 0) - collected;
+      const displayName = shopData.isGroupMain
+        ? `${e(shopData.tenant)} (${(shopData.groupShops||[]).map(e).join('، ')})`
+        : `${e(shopData.tenant || "-")} (${e(shopData.shopNumber)})`;
+      return `<tr>
+        <td><b>${e(inst.shop)}</b></td>
+        <td>${displayName}</td>
+        <td class="text-blue">${inst.amount.toLocaleString()} ريال</td>
+        <td>${e(inst.date)}</td>
+        <td class="text-teal">${collected.toLocaleString()} ريال</td>
+        <td class="${remaining > 0 ? "text-red" : "text-gray"}">${remaining.toLocaleString()} ريال</td>
+      </tr>`;
+    }).join('');
+    const content = `
+      <div class="section">
+        <table>
+          <thead><tr><th>رقم المحل (الكيان)</th><th>المستأجر</th><th>مبلغ الدفعة القادمة</th><th>تاريخ الاستحقاق</th><th>إجمالي المحصّل</th><th>إجمالي المتبقي</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    printPage('جدول استحقاق الدفعات القادمة', content, `${data.length} دفعة مجدولة`);
   };
 
   const printDebtsPDF = (data) => {
     if (data.length === 0) return showToast("لا توجد مديونيات مستحقة لطباعتها في التقرير حالياً", "warning");
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html dir="rtl">
-      <head>
-          <title>تقرير المديونيات المستحقة والمعلقة</title>
-          <style>
-              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #1e293b; background-color: white; }
-              h2 { text-align: center; color: #1d4ed8; margin-bottom: 5px; }
-              h4 { text-align: center; color: #475569; margin-top: 5px; margin-bottom: 25px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-              th, td { border: 1px solid #cbd5e1; padding: 12px 10px; text-align: center; font-size: 14px; }
-              th { background-color: #e2e8f0; color: #0f172a; font-weight: bold; }
-              tr:nth-child(even) { background-color: #f8fafc; }
-              .text-red { color: #dc2626; font-weight: bold; }
-              .btn { display: block; padding: 14px; background-color: #1d4ed8; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);}
-              @media print { .btn { display: none !important; } body { padding: 0; } }
-          </style>
-      </head>
-      <body>
-          <h2>🏢 تقرير مديونيات مستحقة ومعلقة - أسواق الشبرمي</h2>
-          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م</h4>
-          <table>
-              <thead>
-                  <tr>
-                      <th>المعرف / رقم المحل</th>
-                      <th>تاريخ نهاية العقد / السنة</th>
-                      <th>المستأجر (الكيان)</th>
-                      <th>التفاصيل</th>
-                      <th>المبلغ المتبقي</th>
-                  </tr>
-              </thead>
-              <tbody>
-                  ${data.map(d => `
-                      <tr>
-                          <td><b>${escapeHtml(d.isShopDebt ? d.label : d.id)}</b></td>
-                          <td>${escapeHtml(d.year)}</td>
-                          <td>${escapeHtml(d.tenant)}</td>
-                          <td>${escapeHtml(d.details)}</td>
-                          <td class="text-red">${d.amount.toLocaleString()} ريال</td>
-                      </tr>
-                  `).join('')}
-              </tbody>
-          </table>
-          <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const e = escapeHtml;
+    const totalAmount = data.reduce((s, d) => s + d.amount, 0);
+    const rows = data.map(d => `<tr>
+      <td><b>${e(d.isShopDebt ? d.label : d.id)}</b></td>
+      <td>${e(d.year)}</td>
+      <td>${e(d.tenant)}</td>
+      <td>${e(d.details)}</td>
+      <td class="text-red">${d.amount.toLocaleString()} ريال</td>
+    </tr>`).join('');
+    const content = `
+      <div class="section">
+        <table>
+          <thead><tr><th>المعرف / رقم المحل</th><th>تاريخ نهاية العقد / السنة</th><th>المستأجر (الكيان)</th><th>التفاصيل</th><th>المبلغ المتبقي</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot class="total-row"><tr><td colspan="4">الإجمالي الكلي (${data.length} بند)</td><td class="text-red">${totalAmount.toLocaleString()} ريال</td></tr></tfoot>
+        </table>
+      </div>`;
+    printPage('تقرير المديونيات المستحقة والمعلقة', content, `${data.length} بند مديونية`);
   };
 
   const printRentedShopsPDF = (filteredData) => {
     if (filteredData.length === 0) return showToast("لا توجد محلات في الفرز الحالي لطباعتها", "warning");
-    
-    // نفلتر فقط المحلات المؤجرة (الرئيسية)
     const mainShops = filteredData.filter(s => s.status === "مؤجر");
-    
     const sumRent = mainShops.reduce((sum, s) => sum + s.annualRent, 0);
     const sumCollected = mainShops.reduce((sum, s) => sum + s.collected, 0);
     const sumRemaining = sumRent - sumCollected;
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html dir="rtl">
-      <head>
-          <title>تقرير المحلات المؤجرة وسجل العقود</title>
-          <style>
-              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #1e293b; background-color: white; }
-              h2 { text-align: center; color: #1d4ed8; margin-bottom: 5px; }
-              h4 { text-align: center; color: #475569; margin-top: 5px; margin-bottom: 25px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-              th, td { border: 1px solid #cbd5e1; padding: 12px 10px; text-align: center; font-size: 14px; }
-              th { background-color: #e2e8f0; color: #0f172a; font-weight: bold; }
-              tr:nth-child(even) { background-color: #f8fafc; }
-              .text-green { color: #0f766e; font-weight: bold; }
-              .text-red { color: #dc2626; font-weight: bold; }
-              .total-row { background-color: #cbd5e1; font-weight: bold; color: #0f172a; }
-              .btn { display: block; padding: 14px; background-color: #1d4ed8; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);}
-              @media print { .btn { display: none !important; } body { padding: 0; } }
-          </style>
-      </head>
-      <body>
-          <h2>🏢 تقرير المحلات المؤجرة وسجل العقود - أسواق الشبرمي</h2>
-          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م | بناءً على الفرز الحالي</h4>
-          <table>
-              <thead>
-                  <tr>
-                      <th>المستأجر (الكيان)</th>
-                      <th>رقم عقد إيجار</th>
-                      <th>الإيجار السنوي</th>
-                      <th>بداية العقد</th>
-                      <th>نهاية العقد</th>
-                      <th>إجمالي المحصل</th>
-                      <th>المتبقي من الإيجار</th>
-                      <th>حالة العقد</th>
-                  </tr>
-              </thead>
-              <tbody>
-                  ${mainShops.map(s => {
-                      const displayName = s.isGroupMain
-                        ? `${escapeHtml(s.tenant)} (${(s.groupShops || []).map(escapeHtml).join('، ')})`
-                        : `${escapeHtml(s.tenant)} (${escapeHtml(s.shopNumber)})`;
-                      return `
-                      <tr>
-                          <td><b>${displayName}</b></td>
-                          <td>${escapeHtml(s.ejarNumber)}</td>
-                          <td>${s.annualRent.toLocaleString()} ريال</td>
-                          <td>${escapeHtml(s.startDate)}</td>
-                          <td>${escapeHtml(s.endDate)}</td>
-                          <td class="text-green">${s.collected.toLocaleString()} ريال</td>
-                          <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
-                          <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
-                      </tr>
-                  `}).join('')}
-                  <tr class="total-row">
-                      <td colspan="2">المجموع الكلي</td>
-                      <td>${sumRent.toLocaleString()} ريال</td>
-                      <td colspan="2"></td>
-                      <td class="text-green">${sumCollected.toLocaleString()} ريال</td>
-                      <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
-                      <td></td>
-                  </tr>
-              </tbody>
-          </table>
-          <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const e = escapeHtml;
+    const rows = mainShops.map(s => {
+      const displayName = s.isGroupMain
+        ? `${e(s.tenant)} (${(s.groupShops || []).map(e).join('، ')})`
+        : `${e(s.tenant)} (${e(s.shopNumber)})`;
+      return `<tr>
+        <td><b>${displayName}</b></td>
+        <td>${e(s.ejarNumber)}</td>
+        <td>${s.annualRent.toLocaleString()} ريال</td>
+        <td>${e(s.startDate)}</td>
+        <td>${e(s.endDate)}</td>
+        <td class="text-teal">${s.collected.toLocaleString()} ريال</td>
+        <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
+        <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
+      </tr>`;
+    }).join('');
+    const content = `
+      <div class="section">
+        <table>
+          <thead><tr><th>المستأجر (الكيان)</th><th>رقم عقد إيجار</th><th>الإيجار السنوي</th><th>بداية العقد</th><th>نهاية العقد</th><th>إجمالي المحصّل</th><th>المتبقي من الإيجار</th><th>حالة العقد</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot class="total-row"><tr>
+            <td colspan="2">المجموع الكلي (${mainShops.length} محل)</td>
+            <td>${sumRent.toLocaleString()} ريال</td>
+            <td colspan="2"></td>
+            <td class="text-teal">${sumCollected.toLocaleString()} ريال</td>
+            <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+    printPage('تقرير المحلات المؤجرة وسجل العقود', content, 'بناءً على الفرز الحالي');
   };
 
   const printTablePDF = (data) => {
@@ -2276,73 +2247,32 @@ export default function ShubramiSystem() {
     const sumTarget = data.reduce((s, t) => s + t.targetAmount, 0);
     const sumPaid = data.reduce((s, t) => s + t.paidAmount, 0);
     const sumRemaining = data.reduce((s, t) => s + t.remainingAmount, 0);
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html dir="rtl">
-      <head>
-          <title>تقرير أرشيف وحالة السندات الشامل</title>
-          <style>
-              body { font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #1e293b; background-color: white; }
-              h2 { text-align: center; color: #1d4ed8; margin-bottom: 5px; }
-              h4 { text-align: center; color: #475569; margin-top: 5px; margin-bottom: 25px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-              th, td { border: 1px solid #cbd5e1; padding: 12px 10px; text-align: center; font-size: 14px; }
-              th { background-color: #e2e8f0; color: #0f172a; font-weight: bold; }
-              tr:nth-child(even) { background-color: #f8fafc; }
-              .text-green { color: #0f766e; font-weight: bold; }
-              .text-red { color: #dc2626; font-weight: bold; }
-              .badge-closed { background-color: #ccfbf1; color: #0f766e; padding: 4px 8px; border-radius: 9999px; font-weight: bold; font-size: 12px; border: 1px solid #99f6e4; }
-              .badge-open { background-color: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 9999px; font-weight: bold; font-size: 12px; border: 1px solid #fecaca; }
-              .btn { display: block; padding: 14px; background-color: #1d4ed8; color: white; border: none; border-radius: 8px; cursor: pointer; width: 250px; font-size: 16px; font-weight: bold; margin: 30px auto; text-align: center; box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);}
-              @media print { .btn { display: none !important; } body { padding: 0; } }
-          </style>
-      </head>
-      <body>
-          <h2>🏢 تقرير أرشيف وحالة السندات الشامل - أسواق الشبرمي</h2>
-          <h4>تاريخ إصدار التقرير: ${new Date().toLocaleDateString('ar-EG')} م | بناءً على الفرز الحالي</h4>
-          <table>
-              <thead>
-                  <tr>
-                      <th>رقم السند</th>
-                      <th>تاريخ الإغلاق والاعتماد</th>
-                      <th>المستأجر (الكيان)</th>
-                      <th>المبلغ المطلوب</th>
-                      <th>المبلغ المدفوع</th>
-                      <th>المبلغ المتبقي</th>
-                      <th>طريقة الدفع</th>
-                      <th>الحالة</th>
-                  </tr>
-              </thead>
-              <tbody>
-                  ${data.map(t => `
-                      <tr>
-                          <td><b>${escapeHtml(t.id)}</b></td>
-                          <td>${escapeHtml(t.updateDate)} م</td>
-                          <td>${escapeHtml(t.tenant)}</td>
-                          <td>${t.targetAmount.toLocaleString()} ريال</td>
-                          <td class="text-green">${t.paidAmount.toLocaleString()} ريال</td>
-                          <td class="text-red">${t.remainingAmount.toLocaleString()} ريال</td>
-                          <td>${escapeHtml(t.method)}</td>
-                          <td>
-                            <span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${escapeHtml(t.status)}</span>
-                          </td>
-                      </tr>
-                  `).join('')}
-                  <tr style="background-color: #cbd5e1; font-weight: bold; border-top: 2px solid #94a3b8; color: #0f172a;">
-                      <td colspan="3">المجموع الكلي</td>
-                      <td>${sumTarget.toLocaleString()} ريال</td>
-                      <td class="text-green">${sumPaid.toLocaleString()} ريال</td>
-                      <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
-                      <td colspan="2"></td>
-                  </tr>
-              </tbody>
-          </table>
-          <button class="btn" onclick="window.print()">📸 اضغط هنا للطباعة أو الحفظ كـ PDF</button>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const e = escapeHtml;
+    const rows = data.map(t => `<tr>
+      <td><b>${e(t.id)}</b></td>
+      <td>${e(t.updateDate)} م</td>
+      <td>${e(t.tenant)}</td>
+      <td>${t.targetAmount.toLocaleString()} ريال</td>
+      <td class="text-teal">${t.paidAmount.toLocaleString()} ريال</td>
+      <td class="text-red">${t.remainingAmount.toLocaleString()} ريال</td>
+      <td>${e(t.method)}</td>
+      <td><span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${e(t.status)}</span></td>
+    </tr>`).join('');
+    const content = `
+      <div class="section">
+        <table>
+          <thead><tr><th>رقم السند</th><th>تاريخ الإغلاق والاعتماد</th><th>المستأجر (الكيان)</th><th>المبلغ المطلوب</th><th>المبلغ المدفوع</th><th>المبلغ المتبقي</th><th>طريقة الدفع</th><th>الحالة</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot class="total-row"><tr>
+            <td colspan="3">المجموع الكلي (${data.length} سند)</td>
+            <td>${sumTarget.toLocaleString()} ريال</td>
+            <td class="text-teal">${sumPaid.toLocaleString()} ريال</td>
+            <td class="text-red">${sumRemaining.toLocaleString()} ريال</td>
+            <td colspan="2"></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+    printPage('تقرير أرشيف وحالة السندات الشامل', content, 'بناءً على الفرز الحالي');
   };
 
   const exportToCSV = (data, filename) => {
@@ -2364,168 +2294,78 @@ export default function ShubramiSystem() {
   };
 
   const printReceipt = (receipt) => {
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html dir="rtl">
+    const e = escapeHtml;
+    const w = window.open('', '_blank');
+    if (!w) return showToast("تعذّر فتح نافذة الطباعة — تأكد من السماح بالنوافذ المنبثقة", "error");
+    w.document.write(`
+      <html dir="rtl" lang="ar">
       <head>
-          <title>سند قبض - ${escapeHtml(receipt.id)}</title>
-          <style>
-              body { 
-                  font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; 
-                  text-align: right; 
-                  background-color: #f8fafc; 
-                  margin: 0; 
-                  padding: 40px; 
-              }
-              .receipt-container { 
-                  max-width: 650px; 
-                  margin: auto; 
-                  background: #ffffff; 
-                  border-radius: 12px; 
-                  box-shadow: 0 10px 30px rgba(0,0,0,0.05); 
-                  overflow: hidden; 
-                  border: 1px solid #e2e8f0;
-              }
-              .receipt-header { 
-                  background-color: #1e293b; 
-                  color: #ffffff; 
-                  padding: 30px 20px; 
-                  text-align: center; 
-                  border-bottom: 5px solid #1d4ed8; 
-              }
-              .receipt-header h2 { 
-                  margin: 0; 
-                  font-size: 28px; 
-                  font-weight: 800; 
-                  letter-spacing: 0.5px; 
-              }
-              .receipt-header h4 { 
-                  margin: 10px 0 0; 
-                  font-size: 14px; 
-                  font-weight: 400; 
-                  color: #cbd5e1; 
-              }
-              .receipt-body { 
-                  padding: 40px 40px 20px; 
-              }
-              .info-row { 
-                  display: flex; 
-                  justify-content: flex-start; 
-                  align-items: flex-start; 
-                  gap: 12px; 
-                  border-bottom: 1px dashed #e2e8f0; 
-                  padding: 18px 0; 
-              }
-              .info-row:last-child { 
-                  border-bottom: none; 
-              }
-              .info-label { 
-                  font-size: 16px; 
-                  color: #64748b; 
-                  font-weight: 700; 
-                  white-space: nowrap;
-              }
-              .info-value { 
-                  font-size: 18px; 
-                  color: #0f172a; 
-                  font-weight: 800; 
-                  text-align: right; 
-              }
-              .amount-highlight { 
-                  color: #1d4ed8; 
-                  font-size: 22px; 
-              }
-              .signatures-section { 
-                  display: flex; 
-                  justify-content: space-between; 
-                  padding: 20px 50px 50px; 
-              }
-              .signature-box { 
-                  text-align: center; 
-                  width: 35%; 
-              }
-              .signature-box p { 
-                  font-size: 16px; 
-                  color: #475569; 
-                  font-weight: 700; 
-                  margin-bottom: 50px; 
-              }
-              .signature-line { 
-                  border-bottom: 2px solid #cbd5e1; 
-                  width: 100%; 
-              }
-              .print-btn { 
-                  display: block; 
-                  width: calc(100% - 80px); 
-                  max-width: 650px;
-                  margin: 30px auto 0; 
-                  padding: 16px; 
-                  background-color: #1d4ed8; 
-                  color: white; 
-                  border: none; 
-                  border-radius: 8px; 
-                  cursor: pointer; 
-                  font-size: 18px; 
-                  font-weight: bold; 
-                  text-align: center;
-                  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);
-                  transition: background-color 0.3s ease;
-              }
-              .print-btn:hover {
-                  background-color: #1e40af;
-              }
-              @media print { 
-                  body { background-color: #ffffff; padding: 0; } 
-                  .receipt-container { box-shadow: none; border: 2px solid #1e293b; border-radius: 0; }
-                  .print-btn { display: none !important; } 
-              }
-          </style>
+        <meta charset="UTF-8">
+        <title>سند قبض — ${e(receipt.id)}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; background: #f8fafc; padding: 40px 20px; color: #1e293b; }
+          .receipt { max-width: 680px; margin: 0 auto; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+          .receipt-head { background: #1e293b; color: #fff; padding: 28px 32px; text-align: center; border-bottom: 4px solid #1d4ed8; }
+          .receipt-head h1 { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+          .receipt-head p { font-size: 14px; color: #94a3b8; }
+          .receipt-meta { display: flex; justify-content: space-between; padding: 16px 32px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+          .receipt-meta .meta-item span:first-child { color: #64748b; margin-left: 6px; }
+          .receipt-meta .meta-item span:last-child { font-weight: 800; color: #0f172a; }
+          .receipt-body { padding: 28px 32px; }
+          .field { padding: 14px 0; border-bottom: 1px dashed #e2e8f0; display: flex; align-items: center; gap: 12px; }
+          .field:last-child { border-bottom: none; }
+          .field .lbl { font-size: 14px; color: #64748b; font-weight: 700; white-space: nowrap; }
+          .field .val { font-size: 16px; font-weight: 800; color: #0f172a; }
+          .amount-box { background: #eff6ff; border: 2px solid #1d4ed8; border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0; }
+          .amount-value { font-size: 32px; font-weight: 800; color: #1d4ed8; }
+          .amount-currency { font-size: 14px; color: #3b82f6; margin-top: 4px; font-weight: 700; }
+          .signatures { display: flex; justify-content: space-between; padding: 24px 32px 32px; gap: 16px; }
+          .sig-box { flex: 1; text-align: center; }
+          .sig-box .sig-label { font-size: 13px; font-weight: 700; color: #475569; margin-bottom: 48px; }
+          .sig-line { border-bottom: 2px solid #cbd5e1; }
+          .receipt-footer { border-top: 1px solid #e2e8f0; padding: 12px 32px; text-align: center; font-size: 11px; color: #94a3b8; }
+          .btn { display: block; max-width: 680px; width: 100%; margin: 24px auto 0; padding: 16px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 700; font-family: inherit; }
+          @media print { .btn { display: none !important; } body { background: #fff; padding: 0; } .receipt { box-shadow: none; border: 2px solid #1e293b; border-radius: 0; } }
+        </style>
       </head>
       <body>
-          <div class="receipt-container">
-              <div class="receipt-header">
-                  <h2>سند قبض - أسواق الشبرمي</h2>
-                  <h4>رقم السند الموحد: ${escapeHtml(receipt.id)}</h4>
-              </div>
-
-              <div class="receipt-body">
-                  <div class="info-row">
-                      <span class="info-label">تاريخ الإغلاق والاعتماد:</span>
-                      <span class="info-value">${escapeHtml(receipt.updateDate)} م</span>
-                  </div>
-                  <div class="info-row">
-                      <span class="info-label">استلمنا من المكرم:</span>
-                      <span class="info-value">
-                          ${escapeHtml(receipt.tenant)}
-                      </span>
-                  </div>
-                  <div class="info-row">
-                      <span class="info-label">مبلغ وقدره فقط:</span>
-                      <span class="info-value amount-highlight">${receipt.targetAmount.toLocaleString()} ريال سعودي</span>
-                  </div>
-                  <div class="info-row">
-                      <span class="info-label">طريقة الدفع والاستلام:</span>
-                      <span class="info-value">${escapeHtml(receipt.method)}</span>
-                  </div>
-              </div>
-
-              <div class="signatures-section">
-                  <div class="signature-box">
-                      <p>المحاسب العام</p>
-                      <div class="signature-line"></div>
-                  </div>
-                  <div class="signature-box">
-                      <p>المحصل المالي</p>
-                      <div class="signature-line"></div>
-                  </div>
-              </div>
+        <button class="btn" onclick="window.print()">🖨️ اضغط هنا لطباعة السند أو الحفظ كـ PDF</button>
+        <div class="receipt">
+          <div class="receipt-head">
+            <h1>🏢 أسواق الشبرمي</h1>
+            <p>سند قبض — إيصال استلام رسمي</p>
           </div>
-          
-          <button class="print-btn" onclick="window.print()">🖨️ اضغط هنا لطباعة السند فوراً</button>
+          <div class="receipt-meta">
+            <div class="meta-item"><span>رقم السند:</span><span>${e(receipt.id)}</span></div>
+            <div class="meta-item"><span>تاريخ الإغلاق:</span><span>${e(receipt.updateDate)} م</span></div>
+          </div>
+          <div class="receipt-body">
+            <div class="field">
+              <span class="lbl">استلمنا من:</span>
+              <span class="val">${e(receipt.tenant)}</span>
+            </div>
+            <div class="amount-box">
+              <div class="amount-value">${receipt.targetAmount.toLocaleString()}</div>
+              <div class="amount-currency">ريال سعودي</div>
+            </div>
+            <div class="field">
+              <span class="lbl">طريقة الدفع:</span>
+              <span class="val">${e(receipt.method)}</span>
+            </div>
+          </div>
+          <div class="signatures">
+            <div class="sig-box"><div class="sig-label">المحاسب العام</div><div class="sig-line"></div></div>
+            <div class="sig-box"><div class="sig-label">المحصّل المالي</div><div class="sig-line"></div></div>
+            <div class="sig-box"><div class="sig-label">توقيع المستأجر</div><div class="sig-line"></div></div>
+          </div>
+          <div class="receipt-footer">أسواق الشبرمي — سند رسمي معتمد</div>
+        </div>
       </body>
       </html>
     `);
-    printWindow.document.close();
+    w.document.close();
   };
 
   // ==========================================
@@ -2536,7 +2376,6 @@ export default function ShubramiSystem() {
     const hasData = stmtCurrentShops.length > 0 || stmtArchivedShops.length > 0 || stmtDebts.length > 0 || stmtTransactions.length > 0 || stmtLegacyTx.length > 0;
     if (!hasData) return showToast("لا توجد بيانات لهذا المستأجر للطباعة", "warning");
 
-    const today = new Date().toLocaleDateString('ar-EG');
     const periodLabel = stmtTxYear === "الكل" ? "جميع السنوات" : `سنة ${stmtTxYear}`;
     const e = escapeHtml;
 
@@ -2608,53 +2447,10 @@ export default function ShubramiSystem() {
         </tbody>
       </table>`;
 
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html dir="rtl" lang="ar">
-      <head>
-        <meta charset="UTF-8">
-        <title>كشف حساب — ${e(stmtTenant)}</title>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
-          .page-header { border-bottom: 3px solid #1d4ed8; padding-bottom: 14px; margin-bottom: 20px; }
-          .page-header h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; }
-          .page-header h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin-top: 4px; }
-          .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
-          .section { margin-bottom: 22px; }
-          .section-title { font-size: 14px; font-weight: 700; border-right: 4px solid #1d4ed8; padding-right: 8px; margin-bottom: 10px; color: #1e293b; }
-          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-          th { background: #e2e8f0; padding: 9px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px; }
-          td { padding: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
-          tr:nth-child(even) td { background: #f8fafc; }
-          .text-red { color: #dc2626; font-weight: 700; }
-          .text-teal { color: #0f766e; font-weight: 700; }
-          .text-gray { color: #94a3b8; }
-          .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-          .summary-card { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; }
-          .summary-card .lbl { font-size: 11px; color: #64748b; margin-bottom: 4px; }
-          .summary-card .val { font-size: 16px; font-weight: 800; color: #1d4ed8; }
-          .legacy-note { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; margin-bottom: 8px; }
-          .legacy-row td { opacity: 0.82; }
-          .no-data { text-align: center; color: #94a3b8; padding: 14px; }
-          .page-footer { border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
-          .btn { display: block; padding: 12px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 240px; font-size: 15px; font-weight: 700; margin: 24px auto; font-family: inherit; }
-          @media print { .btn { display: none !important; } body { padding: 14px; } }
-        </style>
-      </head>
-      <body>
-        <button class="btn" onclick="window.print()">🖨️ اضغط هنا للطباعة أو الحفظ كـ PDF</button>
-
-        <div class="page-header">
-          <h1>🏢 أسواق الشبرمي</h1>
-          <h2>كشف حساب المستأجر — ${e(stmtTenant)}</h2>
-          <div class="meta">تاريخ الإصدار: ${today} م &nbsp;|&nbsp; الفترة المالية: ${e(periodLabel)}</div>
-        </div>
-
+    const bodyContent = `
         <div class="section">
           <div class="section-title">الملخص المالي الإجمالي</div>
-          <div class="summary-grid">
+          <div class="summary-grid" style="grid-template-columns:repeat(4,1fr)">
             <div class="summary-card">
               <div class="lbl">إجمالي الإيجار (تاريخياً)</div>
               <div class="val">${stmtSumAnnualRent.toLocaleString()} ر.س</div>
@@ -2673,7 +2469,6 @@ export default function ShubramiSystem() {
             </div>
           </div>
         </div>
-
         <div class="section">
           <div class="section-title">📝 العقود الحالية (${stmtCurrentShops.length})</div>
           <table>
@@ -2681,7 +2476,6 @@ export default function ShubramiSystem() {
             <tbody>${currentShopsRows}</tbody>
           </table>
         </div>
-
         <div class="section">
           <div class="section-title">🗄️ العقود المؤرشفة (${stmtArchivedShops.length})</div>
           <table>
@@ -2689,7 +2483,6 @@ export default function ShubramiSystem() {
             <tbody>${archivedShopsRows}</tbody>
           </table>
         </div>
-
         <div class="section">
           <div class="section-title">📂 المديونيات المستقلة القائمة (${stmtDebts.length})</div>
           <table>
@@ -2697,7 +2490,6 @@ export default function ShubramiSystem() {
             <tbody>${debtsRows}</tbody>
           </table>
         </div>
-
         <div class="section">
           <div class="section-title">💰 سندات القبض (${e(periodLabel)} — ${stmtTransactions.length + stmtLegacyTx.length} سند)</div>
           <table>
@@ -2705,20 +2497,14 @@ export default function ShubramiSystem() {
             <tbody>${txRows}</tbody>
           </table>
           ${legacySection}
-        </div>
-
-        <div class="page-footer">أسواق الشبرمي — طُبع بتاريخ ${today} م</div>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+        </div>`;
+    printPage('كشف حساب المستأجر — ' + stmtTenant, bodyContent, 'الفترة المالية: ' + periodLabel);
   };
 
   // ==========================================
   // طباعة التقارير المالية
   // ==========================================
   const printFinancialReportPDF = () => {
-    const today = new Date().toLocaleDateString('ar-EG');
     const e = escapeHtml;
     let title, periodLabel, content;
 
@@ -2886,61 +2672,7 @@ export default function ShubramiSystem() {
         </div>`;
     }
 
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html dir="rtl" lang="ar">
-      <head>
-        <meta charset="UTF-8">
-        <title>${e(title)}</title>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
-          .page-header { border-bottom: 3px solid #1d4ed8; padding-bottom: 14px; margin-bottom: 20px; }
-          .page-header h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; }
-          .page-header h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin-top: 4px; }
-          .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
-          .section { margin-bottom: 22px; }
-          .section-title { font-size: 14px; font-weight: 700; border-right: 4px solid #1d4ed8; padding-right: 8px; margin-bottom: 10px; color: #1e293b; }
-          .summary-grid { display: grid; gap: 10px; }
-          .summary-card { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; }
-          .summary-card .lbl { font-size: 11px; color: #64748b; margin-bottom: 4px; }
-          .summary-card .val { font-size: 17px; font-weight: 800; color: #1d4ed8; }
-          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-          th { background: #e2e8f0; padding: 9px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px; }
-          td { padding: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
-          tr:nth-child(even) td { background: #f8fafc; }
-          .total-row td { background: #cbd5e1; font-weight: 700; color: #0f172a; border-color: #94a3b8; }
-          .group-header td { background: #f1f5f9; font-weight: 700; border-top: 2px solid #94a3b8; }
-          .group-item td { padding-right: 22px; }
-          .text-red { color: #dc2626; font-weight: 700; }
-          .text-teal { color: #0f766e; font-weight: 700; }
-          .text-blue { color: #1d4ed8; font-weight: 700; }
-          .text-gray { color: #94a3b8; }
-          .no-data { text-align: center; color: #94a3b8; padding: 14px; }
-          .notice { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; }
-          .arrears-total { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 8px; padding: 16px 20px; margin-bottom: 8px; }
-          .page-footer { border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
-          .btn { display: block; padding: 12px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 240px; font-size: 15px; font-weight: 700; margin: 24px auto; font-family: inherit; }
-          @media print { .btn { display: none !important; } body { padding: 14px; } }
-        </style>
-      </head>
-      <body>
-        <button class="btn" onclick="window.print()">🖨️ اضغط هنا للطباعة أو الحفظ كـ PDF</button>
-
-        <div class="page-header">
-          <h1>🏢 أسواق الشبرمي</h1>
-          <h2>${e(title)}</h2>
-          <div class="meta">الفترة: ${e(periodLabel)} &nbsp;|&nbsp; تاريخ الطباعة: ${today} م</div>
-        </div>
-
-        ${content}
-
-        <div class="page-footer">أسواق الشبرمي — طُبع بتاريخ ${today} م</div>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    printPage(title, content, periodLabel);
   };
 
   const visibleTabs = allTabs.filter(tab => {
