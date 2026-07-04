@@ -528,7 +528,12 @@ const FinancialCollection = ({
                   <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-100">
                     <td className="p-3 font-bold text-slate-900">{t.id}</td>
                     <td className="p-3 text-slate-600">{t.updateDate}</td>
-                    <td className="p-3 text-slate-600 truncate max-w-[150px]" title={t.tenant}>{t.tenant}</td>
+                    <td className="p-3 text-slate-600 max-w-[160px]" title={t.tenant + (t.shop && t.shop !== 'مديونية سابقة' ? ` - محل ${t.shop}` : '')}>
+                      <div className="truncate">{t.tenant}</div>
+                      {t.shop && t.shop !== 'مديونية سابقة' && (
+                        <div className="text-slate-400 text-[10px]">محل {t.shop}</div>
+                      )}
+                    </td>
                     <td className="p-3">{t.targetAmount.toLocaleString()}</td>
                     <td className="p-3 font-bold text-teal-700">{t.paidAmount.toLocaleString()}</td>
                     <td className="p-3 font-bold text-red-600">{t.remainingAmount.toLocaleString()}</td>
@@ -676,6 +681,21 @@ export default function ShubramiSystem() {
   const [instAmount, setInstAmount] = useState("");
   const [instDate, setInstDate] = useState("");
   const [payingInstId, setPayingInstId] = useState("");
+
+  const [stmtTenant, setStmtTenant] = useState("");
+  const [stmtSearch, setStmtSearch] = useState("");
+  const [stmtTxYear, setStmtTxYear] = useState("الكل");
+  const [stmtShowArchive, setStmtShowArchive] = useState(false);
+
+  const [rptTab, setRptTab] = useState("income");
+  const [rptMode, setRptMode] = useState("year");
+  const [rptYear, setRptYear] = useState("الكل");
+  const [rptFrom, setRptFrom] = useState("");
+  const [rptTo, setRptTo] = useState("");
+  const [rptShopSort, setRptShopSort] = useState("revenue_desc");
+  const [rptIncomeShowTx, setRptIncomeShowTx] = useState(false);
+  const [rptIncomeShowExp, setRptIncomeShowExp] = useState(false);
+  const [rptArrearsGroup, setRptArrearsGroup] = useState(false);
 
   // سجل تدقيق مركزي وغير معطّل للمسار الرئيسي: تُستدعى فقط بعد التأكد من نجاح
   // العملية المالية/الإدارية الأساسية في Supabase. أي فشل في الكتابة هنا يُسجَّل
@@ -856,6 +876,8 @@ export default function ShubramiSystem() {
     { id: "debts", label: "📂 مديونيات مستحقة" },
     { id: "expenses", label: "🛠️ إدارة المصروفات" },
     { id: "archive", label: "🗄️ أرشيف العقود" },
+    { id: "tenant_statement", label: "👤 كشف حساب المستأجر" },
+    { id: "financial_reports", label: "📊 التقارير المالية" },
     { id: "audit", label: "📜 سجل التدقيق", adminOnly: true },
     { id: "users", label: "👥 إدارة المستخدمين", adminOnly: true }
   ];
@@ -1536,14 +1558,12 @@ export default function ShubramiSystem() {
     const remaining = targetNum - amountNum;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
     
-    const displayTenantName = activeShop.isGroupMain ? `${activeShop.tenant} (${(activeShop.groupShops || []).join('، ')})` : `${activeShop.tenant} (${activeShop.shopNumber})`;
-
     const newTx = {
       id: `SH-${new Date().getFullYear()}-${String(transactionsDB.length + 1).padStart(4, '0')}`,
       startDate: new Date().toISOString().split('T')[0],
       updateDate: new Date().toISOString().split('T')[0],
       shop: newPayShop,
-      tenant: displayTenantName,
+      tenant: activeShop.tenant,
       targetAmount: targetNum,
       paidAmount: amountNum,
       remainingAmount: remaining,
@@ -1706,7 +1726,9 @@ export default function ShubramiSystem() {
         startDate: new Date().toISOString().split('T')[0],
         updateDate: new Date().toISOString().split('T')[0],
         shop: targetDebt.isShopDebt ? targetDebt.label : `مديونية سابقة`,
-        tenant: targetDebt.tenant,
+        tenant: targetDebt.isShopDebt
+          ? (shopsDB.find(s => s.id === targetDebt.id)?.tenant ?? targetDebt.tenant)
+          : targetDebt.tenant,
         targetAmount: targetDebt.amount,
         paidAmount: payAmt,
         remainingAmount: targetDebt.amount - payAmt,
@@ -1927,6 +1949,130 @@ export default function ShubramiSystem() {
   const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
 
   // ==========================================
+  // كشف حساب المستأجر ─ بيانات مشتقة
+  // ==========================================
+  const allStatementTenants = [...new Set([
+    ...shopsDB.map(s => s.tenant),
+    ...debtsDB.map(d => d.tenant),
+    ...transactionsDB.map(t => t.tenant),
+  ].map(n => (n || "").trim()).filter(Boolean))].sort();
+
+  const filteredStatementTenants = stmtSearch.trim() === ""
+    ? allStatementTenants
+    : allStatementTenants.filter(t => t.includes(stmtSearch.trim()));
+
+  const stmtCurrentShops = stmtTenant
+    ? shopsDB.filter(s => !s.status.includes("أرشيف") && (s.tenant || "").trim() === stmtTenant)
+    : [];
+  const stmtArchivedShops = stmtTenant
+    ? shopsDB
+        .filter(s => s.status.includes("أرشيف") && (s.tenant || "").trim() === stmtTenant)
+        .sort((a, b) => (b.endDate || "").localeCompare(a.endDate || ""))
+    : [];
+  const stmtAllShopNumbers = [...new Set([
+    ...stmtCurrentShops.map(s => s.shopNumber),
+    ...stmtArchivedShops.map(s => s.shopNumber),
+  ].filter(Boolean))];
+
+  const stmtDebts = stmtTenant
+    ? debtsDB.filter(d => (d.tenant || "").trim() === stmtTenant && d.amount > 0)
+    : [];
+
+  const stmtAllTenantTx = stmtTenant
+    ? transactionsDB.filter(t => (t.tenant || "").trim() === stmtTenant)
+    : [];
+  const stmtTxYears = [...new Set(
+    stmtAllTenantTx.map(t => String(t.id).split('-')[1]).filter(Boolean)
+  )].sort((a, b) => b.localeCompare(a));
+  const stmtTransactions = stmtAllTenantTx
+    .filter(t => stmtTxYear === "الكل" || String(t.id).split('-')[1] === stmtTxYear)
+    .sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
+
+  // السندات القديمة بدون tenant ─ ربط تقديري عبر رقم المحل فقط
+  const stmtLegacyTx = stmtTenant && stmtAllShopNumbers.length > 0
+    ? transactionsDB.filter(t =>
+        (!t.tenant || t.tenant.trim() === "") &&
+        stmtAllShopNumbers.includes(String(t.shop)) &&
+        (stmtTxYear === "الكل" || String(t.id).split('-')[1] === stmtTxYear)
+      ).sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""))
+    : [];
+
+  // الملخص المالي
+  const stmtSumAnnualRent = [...stmtCurrentShops, ...stmtArchivedShops]
+    .reduce((sum, s) => sum + (s.annualRent || 0), 0);
+  const stmtSumCollectedContracts = [...stmtCurrentShops, ...stmtArchivedShops]
+    .reduce((sum, s) => sum + (s.collected || 0), 0);
+  const stmtSumDebts = stmtDebts.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const stmtSumCurrentBalance = stmtCurrentShops
+    .reduce((sum, s) => sum + Math.max(0, (s.annualRent || 0) - (s.collected || 0)), 0);
+
+  // ==========================================
+  // التقارير المالية ─ بيانات مشتقة
+  // ==========================================
+  const isInRptPeriod = (dateStr) => {
+    if (!dateStr || dateStr === "-") return false;
+    const d = String(dateStr).slice(0, 10);
+    if (rptMode === "year") return rptYear === "الكل" || getYear(d) === rptYear;
+    if (!rptFrom && !rptTo) return true;
+    if (rptFrom && d < rptFrom) return false;
+    if (rptTo && d > rptTo) return false;
+    return true;
+  };
+
+  // التقرير 1 — الدخل والمصروفات بفترة
+  const rptTx = transactionsDB.filter(t => isInRptPeriod(t.updateDate));
+  const rptExpFiltered = expensesDB.filter(e => isInRptPeriod(e.date));
+  const rptRevenue = rptTx.reduce((s, t) => s + (t.paidAmount || 0), 0);
+  const rptExpTotal = rptExpFiltered.reduce((s, e) => s + (e.amount || 0), 0);
+  const rptNetIncome = rptRevenue - rptExpTotal;
+
+  // التقرير 2 — حسب المحل (إيرادات سندات القبض التاريخية لكل محل)
+  const rptShopRevMap = {};
+  transactionsDB.forEach(t => {
+    const sn = t.shop;
+    if (!sn) return;
+    if (!rptShopRevMap[sn]) rptShopRevMap[sn] = { revenue: 0, txCount: 0 };
+    rptShopRevMap[sn].revenue += (t.paidAmount || 0);
+    rptShopRevMap[sn].txCount += 1;
+  });
+  Object.values(latestShopRecords).forEach(s => {
+    if (!rptShopRevMap[s.shopNumber]) rptShopRevMap[s.shopNumber] = { revenue: 0, txCount: 0 };
+  });
+  const rptShopRows = Object.entries(rptShopRevMap)
+    .map(([shopNum, data]) => ({
+      shopNum,
+      revenue: data.revenue,
+      txCount: data.txCount,
+      tenant: latestShopRecords[shopNum]?.tenant || "-",
+      status: latestShopRecords[shopNum]?.status || "-",
+    }))
+    .sort((a, b) => rptShopSort === "revenue_asc" ? a.revenue - b.revenue : b.revenue - a.revenue);
+
+  // التقرير 3 — المتأخرات (يعيد استخدام allOutstandingDebts المحسوب مسبقاً)
+  const rptArrearsTotal = allOutstandingDebts.reduce((s, d) => s + (d.amount || 0), 0);
+  const rptArrearsFlat = [...allOutstandingDebts].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  const rptArrearsGrouped = Object.values(
+    allOutstandingDebts.reduce((acc, d) => {
+      const key = (d.tenant || "غير معروف").trim();
+      if (!acc[key]) acc[key] = { tenant: key, items: [], total: 0 };
+      acc[key].items.push(d);
+      acc[key].total += (d.amount || 0);
+      return acc;
+    }, {})
+  ).sort((a, b) => b.total - a.total);
+
+  // ==========================================
+  // دالة التنقية المركزية — تهريب HTML لكل قيمة نصية من بيانات المستخدم
+  // ==========================================
+  const escapeHtml = (val) =>
+    String(val ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  // ==========================================
   // جميع دوال الطباعة والتصدير الأصلية بالكامل
   // ==========================================
   const printInstallmentsPDF = (data) => {
@@ -1970,13 +2116,15 @@ export default function ShubramiSystem() {
                       const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !s.status.includes("أرشيف")) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
                       const collected = shopData.collected || 0;
                       const remaining = (shopData.annualRent || 0) - collected;
-                      const displayName = shopData.isGroupMain ? `${shopData.tenant} (${(shopData.groupShops||[]).join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
+                      const displayName = shopData.isGroupMain
+                        ? `${escapeHtml(shopData.tenant)} (${(shopData.groupShops||[]).map(escapeHtml).join('، ')})`
+                        : `${escapeHtml(shopData.tenant || "-")} (${escapeHtml(shopData.shopNumber)})`;
                       return `
                       <tr>
-                          <td><b>${inst.shop}</b></td>
+                          <td><b>${escapeHtml(inst.shop)}</b></td>
                           <td>${displayName}</td>
                           <td class="text-blue">${inst.amount.toLocaleString()} ريال</td>
-                          <td>${inst.date}</td>
+                          <td>${escapeHtml(inst.date)}</td>
                           <td class="text-green">${collected.toLocaleString()} ريال</td>
                           <td class="text-red">${remaining.toLocaleString()} ريال</td>
                       </tr>
@@ -2027,10 +2175,10 @@ export default function ShubramiSystem() {
               <tbody>
                   ${data.map(d => `
                       <tr>
-                          <td><b>${d.isShopDebt ? d.label : d.id}</b></td>
-                          <td>${d.year}</td>
-                          <td>${d.tenant}</td>
-                          <td>${d.details}</td>
+                          <td><b>${escapeHtml(d.isShopDebt ? d.label : d.id)}</b></td>
+                          <td>${escapeHtml(d.year)}</td>
+                          <td>${escapeHtml(d.tenant)}</td>
+                          <td>${escapeHtml(d.details)}</td>
                           <td class="text-red">${d.amount.toLocaleString()} ريال</td>
                       </tr>
                   `).join('')}
@@ -2091,14 +2239,16 @@ export default function ShubramiSystem() {
               </thead>
               <tbody>
                   ${mainShops.map(s => {
-                      const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops || []).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                      const displayName = s.isGroupMain
+                        ? `${escapeHtml(s.tenant)} (${(s.groupShops || []).map(escapeHtml).join('، ')})`
+                        : `${escapeHtml(s.tenant)} (${escapeHtml(s.shopNumber)})`;
                       return `
                       <tr>
                           <td><b>${displayName}</b></td>
-                          <td>${s.ejarNumber}</td>
+                          <td>${escapeHtml(s.ejarNumber)}</td>
                           <td>${s.annualRent.toLocaleString()} ريال</td>
-                          <td>${s.startDate}</td>
-                          <td>${s.endDate}</td>
+                          <td>${escapeHtml(s.startDate)}</td>
+                          <td>${escapeHtml(s.endDate)}</td>
                           <td class="text-green">${s.collected.toLocaleString()} ريال</td>
                           <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
                           <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
@@ -2167,15 +2317,15 @@ export default function ShubramiSystem() {
               <tbody>
                   ${data.map(t => `
                       <tr>
-                          <td><b>${t.id}</b></td>
-                          <td>${t.updateDate} م</td>
-                          <td>${t.tenant}</td>
+                          <td><b>${escapeHtml(t.id)}</b></td>
+                          <td>${escapeHtml(t.updateDate)} م</td>
+                          <td>${escapeHtml(t.tenant)}</td>
                           <td>${t.targetAmount.toLocaleString()} ريال</td>
                           <td class="text-green">${t.paidAmount.toLocaleString()} ريال</td>
                           <td class="text-red">${t.remainingAmount.toLocaleString()} ريال</td>
-                          <td>${t.method}</td>
+                          <td>${escapeHtml(t.method)}</td>
                           <td>
-                            <span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${t.status}</span>
+                            <span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${escapeHtml(t.status)}</span>
                           </td>
                       </tr>
                   `).join('')}
@@ -2218,7 +2368,7 @@ export default function ShubramiSystem() {
     printWindow.document.write(`
       <html dir="rtl">
       <head>
-          <title>سند قبض - ${receipt.id}</title>
+          <title>سند قبض - ${escapeHtml(receipt.id)}</title>
           <style>
               body { 
                   font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; 
@@ -2335,18 +2485,18 @@ export default function ShubramiSystem() {
           <div class="receipt-container">
               <div class="receipt-header">
                   <h2>سند قبض - أسواق الشبرمي</h2>
-                  <h4>رقم السند الموحد: ${receipt.id}</h4>
+                  <h4>رقم السند الموحد: ${escapeHtml(receipt.id)}</h4>
               </div>
-              
+
               <div class="receipt-body">
                   <div class="info-row">
                       <span class="info-label">تاريخ الإغلاق والاعتماد:</span>
-                      <span class="info-value">${receipt.updateDate} م</span>
+                      <span class="info-value">${escapeHtml(receipt.updateDate)} م</span>
                   </div>
                   <div class="info-row">
                       <span class="info-label">استلمنا من المكرم:</span>
                       <span class="info-value">
-                          ${receipt.tenant} 
+                          ${escapeHtml(receipt.tenant)}
                       </span>
                   </div>
                   <div class="info-row">
@@ -2355,7 +2505,7 @@ export default function ShubramiSystem() {
                   </div>
                   <div class="info-row">
                       <span class="info-label">طريقة الدفع والاستلام:</span>
-                      <span class="info-value">${receipt.method}</span>
+                      <span class="info-value">${escapeHtml(receipt.method)}</span>
                   </div>
               </div>
 
@@ -2372,6 +2522,421 @@ export default function ShubramiSystem() {
           </div>
           
           <button class="print-btn" onclick="window.print()">🖨️ اضغط هنا لطباعة السند فوراً</button>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // ==========================================
+  // طباعة كشف حساب المستأجر
+  // ==========================================
+  const printTenantStatementPDF = () => {
+    if (!stmtTenant) return showToast("اختر مستأجراً أولاً لطباعة الكشف", "warning");
+    const hasData = stmtCurrentShops.length > 0 || stmtArchivedShops.length > 0 || stmtDebts.length > 0 || stmtTransactions.length > 0 || stmtLegacyTx.length > 0;
+    if (!hasData) return showToast("لا توجد بيانات لهذا المستأجر للطباعة", "warning");
+
+    const today = new Date().toLocaleDateString('ar-EG');
+    const periodLabel = stmtTxYear === "الكل" ? "جميع السنوات" : `سنة ${stmtTxYear}`;
+    const e = escapeHtml;
+
+    const currentShopsRows = stmtCurrentShops.length === 0
+      ? `<tr><td colspan="7" class="no-data">لا توجد عقود حالية.</td></tr>`
+      : stmtCurrentShops.map(s => {
+          const bal = Math.max(0, (s.annualRent || 0) - (s.collected || 0));
+          const expired = isContractExpired(s.endDate);
+          return `<tr>
+            <td><b>${e(s.shopNumber)}</b></td>
+            <td>${e(s.ejarNumber || "-")}</td>
+            <td>${e(s.startDate || "-")}</td>
+            <td class="${expired ? "text-red" : ""}">${e(s.endDate || "-")}</td>
+            <td>${(s.annualRent || 0).toLocaleString()} ريال</td>
+            <td class="text-teal">${(s.collected || 0).toLocaleString()} ريال</td>
+            <td class="${bal > 0 ? "text-red" : "text-gray"}">${bal.toLocaleString()} ريال</td>
+          </tr>`;
+        }).join('');
+
+    const archivedShopsRows = stmtArchivedShops.length === 0
+      ? `<tr><td colspan="6" class="no-data">لا توجد عقود مؤرشفة.</td></tr>`
+      : stmtArchivedShops.map(s => `<tr>
+          <td><b>${e(s.shopNumber)}</b></td>
+          <td>${e(s.ejarNumber || "-")}</td>
+          <td>${e(s.startDate || "-")}</td>
+          <td>${e(s.endDate || "-")}</td>
+          <td>${(s.annualRent || 0).toLocaleString()} ريال</td>
+          <td class="text-teal">${(s.collected || 0).toLocaleString()} ريال</td>
+        </tr>`).join('');
+
+    const debtsRows = stmtDebts.length === 0
+      ? `<tr><td colspan="4" class="no-data">✓ لا توجد مديونيات مستقلة.</td></tr>`
+      : stmtDebts.map(d => `<tr>
+          <td><b>${e(d.id)}</b></td>
+          <td>${e(d.year || "-")}</td>
+          <td>${e(d.details || "-")}</td>
+          <td class="text-red">${(d.amount || 0).toLocaleString()} ريال</td>
+        </tr>`).join('');
+
+    const txRows = stmtTransactions.length === 0
+      ? `<tr><td colspan="7" class="no-data">لا توجد سندات في هذه الفترة.</td></tr>`
+      : stmtTransactions.map(t => `<tr>
+          <td><b>${e(t.id)}</b></td>
+          <td>${e(String(t.shop || "-"))}</td>
+          <td>${e(t.startDate || "-")}</td>
+          <td>${(t.targetAmount || 0).toLocaleString()} ريال</td>
+          <td class="text-teal">${(t.paidAmount || 0).toLocaleString()} ريال</td>
+          <td class="${(t.remainingAmount || 0) > 0 ? "text-red" : "text-gray"}">${(t.remainingAmount || 0).toLocaleString()} ريال</td>
+          <td>${e(t.method || "-")}</td>
+        </tr>`).join('');
+
+    const legacySection = stmtLegacyTx.length === 0 ? '' : `
+      <div class="legacy-note">
+        ⚠️ <b>سندات قديمة — ربط تقديري (غير مؤكّد):</b>
+        هذه السندات لا تحمل اسم المستأجر — تظهر لأن رقم محلها يطابق محلات هذا المستأجر
+        (${stmtAllShopNumbers.map(e).join('، ')}). قد تخص مستأجراً سابقاً.
+      </div>
+      <table>
+        <thead><tr><th>رقم السند</th><th>المحل</th><th>التاريخ</th><th>المدفوع</th><th>الطريقة</th><th>الحالة</th></tr></thead>
+        <tbody>
+          ${stmtLegacyTx.map(t => `<tr class="legacy-row">
+            <td><b>${e(t.id)}</b></td>
+            <td>${e(String(t.shop || "-"))}</td>
+            <td>${e(t.startDate || "-")}</td>
+            <td class="text-teal">${(t.paidAmount || 0).toLocaleString()} ريال</td>
+            <td>${e(t.method || "-")}</td>
+            <td>${e(t.status || "-")}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8">
+        <title>كشف حساب — ${e(stmtTenant)}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+          .page-header { border-bottom: 3px solid #1d4ed8; padding-bottom: 14px; margin-bottom: 20px; }
+          .page-header h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+          .page-header h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin-top: 4px; }
+          .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
+          .section { margin-bottom: 22px; }
+          .section-title { font-size: 14px; font-weight: 700; border-right: 4px solid #1d4ed8; padding-right: 8px; margin-bottom: 10px; color: #1e293b; }
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th { background: #e2e8f0; padding: 9px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px; }
+          td { padding: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          .text-red { color: #dc2626; font-weight: 700; }
+          .text-teal { color: #0f766e; font-weight: 700; }
+          .text-gray { color: #94a3b8; }
+          .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+          .summary-card { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; }
+          .summary-card .lbl { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+          .summary-card .val { font-size: 16px; font-weight: 800; color: #1d4ed8; }
+          .legacy-note { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; margin-bottom: 8px; }
+          .legacy-row td { opacity: 0.82; }
+          .no-data { text-align: center; color: #94a3b8; padding: 14px; }
+          .page-footer { border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
+          .btn { display: block; padding: 12px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 240px; font-size: 15px; font-weight: 700; margin: 24px auto; font-family: inherit; }
+          @media print { .btn { display: none !important; } body { padding: 14px; } }
+        </style>
+      </head>
+      <body>
+        <button class="btn" onclick="window.print()">🖨️ اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+
+        <div class="page-header">
+          <h1>🏢 أسواق الشبرمي</h1>
+          <h2>كشف حساب المستأجر — ${e(stmtTenant)}</h2>
+          <div class="meta">تاريخ الإصدار: ${today} م &nbsp;|&nbsp; الفترة المالية: ${e(periodLabel)}</div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">الملخص المالي الإجمالي</div>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="lbl">إجمالي الإيجار (تاريخياً)</div>
+              <div class="val">${stmtSumAnnualRent.toLocaleString()} ر.س</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">إجمالي المحصّل (عقود)</div>
+              <div class="val" style="color:#0f766e">${stmtSumCollectedContracts.toLocaleString()} ر.س</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">مديونيات مستقلة قائمة</div>
+              <div class="val" style="color:#d97706">${stmtSumDebts.toLocaleString()} ر.س</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">الرصيد المستحق الحالي</div>
+              <div class="val" style="color:${stmtSumCurrentBalance > 0 ? "#dc2626" : "#94a3b8"}">${stmtSumCurrentBalance.toLocaleString()} ر.س</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">📝 العقود الحالية (${stmtCurrentShops.length})</div>
+          <table>
+            <thead><tr><th>رقم المحل</th><th>رقم إيجار</th><th>البداية</th><th>الانتهاء</th><th>الإيجار السنوي</th><th>المحصّل</th><th>المتبقي</th></tr></thead>
+            <tbody>${currentShopsRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">🗄️ العقود المؤرشفة (${stmtArchivedShops.length})</div>
+          <table>
+            <thead><tr><th>رقم المحل</th><th>رقم إيجار</th><th>البداية</th><th>الانتهاء</th><th>الإيجار السنوي</th><th>المحصّل</th></tr></thead>
+            <tbody>${archivedShopsRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">📂 المديونيات المستقلة القائمة (${stmtDebts.length})</div>
+          <table>
+            <thead><tr><th>رقم الدين</th><th>السنة</th><th>التفاصيل</th><th>المبلغ المستحق</th></tr></thead>
+            <tbody>${debtsRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">💰 سندات القبض (${e(periodLabel)} — ${stmtTransactions.length + stmtLegacyTx.length} سند)</div>
+          <table>
+            <thead><tr><th>رقم السند</th><th>المحل</th><th>التاريخ</th><th>المستهدف</th><th>المدفوع</th><th>المتبقي</th><th>الطريقة</th></tr></thead>
+            <tbody>${txRows}</tbody>
+          </table>
+          ${legacySection}
+        </div>
+
+        <div class="page-footer">أسواق الشبرمي — طُبع بتاريخ ${today} م</div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // ==========================================
+  // طباعة التقارير المالية
+  // ==========================================
+  const printFinancialReportPDF = () => {
+    const today = new Date().toLocaleDateString('ar-EG');
+    const e = escapeHtml;
+    let title, periodLabel, content;
+
+    if (rptTab === "income") {
+      const hasData = rptTx.length > 0 || rptExpFiltered.length > 0;
+      if (!hasData) return showToast("لا توجد بيانات للطباعة في هذه الفترة", "warning");
+
+      title = "تقرير الإيرادات والمصروفات";
+      if (rptMode === "year") {
+        periodLabel = rptYear === "الكل" ? "جميع السنوات" : `سنة ${rptYear}`;
+      } else {
+        periodLabel = `من ${rptFrom || "البداية"} إلى ${rptTo || "الآن"}`;
+      }
+      const netColor = rptNetIncome >= 0 ? "#0f766e" : "#dc2626";
+      const marginText = rptRevenue > 0 ? `هامش ${((rptNetIncome / rptRevenue) * 100).toFixed(1)}%` : "-";
+
+      const txRows = rptTx.length === 0
+        ? `<tr><td colspan="6" class="no-data">لا توجد سندات.</td></tr>`
+        : rptTx.map(t => `<tr>
+            <td><b>${e(t.id)}</b></td>
+            <td>${e(String(t.shop || "-"))}</td>
+            <td>${e(t.tenant || "-")}</td>
+            <td>${e(t.updateDate || t.startDate || "-")}</td>
+            <td class="text-teal">${(t.paidAmount || 0).toLocaleString()} ريال</td>
+            <td>${e(t.method || "-")}</td>
+          </tr>`).join('');
+
+      const expRows = rptExpFiltered.length === 0
+        ? `<tr><td colspan="4" class="no-data">لا توجد مصروفات.</td></tr>`
+        : rptExpFiltered.map(ex => `<tr>
+            <td>${e(ex.date || "-")}</td>
+            <td><b>${e(ex.category || "-")}</b></td>
+            <td>${(ex.amount || 0).toLocaleString()} ريال</td>
+            <td>${e(ex.notes || "-")}</td>
+          </tr>`).join('');
+
+      content = `
+        <div class="section">
+          <div class="summary-grid" style="grid-template-columns:repeat(3,1fr)">
+            <div class="summary-card">
+              <div class="lbl">إجمالي الإيرادات (${rptTx.length} سند)</div>
+              <div class="val">${rptRevenue.toLocaleString()} ريال</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">إجمالي المصروفات (${rptExpFiltered.length} مصروف)</div>
+              <div class="val" style="color:#475569">${rptExpTotal.toLocaleString()} ريال</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">صافي الدخل (${e(marginText)})</div>
+              <div class="val" style="color:${netColor}">${rptNetIncome.toLocaleString()} ريال</div>
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">💰 سندات القبض (${rptTx.length} سند)</div>
+          <table>
+            <thead><tr><th>رقم السند</th><th>المحل</th><th>المستأجر</th><th>التاريخ</th><th>المدفوع</th><th>الطريقة</th></tr></thead>
+            <tbody>${txRows}</tbody>
+            ${rptTx.length > 0 ? `<tfoot class="total-row"><tr><td colspan="4">الإجمالي</td><td class="text-teal">${rptRevenue.toLocaleString()} ريال</td><td></td></tr></tfoot>` : ''}
+          </table>
+        </div>
+        <div class="section">
+          <div class="section-title">🛠️ المصروفات (${rptExpFiltered.length} مصروف)</div>
+          <table>
+            <thead><tr><th>التاريخ</th><th>البند</th><th>المبلغ</th><th>ملاحظات</th></tr></thead>
+            <tbody>${expRows}</tbody>
+            ${rptExpFiltered.length > 0 ? `<tfoot class="total-row"><tr><td colspan="2">الإجمالي</td><td>${rptExpTotal.toLocaleString()} ريال</td><td></td></tr></tfoot>` : ''}
+          </table>
+        </div>`;
+
+    } else if (rptTab === "shop") {
+      if (rptShopRows.length === 0) return showToast("لا توجد بيانات محلات للطباعة", "warning");
+
+      title = "تقرير الإيرادات حسب المحل";
+      periodLabel = "كامل السجل التاريخي";
+      const sortLabel = rptShopSort === "revenue_desc" ? "الأعلى إيراداً أولاً" : "الأدنى إيراداً أولاً";
+      const totalRev = rptShopRows.reduce((s, r) => s + r.revenue, 0);
+      const totalTx = rptShopRows.reduce((s, r) => s + r.txCount, 0);
+
+      const shopRows = rptShopRows.map(row => {
+        const statusMap = { "مؤجر": "مؤجر", "شاغر": "شاغر", "تحت الصيانة": "صيانة", "مدمج": "مدمج", "-": "-" };
+        const statusLabel = statusMap[row.status] ?? e(row.status);
+        return `<tr>
+          <td><b>${e(row.shopNum)}</b></td>
+          <td>${e(row.tenant)}</td>
+          <td>${e(statusLabel)}</td>
+          <td class="text-blue">${row.revenue.toLocaleString()} ريال</td>
+          <td>${row.txCount}</td>
+        </tr>`;
+      }).join('');
+
+      content = `
+        <div class="section">
+          <div class="section-title">🏪 إيرادات المحلات — ${e(sortLabel)}</div>
+          <table>
+            <thead><tr><th>رقم المحل</th><th>المستأجر الحالي</th><th>الحالة</th><th>إجمالي الإيراد</th><th>عدد السندات</th></tr></thead>
+            <tbody>${shopRows}</tbody>
+            <tfoot class="total-row">
+              <tr><td colspan="3">الإجمالي الكلي (${rptShopRows.length} محل)</td><td class="text-blue">${totalRev.toLocaleString()} ريال</td><td>${totalTx}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="notice">ملاحظة: المصروفات التشغيلية لا ترتبط بمحل محدد في بنية البيانات الحالية — راجع تقرير الإيرادات والمصروفات للإجمالي.</div>`;
+
+    } else {
+      if (allOutstandingDebts.length === 0) return showToast("لا توجد متأخرات للطباعة", "warning");
+
+      title = "تقرير المتأخرات المستحقة";
+      periodLabel = "وضع حالي";
+
+      const makeTypeLabel = (d) => d.isShopDebt
+        ? (d.debtType === "active-expired" ? "إيجار عقد منتهٍ" : "إيجار مؤرشف")
+        : "دين مستقل";
+
+      let arrearsTable;
+      if (!rptArrearsGroup) {
+        const rows = rptArrearsFlat.map(d => `<tr>
+          <td>${e(d.tenant || "-")}</td>
+          <td>${e(d.isShopDebt ? d.label : "-")}</td>
+          <td class="text-red">${(d.amount || 0).toLocaleString()} ريال</td>
+          <td>${e(d.year || "-")}</td>
+          <td>${e(makeTypeLabel(d))}</td>
+          <td>${e(d.details || "-")}</td>
+        </tr>`).join('');
+        arrearsTable = `<table>
+          <thead><tr><th>المستأجر</th><th>المحل</th><th>المبلغ المستحق</th><th>السنة</th><th>النوع</th><th>التفاصيل</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot class="total-row"><tr><td colspan="2">الإجمالي الكلي (${rptArrearsFlat.length} بند)</td><td class="text-red">${rptArrearsTotal.toLocaleString()} ريال</td><td colspan="3"></td></tr></tfoot>
+        </table>`;
+      } else {
+        const groupRows = rptArrearsGrouped.map(group => {
+          const items = group.items.map(d => `<tr class="group-item">
+            <td></td>
+            <td>${e(d.isShopDebt ? d.label : "-")}</td>
+            <td class="text-red">${(d.amount || 0).toLocaleString()} ريال</td>
+            <td>${e(d.year || "-")}</td>
+            <td>${e(makeTypeLabel(d))}</td>
+            <td>${e(d.details || "-")}</td>
+          </tr>`).join('');
+          return `<tr class="group-header">
+            <td><b>👤 ${e(group.tenant)}</b></td>
+            <td></td>
+            <td class="text-red"><b>${group.total.toLocaleString()} ريال</b></td>
+            <td colspan="3"></td>
+          </tr>${items}`;
+        }).join('');
+        arrearsTable = `<table>
+          <thead><tr><th>المستأجر</th><th>المحل</th><th>المبلغ</th><th>السنة</th><th>النوع</th><th>التفاصيل</th></tr></thead>
+          <tbody>${groupRows}</tbody>
+          <tfoot class="total-row"><tr><td colspan="2">الإجمالي الكلي (${rptArrearsGrouped.length} مستأجر)</td><td class="text-red">${rptArrearsTotal.toLocaleString()} ريال</td><td colspan="3"></td></tr></tfoot>
+        </table>`;
+      }
+
+      content = `
+        <div class="section">
+          <div class="arrears-total">
+            <div style="font-size:13px;color:#991b1b;font-weight:700;margin-bottom:6px">إجمالي المتأخرات المستحقة حالياً</div>
+            <div style="font-size:26px;font-weight:800;color:#7f1d1d">${rptArrearsTotal.toLocaleString()} ريال</div>
+            <div style="font-size:12px;color:#dc2626;margin-top:4px">${allOutstandingDebts.length} بند مستحق</div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">🔴 تفصيل المتأخرات ${rptArrearsGroup ? "(مجمّعة حسب المستأجر)" : "(مسطّحة)"}</div>
+          ${arrearsTable}
+        </div>`;
+    }
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8">
+        <title>${e(title)}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+          .page-header { border-bottom: 3px solid #1d4ed8; padding-bottom: 14px; margin-bottom: 20px; }
+          .page-header h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+          .page-header h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin-top: 4px; }
+          .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
+          .section { margin-bottom: 22px; }
+          .section-title { font-size: 14px; font-weight: 700; border-right: 4px solid #1d4ed8; padding-right: 8px; margin-bottom: 10px; color: #1e293b; }
+          .summary-grid { display: grid; gap: 10px; }
+          .summary-card { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; }
+          .summary-card .lbl { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+          .summary-card .val { font-size: 17px; font-weight: 800; color: #1d4ed8; }
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th { background: #e2e8f0; padding: 9px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px; }
+          td { padding: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          .total-row td { background: #cbd5e1; font-weight: 700; color: #0f172a; border-color: #94a3b8; }
+          .group-header td { background: #f1f5f9; font-weight: 700; border-top: 2px solid #94a3b8; }
+          .group-item td { padding-right: 22px; }
+          .text-red { color: #dc2626; font-weight: 700; }
+          .text-teal { color: #0f766e; font-weight: 700; }
+          .text-blue { color: #1d4ed8; font-weight: 700; }
+          .text-gray { color: #94a3b8; }
+          .no-data { text-align: center; color: #94a3b8; padding: 14px; }
+          .notice { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; }
+          .arrears-total { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 8px; padding: 16px 20px; margin-bottom: 8px; }
+          .page-footer { border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
+          .btn { display: block; padding: 12px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 240px; font-size: 15px; font-weight: 700; margin: 24px auto; font-family: inherit; }
+          @media print { .btn { display: none !important; } body { padding: 14px; } }
+        </style>
+      </head>
+      <body>
+        <button class="btn" onclick="window.print()">🖨️ اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+
+        <div class="page-header">
+          <h1>🏢 أسواق الشبرمي</h1>
+          <h2>${e(title)}</h2>
+          <div class="meta">الفترة: ${e(periodLabel)} &nbsp;|&nbsp; تاريخ الطباعة: ${today} م</div>
+        </div>
+
+        ${content}
+
+        <div class="page-footer">أسواق الشبرمي — طُبع بتاريخ ${today} م</div>
       </body>
       </html>
     `);
@@ -2756,13 +3321,16 @@ export default function ShubramiSystem() {
                              const remainingBalance = s.annualRent - s.collected;
                              const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
                              const isDebtBlocked = isExpired && remainingBalance > 0;
+                             const isAdminUser = currentUser?.role === "مدير";
                              const statusLabel = isDebtBlocked
-                               ? '⚠️ منتهي ومديون - يجب سداد الدين أولاً (غير متاح للتجديد)'
+                               ? (isAdminUser
+                                   ? '⚠️ منتهي ومديون - (متاح للمدير: تجديد استثنائي أو مغادرة)'
+                                   : '⚠️ منتهي ومديون - يجب سداد الدين أولاً (غير متاح للتجديد)')
                                : isExpired
                                  ? '⚠️ منتهي - متاح للتجديد'
                                  : 'ساري';
                              return (
-                               <option key={s.id} value={s.id} disabled={isDebtBlocked}>
+                               <option key={s.id} value={s.id} disabled={isDebtBlocked && !isAdminUser}>
                                  {displayName} ({statusLabel})
                                </option>
                              );
@@ -2981,6 +3549,601 @@ export default function ShubramiSystem() {
                        </tbody>
                      </table>
                    </div>
+                 </div>
+               )}
+
+               {activeTab === "tenant_statement" && (
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                   <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                     <h3 className="text-base font-bold text-slate-900">👤 كشف حساب المستأجر (للقراءة فقط)</h3>
+                     {stmtTenant && (
+                       <button
+                         onClick={printTenantStatementPDF}
+                         className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors"
+                       >
+                         🖨️ طباعة الكشف
+                       </button>
+                     )}
+                   </div>
+
+                   <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
+                     <div className="flex-1 min-w-[200px]">
+                       <input
+                         type="text"
+                         placeholder="🔍 بحث باسم المستأجر..."
+                         className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs"
+                         value={stmtSearch}
+                         onChange={e => { setStmtSearch(e.target.value); setStmtTenant(""); }}
+                       />
+                     </div>
+                     <div className="flex-1 min-w-[220px]">
+                       <select
+                         className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs"
+                         value={stmtTenant}
+                         onChange={e => { setStmtTenant(e.target.value); setStmtTxYear("الكل"); setStmtShowArchive(false); }}
+                       >
+                         <option value="">— اختر مستأجراً —</option>
+                         {filteredStatementTenants.map(t => (
+                           <option key={t} value={t}>{t}</option>
+                         ))}
+                       </select>
+                     </div>
+                   </div>
+
+                   {!stmtTenant ? (
+                     <div className="text-center text-slate-400 py-12 text-sm">اختر مستأجراً من القائمة أعلاه لعرض كشف حسابه.</div>
+                   ) : (
+                     <div className="flex flex-col gap-5">
+
+                       {/* الملخص المالي */}
+                       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                           <div className="text-[10px] text-blue-700 font-semibold mb-1">إجمالي الإيجار (تاريخياً)</div>
+                           <div className="text-base font-bold text-blue-900">{stmtSumAnnualRent.toLocaleString()} ر.س</div>
+                         </div>
+                         <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 text-center">
+                           <div className="text-[10px] text-teal-700 font-semibold mb-1">إجمالي المحصّل (عقود)</div>
+                           <div className="text-base font-bold text-teal-900">{stmtSumCollectedContracts.toLocaleString()} ر.س</div>
+                         </div>
+                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                           <div className="text-[10px] text-amber-700 font-semibold mb-1">مديونيات مستقلة قائمة</div>
+                           <div className="text-base font-bold text-amber-900">{stmtSumDebts.toLocaleString()} ر.س</div>
+                         </div>
+                         <div className={`border rounded-xl p-3 text-center ${stmtSumCurrentBalance > 0 ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-200"}`}>
+                           <div className={`text-[10px] font-semibold mb-1 ${stmtSumCurrentBalance > 0 ? "text-red-700" : "text-slate-600"}`}>الرصيد المستحق الحالي</div>
+                           <div className={`text-base font-bold ${stmtSumCurrentBalance > 0 ? "text-red-900" : "text-slate-500"}`}>{stmtSumCurrentBalance.toLocaleString()} ر.س</div>
+                         </div>
+                       </div>
+
+                       {/* العقود الحالية */}
+                       <div>
+                         <h4 className="text-sm font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">📝 العقود الحالية</h4>
+                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                           <table className="w-full text-right text-slate-800 text-xs">
+                             <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                               <tr>
+                                 <th className="p-3 font-semibold">رقم المحل</th>
+                                 <th className="p-3 font-semibold">رقم عقد إيجار</th>
+                                 <th className="p-3 font-semibold">تاريخ البداية</th>
+                                 <th className="p-3 font-semibold">تاريخ الانتهاء</th>
+                                 <th className="p-3 font-semibold">الإيجار السنوي</th>
+                                 <th className="p-3 font-semibold">المحصّل</th>
+                                 <th className="p-3 font-semibold">المتبقي</th>
+                                 <th className="p-3 font-semibold">الحالة</th>
+                               </tr>
+                             </thead>
+                             <tbody>
+                               {stmtCurrentShops.length === 0 ? (
+                                 <tr><td colSpan="8" className="p-5 text-center text-slate-400">لا توجد عقود حالية لهذا المستأجر.</td></tr>
+                               ) : stmtCurrentShops.map(s => {
+                                 const bal = Math.max(0, (s.annualRent || 0) - (s.collected || 0));
+                                 const expired = isContractExpired(s.endDate);
+                                 return (
+                                   <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                     <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
+                                     <td className="p-3 font-bold text-blue-700">{s.ejarNumber || "-"}</td>
+                                     <td className="p-3">{s.startDate || "-"}</td>
+                                     <td className={`p-3 ${expired ? "text-red-700 font-bold" : ""}`}>{s.endDate || "-"}</td>
+                                     <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
+                                     <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
+                                     <td className={`p-3 font-bold ${bal > 0 ? "text-red-700" : "text-slate-500"}`}>{bal.toLocaleString()}</td>
+                                     <td className="p-3">
+                                       {s.status === "مؤجر" && !expired && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">✅ ساري</span>}
+                                       {s.status === "مؤجر" && expired && <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>}
+                                       {s.status === "مدمج" && <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🔗 مدمج</span>}
+                                       {s.status === "شاغر" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">📭 شاغر</span>}
+                                     </td>
+                                   </tr>
+                                 );
+                               })}
+                             </tbody>
+                           </table>
+                         </div>
+                       </div>
+
+                       {/* أرشيف العقود السابقة - قابل للطي */}
+                       <div>
+                         <button
+                           className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2 border-b border-slate-200 pb-1 w-full text-right hover:text-slate-900 transition-colors"
+                           onClick={() => setStmtShowArchive(v => !v)}
+                         >
+                           <span>{stmtShowArchive ? "▼" : "▶"}</span>
+                           <span>🗄️ أرشيف العقود السابقة ({stmtArchivedShops.length})</span>
+                         </button>
+                         {stmtShowArchive && (
+                           <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                             <table className="w-full text-right text-slate-800 text-xs">
+                               <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                                 <tr>
+                                   <th className="p-3 font-semibold">رقم المحل</th>
+                                   <th className="p-3 font-semibold">رقم عقد إيجار</th>
+                                   <th className="p-3 font-semibold">البداية</th>
+                                   <th className="p-3 font-semibold">الانتهاء</th>
+                                   <th className="p-3 font-semibold">الإيجار</th>
+                                   <th className="p-3 font-semibold">المحصّل</th>
+                                   <th className="p-3 font-semibold">نوع الإجراء</th>
+                                 </tr>
+                               </thead>
+                               <tbody>
+                                 {stmtArchivedShops.length === 0 ? (
+                                   <tr><td colSpan="7" className="p-5 text-center text-slate-400">لا توجد عقود مؤرشفة.</td></tr>
+                                 ) : stmtArchivedShops.map(s => (
+                                   <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                     <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
+                                     <td className="p-3 text-blue-700">{s.ejarNumber || "-"}</td>
+                                     <td className="p-3">{s.startDate || "-"}</td>
+                                     <td className="p-3">{s.endDate || "-"}</td>
+                                     <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
+                                     <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
+                                     <td className="p-3">
+                                       {s.status === "أرشيف - مجدد" && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🔄 مجدد</span>}
+                                       {s.status === "أرشيف - مخلى" && <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🚪 مخلى</span>}
+                                       {s.status === "أرشيف - منتهي" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>}
+                                     </td>
+                                   </tr>
+                                 ))}
+                               </tbody>
+                             </table>
+                           </div>
+                         )}
+                       </div>
+
+                       {/* المديونيات المستقلة */}
+                       <div>
+                         <h4 className="text-sm font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">📂 المديونيات المستقلة القائمة</h4>
+                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                           <table className="w-full text-right text-slate-800 text-xs">
+                             <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                               <tr>
+                                 <th className="p-3 font-semibold">رقم الدين</th>
+                                 <th className="p-3 font-semibold">السنة</th>
+                                 <th className="p-3 font-semibold">التفاصيل</th>
+                                 <th className="p-3 font-semibold">المبلغ المستحق</th>
+                               </tr>
+                             </thead>
+                             <tbody>
+                               {stmtDebts.length === 0 ? (
+                                 <tr><td colSpan="4" className="p-5 text-center text-slate-400">لا توجد مديونيات مستقلة.</td></tr>
+                               ) : stmtDebts.map(d => (
+                                 <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                   <td className="p-3 font-bold text-slate-900">{d.id}</td>
+                                   <td className="p-3">{d.year || "-"}</td>
+                                   <td className="p-3 text-slate-600">{d.details || "-"}</td>
+                                   <td className="p-3 font-bold text-red-700">{(d.amount || 0).toLocaleString()} ر.س</td>
+                                 </tr>
+                               ))}
+                             </tbody>
+                           </table>
+                         </div>
+                       </div>
+
+                       {/* سندات القبض */}
+                       <div>
+                         <div className="flex items-center justify-between mb-2 border-b border-slate-200 pb-1">
+                           <h4 className="text-sm font-bold text-slate-800">💰 سندات القبض المرتبطة</h4>
+                           <select
+                             className="rounded-lg border border-slate-300 p-1 bg-white text-slate-800 outline-none text-xs"
+                             value={stmtTxYear}
+                             onChange={e => setStmtTxYear(e.target.value)}
+                           >
+                             <option value="الكل">كل السنوات</option>
+                             {stmtTxYears.map(y => <option key={y} value={y}>{y}</option>)}
+                           </select>
+                         </div>
+                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                           <table className="w-full text-right text-slate-800 text-xs">
+                             <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                               <tr>
+                                 <th className="p-3 font-semibold">رقم السند</th>
+                                 <th className="p-3 font-semibold">المحل</th>
+                                 <th className="p-3 font-semibold">التاريخ</th>
+                                 <th className="p-3 font-semibold">المستهدف</th>
+                                 <th className="p-3 font-semibold">المدفوع</th>
+                                 <th className="p-3 font-semibold">المتبقي</th>
+                                 <th className="p-3 font-semibold">الطريقة</th>
+                                 <th className="p-3 font-semibold">الحالة</th>
+                               </tr>
+                             </thead>
+                             <tbody>
+                               {stmtTransactions.length === 0 ? (
+                                 <tr><td colSpan="8" className="p-5 text-center text-slate-400">لا توجد سندات قبض مسجّلة.</td></tr>
+                               ) : stmtTransactions.map(t => (
+                                 <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                   <td className="p-3 font-bold text-slate-900">{t.id}</td>
+                                   <td className="p-3">{t.shop || "-"}</td>
+                                   <td className="p-3 whitespace-nowrap">{t.startDate || "-"}</td>
+                                   <td className="p-3">{(t.targetAmount || 0).toLocaleString()}</td>
+                                   <td className="p-3 text-teal-700 font-bold">{(t.paidAmount || 0).toLocaleString()}</td>
+                                   <td className={`p-3 font-bold ${(t.remainingAmount || 0) > 0 ? "text-red-700" : "text-slate-400"}`}>{(t.remainingAmount || 0).toLocaleString()}</td>
+                                   <td className="p-3">{t.method || "-"}</td>
+                                   <td className="p-3">
+                                     <span className={`px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap border ${
+                                       t.status === "مغلق" ? "bg-teal-100 text-teal-700 border-teal-200" :
+                                       (t.status || "").includes("جزئي") ? "bg-amber-100 text-amber-700 border-amber-200" :
+                                       (t.status || "").includes("مديونية") ? "bg-blue-100 text-blue-700 border-blue-200" :
+                                       "bg-slate-100 text-slate-600 border-slate-200"
+                                     }`}>{t.status || "-"}</span>
+                                   </td>
+                                 </tr>
+                               ))}
+                             </tbody>
+                           </table>
+                         </div>
+
+                         {/* السندات القديمة — ربط تقديري */}
+                         {stmtLegacyTx.length > 0 && (
+                           <div className="mt-4 border border-amber-200 rounded-xl bg-amber-50 p-4">
+                             <div className="flex items-start gap-2 mb-3">
+                               <span className="text-amber-600 text-base">⚠️</span>
+                               <div>
+                                 <div className="font-bold text-amber-800 text-xs mb-0.5">سندات قديمة — ربط تقديري (غير مؤكّد)</div>
+                                 <div className="text-amber-700 text-[11px]">
+                                   هذه سندات قبض قديمة (قبل تحديث النظام) لا تحمل اسم المستأجر — تظهر هنا لأن رقم محلها يتطابق مع محلات هذا المستأجر ({stmtAllShopNumbers.join('، ')}). قد تكون تخص مستأجراً سابقاً. تحقق من تبويب "سندات القبض" للتأكيد.
+                                 </div>
+                               </div>
+                             </div>
+                             <div className="overflow-x-auto rounded-lg border border-amber-200 bg-white">
+                               <table className="w-full text-right text-slate-800 text-xs">
+                                 <thead className="bg-amber-100 text-amber-900 border-b border-amber-200">
+                                   <tr>
+                                     <th className="p-3 font-semibold">رقم السند</th>
+                                     <th className="p-3 font-semibold">المحل</th>
+                                     <th className="p-3 font-semibold">التاريخ</th>
+                                     <th className="p-3 font-semibold">المدفوع</th>
+                                     <th className="p-3 font-semibold">الطريقة</th>
+                                     <th className="p-3 font-semibold">الحالة</th>
+                                   </tr>
+                                 </thead>
+                                 <tbody>
+                                   {stmtLegacyTx.map(t => (
+                                     <tr key={t.id} className="border-b border-amber-100 hover:bg-amber-50 transition-colors opacity-75">
+                                       <td className="p-3 font-bold text-slate-700">{t.id}</td>
+                                       <td className="p-3">{t.shop || "-"}</td>
+                                       <td className="p-3 whitespace-nowrap">{t.startDate || "-"}</td>
+                                       <td className="p-3 text-teal-700 font-bold">{(t.paidAmount || 0).toLocaleString()}</td>
+                                       <td className="p-3">{t.method || "-"}</td>
+                                       <td className="p-3 text-slate-500">{t.status || "-"}</td>
+                                     </tr>
+                                   ))}
+                                 </tbody>
+                               </table>
+                             </div>
+                           </div>
+                         )}
+                       </div>
+
+                     </div>
+                   )}
+                 </div>
+               )}
+
+               {activeTab === "financial_reports" && (
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                   <h3 className="text-base font-bold text-slate-900 mb-4">📊 التقارير المالية (للقراءة فقط)</h3>
+
+                   <div className="flex items-center justify-between mb-6 border-b border-slate-300 pb-2 flex-wrap gap-2">
+                     <div className="flex gap-4 flex-wrap">
+                       <button onClick={() => setRptTab("income")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "income" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>📈 الدخل والمصروفات</button>
+                       <button onClick={() => setRptTab("shop")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "shop" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🏪 حسب المحل</button>
+                       <button onClick={() => setRptTab("arrears")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "arrears" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔴 المتأخرات المفصّلة</button>
+                     </div>
+                     <button
+                       onClick={printFinancialReportPDF}
+                       className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+                     >
+                       🖨️ طباعة التقرير
+                     </button>
+                   </div>
+
+                   {/* التقرير 1 — الدخل والمصروفات بفترة */}
+                   {rptTab === "income" && (
+                     <div className="flex flex-col gap-5">
+                       <div className="bg-slate-100 p-3 rounded-xl border border-slate-300">
+                         <div className="flex gap-6 mb-3 flex-wrap">
+                           <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                             <input type="radio" name="rptMode" value="year" checked={rptMode === "year"} onChange={() => setRptMode("year")} />
+                             سنة مالية
+                           </label>
+                           <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                             <input type="radio" name="rptMode" value="range" checked={rptMode === "range"} onChange={() => setRptMode("range")} />
+                             نطاق تواريخ مخصص
+                           </label>
+                         </div>
+                         {rptMode === "year" ? (
+                           <select className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptYear} onChange={e => setRptYear(e.target.value)}>
+                             <option value="الكل">الكل (جميع السنوات)</option>
+                             {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                           </select>
+                         ) : (
+                           <div className="flex gap-4 flex-wrap items-end">
+                             <div>
+                               <label className="text-[11px] text-slate-600 block mb-1">من:</label>
+                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptFrom} onChange={e => setRptFrom(e.target.value)} />
+                             </div>
+                             <div>
+                               <label className="text-[11px] text-slate-600 block mb-1">إلى:</label>
+                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptTo} onChange={e => setRptTo(e.target.value)} />
+                             </div>
+                             {(rptFrom || rptTo) && (
+                               <button onClick={() => { setRptFrom(""); setRptTo(""); }} className="text-xs text-slate-500 hover:text-slate-800 underline pb-2">مسح</button>
+                             )}
+                           </div>
+                         )}
+                       </div>
+
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                           <div className="text-[10px] text-blue-700 font-semibold mb-1">إجمالي الإيرادات</div>
+                           <div className="text-xl font-bold text-blue-900">{rptRevenue.toLocaleString()} ريال</div>
+                           <div className="text-[11px] text-blue-600 mt-1">{rptTx.length} سند قبض</div>
+                         </div>
+                         <div className="bg-slate-50 border border-slate-300 rounded-xl p-4 text-center">
+                           <div className="text-[10px] text-slate-600 font-semibold mb-1">إجمالي المصروفات</div>
+                           <div className="text-xl font-bold text-slate-800">{rptExpTotal.toLocaleString()} ريال</div>
+                           <div className="text-[11px] text-slate-500 mt-1">{rptExpFiltered.length} مصروف</div>
+                         </div>
+                         <div className={`border rounded-xl p-4 text-center ${rptNetIncome >= 0 ? "bg-teal-50 border-teal-200" : "bg-red-50 border-red-200"}`}>
+                           <div className={`text-[10px] font-semibold mb-1 ${rptNetIncome >= 0 ? "text-teal-700" : "text-red-700"}`}>صافي الدخل</div>
+                           <div className={`text-xl font-bold ${rptNetIncome >= 0 ? "text-teal-900" : "text-red-900"}`}>{rptNetIncome.toLocaleString()} ريال</div>
+                           <div className={`text-[11px] mt-1 ${rptNetIncome >= 0 ? "text-teal-600" : "text-red-600"}`}>{rptRevenue > 0 ? `هامش ${((rptNetIncome / rptRevenue) * 100).toFixed(1)}%` : "-"}</div>
+                         </div>
+                       </div>
+
+                       <div className="border border-slate-200 rounded-xl overflow-hidden">
+                         <button className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 transition-colors text-right" onClick={() => setRptIncomeShowTx(v => !v)}>
+                           <span className="font-bold text-slate-800 text-xs">💰 تفصيل سندات القبض ({rptTx.length} سند)</span>
+                           <span className="text-slate-500 text-xs">{rptIncomeShowTx ? "▲ إخفاء" : "▼ عرض"}</span>
+                         </button>
+                         {rptIncomeShowTx && (
+                           <div className="overflow-x-auto border-t border-slate-200">
+                             <table className="w-full text-right text-slate-800 text-xs">
+                               <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                                 <tr>
+                                   <th className="p-3 font-semibold">رقم السند</th>
+                                   <th className="p-3 font-semibold">المحل</th>
+                                   <th className="p-3 font-semibold">المستأجر</th>
+                                   <th className="p-3 font-semibold">التاريخ</th>
+                                   <th className="p-3 font-semibold">المدفوع</th>
+                                   <th className="p-3 font-semibold">الطريقة</th>
+                                   <th className="p-3 font-semibold">الحالة</th>
+                                 </tr>
+                               </thead>
+                               <tbody>
+                                 {rptTx.length === 0 ? (
+                                   <tr><td colSpan="7" className="p-5 text-center text-slate-400">لا توجد سندات في هذه الفترة.</td></tr>
+                                 ) : rptTx.map(t => (
+                                   <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                     <td className="p-3 font-bold text-slate-900">{t.id}</td>
+                                     <td className="p-3">{t.shop || "-"}</td>
+                                     <td className="p-3">{t.tenant || "-"}</td>
+                                     <td className="p-3 whitespace-nowrap">{t.updateDate || t.startDate || "-"}</td>
+                                     <td className="p-3 font-bold text-teal-700">{(t.paidAmount || 0).toLocaleString()}</td>
+                                     <td className="p-3">{t.method || "-"}</td>
+                                     <td className="p-3">
+                                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                         t.status === "مغلق" ? "bg-teal-100 text-teal-700 border-teal-200" :
+                                         (t.status || "").includes("جزئي") ? "bg-amber-100 text-amber-700 border-amber-200" :
+                                         (t.status || "").includes("مديونية") ? "bg-blue-100 text-blue-700 border-blue-200" :
+                                         "bg-slate-100 text-slate-600 border-slate-200"
+                                       }`}>{t.status || "-"}</span>
+                                     </td>
+                                   </tr>
+                                 ))}
+                               </tbody>
+                             </table>
+                           </div>
+                         )}
+                       </div>
+
+                       <div className="border border-slate-200 rounded-xl overflow-hidden">
+                         <button className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 transition-colors text-right" onClick={() => setRptIncomeShowExp(v => !v)}>
+                           <span className="font-bold text-slate-800 text-xs">🛠️ تفصيل المصروفات ({rptExpFiltered.length} مصروف)</span>
+                           <span className="text-slate-500 text-xs">{rptIncomeShowExp ? "▲ إخفاء" : "▼ عرض"}</span>
+                         </button>
+                         {rptIncomeShowExp && (
+                           <div className="overflow-x-auto border-t border-slate-200">
+                             <table className="w-full text-right text-slate-800 text-xs">
+                               <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                                 <tr>
+                                   <th className="p-3 font-semibold">التاريخ</th>
+                                   <th className="p-3 font-semibold">البند</th>
+                                   <th className="p-3 font-semibold">المبلغ</th>
+                                   <th className="p-3 font-semibold">ملاحظات</th>
+                                 </tr>
+                               </thead>
+                               <tbody>
+                                 {rptExpFiltered.length === 0 ? (
+                                   <tr><td colSpan="4" className="p-5 text-center text-slate-400">لا توجد مصروفات في هذه الفترة.</td></tr>
+                                 ) : rptExpFiltered.map((e, i) => (
+                                   <tr key={i} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                     <td className="p-3 whitespace-nowrap">{e.date || "-"}</td>
+                                     <td className="p-3 font-semibold text-slate-800">{e.category || "-"}</td>
+                                     <td className="p-3 font-bold text-slate-800">{(e.amount || 0).toLocaleString()}</td>
+                                     <td className="p-3 text-slate-500">{e.notes || "-"}</td>
+                                   </tr>
+                                 ))}
+                               </tbody>
+                             </table>
+                           </div>
+                         )}
+                       </div>
+                     </div>
+                   )}
+
+                   {/* التقرير 2 — حسب المحل */}
+                   {rptTab === "shop" && (
+                     <div className="flex flex-col gap-5">
+                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                         <span className="font-bold">ملاحظة:</span> المصروفات التشغيلية لا ترتبط بمحل محدد في بنية البيانات الحالية — تظهر كإجمالي في التقرير الأول. الجدول أدناه يعرض إيرادات كل محل (مجموع سندات القبض) عبر كامل السجل التاريخي.
+                       </div>
+
+                       <div className="flex items-center justify-between flex-wrap gap-3">
+                         <h4 className="text-sm font-bold text-slate-800">🏪 إيرادات المحلات (كامل السجل التاريخي)</h4>
+                         <select className="rounded-lg border border-slate-300 p-1.5 bg-white text-slate-800 outline-none text-xs" value={rptShopSort} onChange={e => setRptShopSort(e.target.value)}>
+                           <option value="revenue_desc">الأعلى إيراداً أولاً</option>
+                           <option value="revenue_asc">الأدنى إيراداً أولاً</option>
+                         </select>
+                       </div>
+
+                       <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                         <table className="w-full text-right text-slate-800 text-xs">
+                           <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                             <tr>
+                               <th className="p-3 font-semibold">رقم المحل</th>
+                               <th className="p-3 font-semibold">المستأجر الحالي</th>
+                               <th className="p-3 font-semibold">الحالة</th>
+                               <th className="p-3 font-semibold">إجمالي الإيرادات</th>
+                               <th className="p-3 font-semibold">عدد السندات</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {rptShopRows.length === 0 ? (
+                               <tr><td colSpan="5" className="p-5 text-center text-slate-400">لا توجد بيانات.</td></tr>
+                             ) : rptShopRows.map(row => (
+                               <tr key={row.shopNum} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                 <td className="p-3 font-bold text-slate-900">{row.shopNum}</td>
+                                 <td className="p-3 text-slate-700">{row.tenant}</td>
+                                 <td className="p-3">
+                                   {row.status === "مؤجر" && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">✅ مؤجر</span>}
+                                   {row.status === "شاغر" && <span className="bg-red-100 text-red-600 border border-red-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">📭 شاغر</span>}
+                                   {row.status === "تحت الصيانة" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔧 صيانة</span>}
+                                   {row.status === "مدمج" && <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔗 مدمج</span>}
+                                   {row.status === "-" && <span className="text-slate-400 text-[10px]">-</span>}
+                                 </td>
+                                 <td className="p-3 font-bold text-blue-700">{row.revenue.toLocaleString()} ريال</td>
+                                 <td className="p-3 text-slate-600">{row.txCount}</td>
+                               </tr>
+                             ))}
+                           </tbody>
+                           {rptShopRows.length > 0 && (
+                             <tfoot className="bg-slate-100 border-t-2 border-slate-300">
+                               <tr>
+                                 <td colSpan="3" className="p-3 font-bold text-slate-800">الإجمالي الكلي</td>
+                                 <td className="p-3 font-bold text-blue-900">{rptShopRows.reduce((s, r) => s + r.revenue, 0).toLocaleString()} ريال</td>
+                                 <td className="p-3 font-bold text-slate-700">{rptShopRows.reduce((s, r) => s + r.txCount, 0)}</td>
+                               </tr>
+                             </tfoot>
+                           )}
+                         </table>
+                       </div>
+                     </div>
+                   )}
+
+                   {/* التقرير 3 — المتأخرات المفصّلة */}
+                   {rptTab === "arrears" && (
+                     <div className="flex flex-col gap-5">
+                       <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+                         <div>
+                           <div className="text-xs text-red-700 font-semibold mb-1">إجمالي المتأخرات المستحقة حالياً</div>
+                           <div className="text-2xl font-extrabold text-red-900">{rptArrearsTotal.toLocaleString()} ريال</div>
+                           <div className="text-[11px] text-red-600 mt-1">{allOutstandingDebts.length} بند مستحق</div>
+                         </div>
+                         <div className="text-5xl opacity-20">🔴</div>
+                       </div>
+
+                       <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 select-none w-fit">
+                         <input type="checkbox" checked={rptArrearsGroup} onChange={e => setRptArrearsGroup(e.target.checked)} className="rounded" />
+                         تجميع حسب المستأجر
+                       </label>
+
+                       {!rptArrearsGroup ? (
+                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                           <table className="w-full text-right text-slate-800 text-xs">
+                             <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                               <tr>
+                                 <th className="p-3 font-semibold">المستأجر</th>
+                                 <th className="p-3 font-semibold">المحل</th>
+                                 <th className="p-3 font-semibold">المبلغ المستحق</th>
+                                 <th className="p-3 font-semibold">تاريخ الاستحقاق</th>
+                                 <th className="p-3 font-semibold">النوع</th>
+                                 <th className="p-3 font-semibold">التفاصيل</th>
+                               </tr>
+                             </thead>
+                             <tbody>
+                               {rptArrearsFlat.length === 0 ? (
+                                 <tr><td colSpan="6" className="p-8 text-center text-slate-400 text-sm">🎉 لا توجد متأخرات مستحقة حالياً.</td></tr>
+                               ) : rptArrearsFlat.map(d => (
+                                 <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                   <td className="p-3 font-bold text-slate-900 max-w-[160px] truncate" title={d.tenant}>{d.tenant || "-"}</td>
+                                   <td className="p-3">{d.isShopDebt ? d.label : "-"}</td>
+                                   <td className="p-3 font-bold text-red-700">{(d.amount || 0).toLocaleString()} ريال</td>
+                                   <td className="p-3 whitespace-nowrap">{d.year || "-"}</td>
+                                   <td className="p-3">
+                                     {d.isShopDebt
+                                       ? d.debtType === "active-expired"
+                                         ? <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">إيجار عقد منتهٍ</span>
+                                         : <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">إيجار مؤرشف</span>
+                                       : <span className="bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">دين مستقل</span>
+                                     }
+                                   </td>
+                                   <td className="p-3 text-slate-500 max-w-[200px] truncate" title={d.details}>{d.details || "-"}</td>
+                                 </tr>
+                               ))}
+                             </tbody>
+                             {rptArrearsFlat.length > 0 && (
+                               <tfoot className="bg-slate-100 border-t-2 border-slate-300">
+                                 <tr>
+                                   <td colSpan="2" className="p-3 font-bold text-slate-800">الإجمالي الكلي للمتأخرات</td>
+                                   <td className="p-3 font-bold text-red-900">{rptArrearsTotal.toLocaleString()} ريال</td>
+                                   <td colSpan="3"></td>
+                                 </tr>
+                               </tfoot>
+                             )}
+                           </table>
+                         </div>
+                       ) : (
+                         <div className="flex flex-col gap-3">
+                           {rptArrearsGrouped.length === 0 ? (
+                             <div className="p-8 text-center text-slate-400 text-sm bg-slate-50 rounded-xl border border-slate-200">🎉 لا توجد متأخرات مستحقة حالياً.</div>
+                           ) : rptArrearsGrouped.map((group, i) => (
+                             <div key={i} className="border border-slate-200 rounded-xl overflow-hidden">
+                               <div className="flex items-center justify-between p-3 bg-slate-50 border-b border-slate-200">
+                                 <span className="font-bold text-slate-900 text-xs truncate max-w-[240px]" title={group.tenant}>👤 {group.tenant}</span>
+                                 <span className="bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap">{group.total.toLocaleString()} ريال</span>
+                               </div>
+                               <div className="divide-y divide-slate-100">
+                                 {group.items.map((d, j) => (
+                                   <div key={j} className="flex items-center justify-between px-4 py-2.5 text-xs hover:bg-slate-50 transition-colors gap-3">
+                                     <div className="flex items-center gap-2 min-w-0">
+                                       {d.isShopDebt
+                                         ? d.debtType === "active-expired"
+                                           ? <span className="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap flex-shrink-0">إيجار منتهٍ</span>
+                                           : <span className="bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap flex-shrink-0">إيجار مؤرشف</span>
+                                         : <span className="bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap flex-shrink-0">دين مستقل</span>
+                                       }
+                                       <span className="text-slate-500 truncate">{d.details || (d.isShopDebt ? `محل ${d.label}` : "-")}</span>
+                                     </div>
+                                     <span className="font-bold text-red-700 whitespace-nowrap">{(d.amount || 0).toLocaleString()} ريال</span>
+                                   </div>
+                                 ))}
+                               </div>
+                             </div>
+                           ))}
+                         </div>
+                       )}
+                     </div>
+                   )}
+
                  </div>
                )}
 
