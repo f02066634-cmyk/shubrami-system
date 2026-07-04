@@ -296,7 +296,8 @@ const FinancialCollection = ({
   shopsDB, transactionsDB, installmentsDB, isContractExpired, todayDateObj,
   searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears,
   filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum,
-  printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF
+  printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF,
+  isSaving
 }) => {
   return (
     <div className="animate-fade-in text-sm">
@@ -339,7 +340,7 @@ const FinancialCollection = ({
             <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label>
             <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayAmount} onChange={(e) => setNewPayAmount(e.target.value)} required />
           </div>
-          <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">➕ حفظ السند</button>
+          <button type="submit" disabled={isSaving} className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "➕ حفظ السند"}</button>
         </form>
       )}
 
@@ -366,7 +367,7 @@ const FinancialCollection = ({
                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label>
                 <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={updatePayAmount} onChange={(e) => setUpdatePayAmount(e.target.value)} required />
               </div>
-              <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">🔄 اعتماد الإغلاق</button>
+              <button type="submit" disabled={isSaving} className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "🔄 اعتماد الإغلاق"}</button>
             </>
           )}
          </form>
@@ -398,7 +399,7 @@ const FinancialCollection = ({
                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ الاستحقاق:</label>
                 <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={instDate} onChange={(e) => setInstDate(e.target.value)} required />
               </div>
-              <button type="submit" className="md:col-span-3 mt-1 bg-teal-700 hover:bg-teal-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">📅 جدولة الدفعة</button>
+              <button type="submit" disabled={isSaving} className="md:col-span-3 mt-1 bg-teal-700 hover:bg-teal-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الجدولة..." : "📅 جدولة الدفعة"}</button>
            </form>
 
            <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
@@ -681,6 +682,8 @@ export default function ShubramiSystem() {
   const [instAmount, setInstAmount] = useState("");
   const [instDate, setInstDate] = useState("");
   const [payingInstId, setPayingInstId] = useState("");
+
+  const [isSaving, setIsSaving] = useState(false);
 
   const [stmtTenant, setStmtTenant] = useState("");
   const [stmtSearch, setStmtSearch] = useState("");
@@ -1081,10 +1084,11 @@ export default function ShubramiSystem() {
 
   const handleNewContract = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (newContractShops.length === 0 || newContractTenant.trim() === "" || newContractEjarNumber.trim() === "") {
         return showToast("الرجاء تعبئة جميع البيانات واختيار محل واحد على الأقل من خلال حقل التأجير المجمع.", "error");
     }
-    
+
     const startD = new Date(newContractStart);
     const endD = new Date(newContractEnd);
     if (endD <= startD) {
@@ -1092,7 +1096,7 @@ export default function ShubramiSystem() {
     }
 
     const mainShopName = newContractShops[0];
-    
+
     const mainUpdate = {
       status: "مؤجر",
       tenant: newContractTenant,
@@ -1100,7 +1104,7 @@ export default function ShubramiSystem() {
       annualRent: Number(newContractRent),
       startDate: newContractStart,
       endDate: newContractEnd,
-      isGroupMain: newContractShops.length > 1, 
+      isGroupMain: newContractShops.length > 1,
       groupShops: newContractShops.length > 1 ? newContractShops : null
     };
 
@@ -1111,7 +1115,7 @@ export default function ShubramiSystem() {
       annualRent: 0,
       startDate: newContractStart,
       endDate: newContractEnd,
-      isGroupMain: false, 
+      isGroupMain: false,
       groupShops: newContractShops
     };
 
@@ -1124,31 +1128,38 @@ export default function ShubramiSystem() {
        targetIDs.push({ id: shopRecord.id, num: shopNum });
     }
 
-    for (const target of targetIDs) {
-       const payload = target.num === mainShopName ? mainUpdate : dependentUpdate;
-       const { error: shopErr } = await supabase.from('shops').update(payload).eq('id', target.id);
-       if (shopErr) {
-         return showToast(
-           `🚫 فشل حفظ بيانات المحل ${target.num}. العقد لم يُحفظ بالكامل — يُنصح بتحديث الصفحة ومراجعة حالة المحلات قبل المتابعة.`,
-           "error", true
-         );
-       }
+    setIsSaving(true);
+    try {
+      for (const target of targetIDs) {
+         const payload = target.num === mainShopName ? mainUpdate : dependentUpdate;
+         const { error: shopErr } = await supabase.from('shops').update(payload).eq('id', target.id);
+         if (shopErr) {
+           return showToast(
+             `🚫 فشل حفظ بيانات المحل ${target.num}. العقد لم يُحفظ بالكامل — يُنصح بتحديث الصفحة ومراجعة حالة المحلات قبل المتابعة.`,
+             "error", true
+           );
+         }
+      }
+
+      setShopsDB(shopsDB.map(s => {
+         const matchedTarget = targetIDs.find(t => t.id === s.id);
+         if (matchedTarget) {
+             return { ...s, ...(matchedTarget.num === mainShopName ? mainUpdate : dependentUpdate) };
+         }
+         return s;
+      }));
+
+      setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
+      setNewContractRent(15000); setNewContractStart(""); setNewContractEnd("");
+      showToast(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`, "success");
+    } finally {
+      setIsSaving(false);
     }
-
-    setShopsDB(shopsDB.map(s => {
-       const matchedTarget = targetIDs.find(t => t.id === s.id);
-       if (matchedTarget) {
-           return { ...s, ...(matchedTarget.num === mainShopName ? mainUpdate : dependentUpdate) };
-       }
-       return s;
-    }));
-
-    setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
-    showToast(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`, "success");
   };
 
   const handleEditContract = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!editContractId) return showToast("الرجاء تحديد الكيان أولاً", "error");
 
     const originalRow = shopsDB.find(s => s.id === editContractId);
@@ -1177,6 +1188,8 @@ export default function ShubramiSystem() {
        }
     }
 
+    setIsSaving(true);
+    try {
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
        
        if (remainingBalance > 0) {
@@ -1246,6 +1259,8 @@ export default function ShubramiSystem() {
           return [...archivedState, ...newVacantRows];
        });
 
+       setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+       setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
        return showToast("تم الإخلاء بنجاح! السجل القديم الآن في الأرشيف وتم تفكيك وتوليد المحلات الشاغرة.", "success");
     }
 
@@ -1396,6 +1411,7 @@ export default function ShubramiSystem() {
           "success"
         );
         setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+        setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
         return;
       }
 
@@ -1471,6 +1487,7 @@ export default function ShubramiSystem() {
           "success"
         );
         setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+        setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
         return;
       }
 
@@ -1521,6 +1538,7 @@ export default function ShubramiSystem() {
       });
       showToast(`🎉 تم تجديد العقد للكيان الموحد ومزامنته سحابياً بنجاح!`, "success");
       setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+      setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
     } else {
       const { error: statusErr } = await supabase.from('shops').update({ status: editContractStatus }).eq('id', editContractId);
       if (statusErr) {
@@ -1528,11 +1546,17 @@ export default function ShubramiSystem() {
       }
       setShopsDB(shopsDB.map(s => s.id === editContractId ? { ...s, status: editContractStatus } : s));
       showToast("تم تحديث حالة العقد على السحابة بنجاح!", "success");
+      setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+      setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
+    }
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleNewPayment = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!newPayShop) return;
     
     const targetNum = Number(newPayTarget);
@@ -1571,8 +1595,10 @@ export default function ShubramiSystem() {
       status: status
     };
 
+    setIsSaving(true);
+    try {
     const { error: txErr } = await supabase.from('transactions').insert([newTx]);
-    
+
     if (!txErr) {
       const updatedCollected = activeShop.collected + amountNum;
       const { error: collectErr } = await supabase.from('shops').update({ collected: updatedCollected }).eq('id', activeShop.id);
@@ -1599,15 +1625,20 @@ export default function ShubramiSystem() {
          setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
       }
       setPayingInstId("");
+      setNewPayShop(""); setNewPayMethod("نقد"); setNewPayTarget(1000); setNewPayAmount(500);
 
       setTransactionsDB([...transactionsDB, newTx]);
 
       showToast(status === "مغلق (مكتمل)" ? "تم اكتمال الدفعة وإغلاق السند سحابياً! وتم إزالة الجدولة من التنبيهات." : "تم حفظ الدفعة وفتح سند معلق.", "success");
     }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleUpdatePayment = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!updatePayReceipt) return;
     const tx = transactionsDB.find(t => t.id === updatePayReceipt);
     if (!tx) return;
@@ -1633,6 +1664,8 @@ export default function ShubramiSystem() {
       updateDate: new Date().toISOString().split('T')[0] 
     };
 
+    setIsSaving(true);
+    try {
     const { error: txErr } = await supabase.from('transactions').update(updatedTx).eq('id', updatePayReceipt);
     if (!txErr) {
       if (activeShop) {
@@ -1673,24 +1706,35 @@ export default function ShubramiSystem() {
           addedAmount: Number(updatePayAmount)
         }
       });
+      setUpdatePayReceipt(""); setUpdatePayMethod("نقد"); setUpdatePayAmount(0);
       showToast("تم تحديث السند ومزامنة البيانات المحاسبية! وتم تنظيف التنبيهات التابعة له.", "success");
+    }
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleDebt = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     const newDebt = { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) };
-    
+
+    setIsSaving(true);
+    try {
     const { error } = await supabase.from('debts').insert([newDebt]);
     if (!error) {
       setDebtsDB([...debtsDB, newDebt]);
       setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
       showToast("تم إدراج المديونية السابقة في قاعدة البيانات السحابية.", "success");
     }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDebtPayment = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!payDebtId) return;
     const targetDebt = allOutstandingDebts.find(d => d.id === payDebtId);
     if (!targetDebt) return;
@@ -1699,6 +1743,8 @@ export default function ShubramiSystem() {
 
     const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
 
+    setIsSaving(true);
+    try {
     if (existingTxIndex >= 0) {
       const existingTx = transactionsDB[existingTxIndex];
       const updatedPaid = existingTx.paidAmount + payAmt;
@@ -1759,23 +1805,33 @@ export default function ShubramiSystem() {
     }
 
     showToast(payAmt === targetDebt.amount ? "تم سداد كامل المديونية وإغلاق السند بنجاح!" : "تم تسجيل السداد الجزئي وتحديث السند سحابياً.", "success");
-    setPayDebtId(""); setPayDebtAmount("");
+    setPayDebtId(""); setPayDebtAmount(""); setPayDebtMethod("نقد");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleExpense = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     const newExpense = { id: `E-${Date.now()}`, date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes };
-    
+
+    setIsSaving(true);
+    try {
     const { error } = await supabase.from('expenses').insert([newExpense]);
     if (!error) {
       setExpensesDB([...expensesDB, newExpense]);
       setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
       showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
     }
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleNewInstallment = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!instShop || !instAmount || !instDate) return showToast("الرجاء تعبئة جميع بيانات الجدولة", "error");
 
     const newInst = {
@@ -1785,6 +1841,8 @@ export default function ShubramiSystem() {
       date: instDate
     };
 
+    setIsSaving(true);
+    try {
     const { error } = await supabase.from('installments').insert([newInst]);
     if (!error) {
       setInstallmentsDB([...installmentsDB, newInst]);
@@ -1792,6 +1850,9 @@ export default function ShubramiSystem() {
       showToast("تمت جدولة استحقاق الدفعة القادمة بنجاح!", "success");
     } else {
       showToast("خطأ في الاتصال، هل تأكدت من إنشاء جدول installments في Supabase؟", "error");
+    }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -3033,7 +3094,7 @@ export default function ShubramiSystem() {
                            <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newContractEnd} onChange={(e) => setNewContractEnd(e.target.value)} required />
                          </div>
                        </div>
-                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">💾 حفظ العقد واعتماد الكيان</button>
+                       <button type="submit" disabled={isSaving} className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "💾 حفظ العقد واعتماد الكيان"}</button>
                      </form>
                    )}
 
@@ -3115,8 +3176,8 @@ export default function ShubramiSystem() {
                          </div>
                        </div>
 
-                       <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">
-                         {editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث وإجراء العمليات"}
+                       <button type="submit" disabled={isSaving} className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                         {isSaving ? "جارٍ الحفظ..." : (editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) ? "🔄 اعتماد وتوليد عقد مستحدث جديد" : "🔄 تحديث وإجراء العمليات")}
                        </button>
                      </form>
                    )}
@@ -3985,6 +4046,7 @@ export default function ShubramiSystem() {
                         printTablePDF={printTablePDF}
                         exportToCSV={exportToCSV}
                         printInstallmentsPDF={printInstallmentsPDF}
+                        isSaving={isSaving}
                     />
                  </div>
                )}
@@ -4022,7 +4084,7 @@ export default function ShubramiSystem() {
                                <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المدفوع (الآن):</label>
                                <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtAmount} onChange={(e) => setPayDebtAmount(e.target.value)} required />
                              </div>
-                             <button type="submit" className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">💰 حفظ الدفعة للمديونية</button>
+                             <button type="submit" disabled={isSaving} className="md:col-span-2 mt-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "💰 حفظ الدفعة للمديونية"}</button>
                            </>
                          )}
                       </form>
@@ -4047,7 +4109,7 @@ export default function ShubramiSystem() {
                            <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} required />
                          </div>
                          <div className="flex items-end">
-                            <button type="submit" className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors">🎯 إدراج مديونية</button>
+                            <button type="submit" disabled={isSaving} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "🎯 إدراج مديونية"}</button>
                          </div>
                       </form>
                    )}
@@ -4120,7 +4182,7 @@ export default function ShubramiSystem() {
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">ملاحظات:</label>
                          <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expNotes} onChange={(e) => setExpNotes(e.target.value)} />
                        </div>
-                       <button type="submit" className="md:col-span-2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">🚨 تسجيل المصروف</button>
+                       <button type="submit" disabled={isSaving} className="md:col-span-2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ التسجيل..." : "🚨 تسجيل المصروف"}</button>
                     </form>
                     
                     <h3 className="text-base font-bold text-slate-900 mb-4">📋 سجل المصروفات التشغيلية</h3>
