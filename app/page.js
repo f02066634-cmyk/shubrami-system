@@ -687,6 +687,16 @@ export default function ShubramiSystem() {
   const [stmtTxYear, setStmtTxYear] = useState("الكل");
   const [stmtShowArchive, setStmtShowArchive] = useState(false);
 
+  const [rptTab, setRptTab] = useState("income");
+  const [rptMode, setRptMode] = useState("year");
+  const [rptYear, setRptYear] = useState("الكل");
+  const [rptFrom, setRptFrom] = useState("");
+  const [rptTo, setRptTo] = useState("");
+  const [rptShopSort, setRptShopSort] = useState("revenue_desc");
+  const [rptIncomeShowTx, setRptIncomeShowTx] = useState(false);
+  const [rptIncomeShowExp, setRptIncomeShowExp] = useState(false);
+  const [rptArrearsGroup, setRptArrearsGroup] = useState(false);
+
   // سجل تدقيق مركزي وغير معطّل للمسار الرئيسي: تُستدعى فقط بعد التأكد من نجاح
   // العملية المالية/الإدارية الأساسية في Supabase. أي فشل في الكتابة هنا يُسجَّل
   // في console فقط ولا يُفشل أو يوقف العملية الأساسية التي استدعتها.
@@ -867,6 +877,7 @@ export default function ShubramiSystem() {
     { id: "expenses", label: "🛠️ إدارة المصروفات" },
     { id: "archive", label: "🗄️ أرشيف العقود" },
     { id: "tenant_statement", label: "👤 كشف حساب المستأجر" },
+    { id: "financial_reports", label: "📊 التقارير المالية" },
     { id: "audit", label: "📜 سجل التدقيق", adminOnly: true },
     { id: "users", label: "👥 إدارة المستخدمين", adminOnly: true }
   ];
@@ -1994,6 +2005,61 @@ export default function ShubramiSystem() {
   const stmtSumDebts = stmtDebts.reduce((sum, d) => sum + (d.amount || 0), 0);
   const stmtSumCurrentBalance = stmtCurrentShops
     .reduce((sum, s) => sum + Math.max(0, (s.annualRent || 0) - (s.collected || 0)), 0);
+
+  // ==========================================
+  // التقارير المالية ─ بيانات مشتقة
+  // ==========================================
+  const isInRptPeriod = (dateStr) => {
+    if (!dateStr || dateStr === "-") return false;
+    const d = String(dateStr).slice(0, 10);
+    if (rptMode === "year") return rptYear === "الكل" || getYear(d) === rptYear;
+    if (!rptFrom && !rptTo) return true;
+    if (rptFrom && d < rptFrom) return false;
+    if (rptTo && d > rptTo) return false;
+    return true;
+  };
+
+  // التقرير 1 — الدخل والمصروفات بفترة
+  const rptTx = transactionsDB.filter(t => isInRptPeriod(t.updateDate));
+  const rptExpFiltered = expensesDB.filter(e => isInRptPeriod(e.date));
+  const rptRevenue = rptTx.reduce((s, t) => s + (t.paidAmount || 0), 0);
+  const rptExpTotal = rptExpFiltered.reduce((s, e) => s + (e.amount || 0), 0);
+  const rptNetIncome = rptRevenue - rptExpTotal;
+
+  // التقرير 2 — حسب المحل (إيرادات سندات القبض التاريخية لكل محل)
+  const rptShopRevMap = {};
+  transactionsDB.forEach(t => {
+    const sn = t.shop;
+    if (!sn) return;
+    if (!rptShopRevMap[sn]) rptShopRevMap[sn] = { revenue: 0, txCount: 0 };
+    rptShopRevMap[sn].revenue += (t.paidAmount || 0);
+    rptShopRevMap[sn].txCount += 1;
+  });
+  Object.values(latestShopRecords).forEach(s => {
+    if (!rptShopRevMap[s.shopNumber]) rptShopRevMap[s.shopNumber] = { revenue: 0, txCount: 0 };
+  });
+  const rptShopRows = Object.entries(rptShopRevMap)
+    .map(([shopNum, data]) => ({
+      shopNum,
+      revenue: data.revenue,
+      txCount: data.txCount,
+      tenant: latestShopRecords[shopNum]?.tenant || "-",
+      status: latestShopRecords[shopNum]?.status || "-",
+    }))
+    .sort((a, b) => rptShopSort === "revenue_asc" ? a.revenue - b.revenue : b.revenue - a.revenue);
+
+  // التقرير 3 — المتأخرات (يعيد استخدام allOutstandingDebts المحسوب مسبقاً)
+  const rptArrearsTotal = allOutstandingDebts.reduce((s, d) => s + (d.amount || 0), 0);
+  const rptArrearsFlat = [...allOutstandingDebts].sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  const rptArrearsGrouped = Object.values(
+    allOutstandingDebts.reduce((acc, d) => {
+      const key = (d.tenant || "غير معروف").trim();
+      if (!acc[key]) acc[key] = { tenant: key, items: [], total: 0 };
+      acc[key].items.push(d);
+      acc[key].total += (d.amount || 0);
+      return acc;
+    }, {})
+  ).sort((a, b) => b.total - a.total);
 
   // ==========================================
   // جميع دوال الطباعة والتصدير الأصلية بالكامل
@@ -3328,6 +3394,308 @@ export default function ShubramiSystem() {
 
                      </div>
                    )}
+                 </div>
+               )}
+
+               {activeTab === "financial_reports" && (
+                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                   <h3 className="text-base font-bold text-slate-900 mb-4">📊 التقارير المالية (للقراءة فقط)</h3>
+
+                   <div className="flex gap-4 mb-6 border-b border-slate-300 pb-2 flex-wrap">
+                     <button onClick={() => setRptTab("income")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "income" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>📈 الدخل والمصروفات</button>
+                     <button onClick={() => setRptTab("shop")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "shop" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🏪 حسب المحل</button>
+                     <button onClick={() => setRptTab("arrears")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "arrears" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔴 المتأخرات المفصّلة</button>
+                   </div>
+
+                   {/* التقرير 1 — الدخل والمصروفات بفترة */}
+                   {rptTab === "income" && (
+                     <div className="flex flex-col gap-5">
+                       <div className="bg-slate-100 p-3 rounded-xl border border-slate-300">
+                         <div className="flex gap-6 mb-3 flex-wrap">
+                           <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                             <input type="radio" name="rptMode" value="year" checked={rptMode === "year"} onChange={() => setRptMode("year")} />
+                             سنة مالية
+                           </label>
+                           <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                             <input type="radio" name="rptMode" value="range" checked={rptMode === "range"} onChange={() => setRptMode("range")} />
+                             نطاق تواريخ مخصص
+                           </label>
+                         </div>
+                         {rptMode === "year" ? (
+                           <select className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptYear} onChange={e => setRptYear(e.target.value)}>
+                             <option value="الكل">الكل (جميع السنوات)</option>
+                             {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                           </select>
+                         ) : (
+                           <div className="flex gap-4 flex-wrap items-end">
+                             <div>
+                               <label className="text-[11px] text-slate-600 block mb-1">من:</label>
+                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptFrom} onChange={e => setRptFrom(e.target.value)} />
+                             </div>
+                             <div>
+                               <label className="text-[11px] text-slate-600 block mb-1">إلى:</label>
+                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptTo} onChange={e => setRptTo(e.target.value)} />
+                             </div>
+                             {(rptFrom || rptTo) && (
+                               <button onClick={() => { setRptFrom(""); setRptTo(""); }} className="text-xs text-slate-500 hover:text-slate-800 underline pb-2">مسح</button>
+                             )}
+                           </div>
+                         )}
+                       </div>
+
+                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                           <div className="text-[10px] text-blue-700 font-semibold mb-1">إجمالي الإيرادات</div>
+                           <div className="text-xl font-bold text-blue-900">{rptRevenue.toLocaleString()} ريال</div>
+                           <div className="text-[11px] text-blue-600 mt-1">{rptTx.length} سند قبض</div>
+                         </div>
+                         <div className="bg-slate-50 border border-slate-300 rounded-xl p-4 text-center">
+                           <div className="text-[10px] text-slate-600 font-semibold mb-1">إجمالي المصروفات</div>
+                           <div className="text-xl font-bold text-slate-800">{rptExpTotal.toLocaleString()} ريال</div>
+                           <div className="text-[11px] text-slate-500 mt-1">{rptExpFiltered.length} مصروف</div>
+                         </div>
+                         <div className={`border rounded-xl p-4 text-center ${rptNetIncome >= 0 ? "bg-teal-50 border-teal-200" : "bg-red-50 border-red-200"}`}>
+                           <div className={`text-[10px] font-semibold mb-1 ${rptNetIncome >= 0 ? "text-teal-700" : "text-red-700"}`}>صافي الدخل</div>
+                           <div className={`text-xl font-bold ${rptNetIncome >= 0 ? "text-teal-900" : "text-red-900"}`}>{rptNetIncome.toLocaleString()} ريال</div>
+                           <div className={`text-[11px] mt-1 ${rptNetIncome >= 0 ? "text-teal-600" : "text-red-600"}`}>{rptRevenue > 0 ? `هامش ${((rptNetIncome / rptRevenue) * 100).toFixed(1)}%` : "-"}</div>
+                         </div>
+                       </div>
+
+                       <div className="border border-slate-200 rounded-xl overflow-hidden">
+                         <button className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 transition-colors text-right" onClick={() => setRptIncomeShowTx(v => !v)}>
+                           <span className="font-bold text-slate-800 text-xs">💰 تفصيل سندات القبض ({rptTx.length} سند)</span>
+                           <span className="text-slate-500 text-xs">{rptIncomeShowTx ? "▲ إخفاء" : "▼ عرض"}</span>
+                         </button>
+                         {rptIncomeShowTx && (
+                           <div className="overflow-x-auto border-t border-slate-200">
+                             <table className="w-full text-right text-slate-800 text-xs">
+                               <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                                 <tr>
+                                   <th className="p-3 font-semibold">رقم السند</th>
+                                   <th className="p-3 font-semibold">المحل</th>
+                                   <th className="p-3 font-semibold">المستأجر</th>
+                                   <th className="p-3 font-semibold">التاريخ</th>
+                                   <th className="p-3 font-semibold">المدفوع</th>
+                                   <th className="p-3 font-semibold">الطريقة</th>
+                                   <th className="p-3 font-semibold">الحالة</th>
+                                 </tr>
+                               </thead>
+                               <tbody>
+                                 {rptTx.length === 0 ? (
+                                   <tr><td colSpan="7" className="p-5 text-center text-slate-400">لا توجد سندات في هذه الفترة.</td></tr>
+                                 ) : rptTx.map(t => (
+                                   <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                     <td className="p-3 font-bold text-slate-900">{t.id}</td>
+                                     <td className="p-3">{t.shop || "-"}</td>
+                                     <td className="p-3">{t.tenant || "-"}</td>
+                                     <td className="p-3 whitespace-nowrap">{t.updateDate || t.startDate || "-"}</td>
+                                     <td className="p-3 font-bold text-teal-700">{(t.paidAmount || 0).toLocaleString()}</td>
+                                     <td className="p-3">{t.method || "-"}</td>
+                                     <td className="p-3">
+                                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                         t.status === "مغلق" ? "bg-teal-100 text-teal-700 border-teal-200" :
+                                         (t.status || "").includes("جزئي") ? "bg-amber-100 text-amber-700 border-amber-200" :
+                                         (t.status || "").includes("مديونية") ? "bg-blue-100 text-blue-700 border-blue-200" :
+                                         "bg-slate-100 text-slate-600 border-slate-200"
+                                       }`}>{t.status || "-"}</span>
+                                     </td>
+                                   </tr>
+                                 ))}
+                               </tbody>
+                             </table>
+                           </div>
+                         )}
+                       </div>
+
+                       <div className="border border-slate-200 rounded-xl overflow-hidden">
+                         <button className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 transition-colors text-right" onClick={() => setRptIncomeShowExp(v => !v)}>
+                           <span className="font-bold text-slate-800 text-xs">🛠️ تفصيل المصروفات ({rptExpFiltered.length} مصروف)</span>
+                           <span className="text-slate-500 text-xs">{rptIncomeShowExp ? "▲ إخفاء" : "▼ عرض"}</span>
+                         </button>
+                         {rptIncomeShowExp && (
+                           <div className="overflow-x-auto border-t border-slate-200">
+                             <table className="w-full text-right text-slate-800 text-xs">
+                               <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                                 <tr>
+                                   <th className="p-3 font-semibold">التاريخ</th>
+                                   <th className="p-3 font-semibold">البند</th>
+                                   <th className="p-3 font-semibold">المبلغ</th>
+                                   <th className="p-3 font-semibold">ملاحظات</th>
+                                 </tr>
+                               </thead>
+                               <tbody>
+                                 {rptExpFiltered.length === 0 ? (
+                                   <tr><td colSpan="4" className="p-5 text-center text-slate-400">لا توجد مصروفات في هذه الفترة.</td></tr>
+                                 ) : rptExpFiltered.map((e, i) => (
+                                   <tr key={i} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                     <td className="p-3 whitespace-nowrap">{e.date || "-"}</td>
+                                     <td className="p-3 font-semibold text-slate-800">{e.category || "-"}</td>
+                                     <td className="p-3 font-bold text-slate-800">{(e.amount || 0).toLocaleString()}</td>
+                                     <td className="p-3 text-slate-500">{e.notes || "-"}</td>
+                                   </tr>
+                                 ))}
+                               </tbody>
+                             </table>
+                           </div>
+                         )}
+                       </div>
+                     </div>
+                   )}
+
+                   {/* التقرير 2 — حسب المحل */}
+                   {rptTab === "shop" && (
+                     <div className="flex flex-col gap-5">
+                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                         <span className="font-bold">ملاحظة:</span> المصروفات التشغيلية لا ترتبط بمحل محدد في بنية البيانات الحالية — تظهر كإجمالي في التقرير الأول. الجدول أدناه يعرض إيرادات كل محل (مجموع سندات القبض) عبر كامل السجل التاريخي.
+                       </div>
+
+                       <div className="flex items-center justify-between flex-wrap gap-3">
+                         <h4 className="text-sm font-bold text-slate-800">🏪 إيرادات المحلات (كامل السجل التاريخي)</h4>
+                         <select className="rounded-lg border border-slate-300 p-1.5 bg-white text-slate-800 outline-none text-xs" value={rptShopSort} onChange={e => setRptShopSort(e.target.value)}>
+                           <option value="revenue_desc">الأعلى إيراداً أولاً</option>
+                           <option value="revenue_asc">الأدنى إيراداً أولاً</option>
+                         </select>
+                       </div>
+
+                       <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                         <table className="w-full text-right text-slate-800 text-xs">
+                           <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                             <tr>
+                               <th className="p-3 font-semibold">رقم المحل</th>
+                               <th className="p-3 font-semibold">المستأجر الحالي</th>
+                               <th className="p-3 font-semibold">الحالة</th>
+                               <th className="p-3 font-semibold">إجمالي الإيرادات</th>
+                               <th className="p-3 font-semibold">عدد السندات</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {rptShopRows.length === 0 ? (
+                               <tr><td colSpan="5" className="p-5 text-center text-slate-400">لا توجد بيانات.</td></tr>
+                             ) : rptShopRows.map(row => (
+                               <tr key={row.shopNum} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                 <td className="p-3 font-bold text-slate-900">{row.shopNum}</td>
+                                 <td className="p-3 text-slate-700">{row.tenant}</td>
+                                 <td className="p-3">
+                                   {row.status === "مؤجر" && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">✅ مؤجر</span>}
+                                   {row.status === "شاغر" && <span className="bg-red-100 text-red-600 border border-red-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">📭 شاغر</span>}
+                                   {row.status === "تحت الصيانة" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔧 صيانة</span>}
+                                   {row.status === "مدمج" && <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔗 مدمج</span>}
+                                   {row.status === "-" && <span className="text-slate-400 text-[10px]">-</span>}
+                                 </td>
+                                 <td className="p-3 font-bold text-blue-700">{row.revenue.toLocaleString()} ريال</td>
+                                 <td className="p-3 text-slate-600">{row.txCount}</td>
+                               </tr>
+                             ))}
+                           </tbody>
+                           {rptShopRows.length > 0 && (
+                             <tfoot className="bg-slate-100 border-t-2 border-slate-300">
+                               <tr>
+                                 <td colSpan="3" className="p-3 font-bold text-slate-800">الإجمالي الكلي</td>
+                                 <td className="p-3 font-bold text-blue-900">{rptShopRows.reduce((s, r) => s + r.revenue, 0).toLocaleString()} ريال</td>
+                                 <td className="p-3 font-bold text-slate-700">{rptShopRows.reduce((s, r) => s + r.txCount, 0)}</td>
+                               </tr>
+                             </tfoot>
+                           )}
+                         </table>
+                       </div>
+                     </div>
+                   )}
+
+                   {/* التقرير 3 — المتأخرات المفصّلة */}
+                   {rptTab === "arrears" && (
+                     <div className="flex flex-col gap-5">
+                       <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+                         <div>
+                           <div className="text-xs text-red-700 font-semibold mb-1">إجمالي المتأخرات المستحقة حالياً</div>
+                           <div className="text-2xl font-extrabold text-red-900">{rptArrearsTotal.toLocaleString()} ريال</div>
+                           <div className="text-[11px] text-red-600 mt-1">{allOutstandingDebts.length} بند مستحق</div>
+                         </div>
+                         <div className="text-5xl opacity-20">🔴</div>
+                       </div>
+
+                       <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700 select-none w-fit">
+                         <input type="checkbox" checked={rptArrearsGroup} onChange={e => setRptArrearsGroup(e.target.checked)} className="rounded" />
+                         تجميع حسب المستأجر
+                       </label>
+
+                       {!rptArrearsGroup ? (
+                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                           <table className="w-full text-right text-slate-800 text-xs">
+                             <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                               <tr>
+                                 <th className="p-3 font-semibold">المستأجر</th>
+                                 <th className="p-3 font-semibold">المحل</th>
+                                 <th className="p-3 font-semibold">المبلغ المستحق</th>
+                                 <th className="p-3 font-semibold">تاريخ الاستحقاق</th>
+                                 <th className="p-3 font-semibold">النوع</th>
+                                 <th className="p-3 font-semibold">التفاصيل</th>
+                               </tr>
+                             </thead>
+                             <tbody>
+                               {rptArrearsFlat.length === 0 ? (
+                                 <tr><td colSpan="6" className="p-8 text-center text-slate-400 text-sm">🎉 لا توجد متأخرات مستحقة حالياً.</td></tr>
+                               ) : rptArrearsFlat.map(d => (
+                                 <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                   <td className="p-3 font-bold text-slate-900 max-w-[160px] truncate" title={d.tenant}>{d.tenant || "-"}</td>
+                                   <td className="p-3">{d.isShopDebt ? d.label : "-"}</td>
+                                   <td className="p-3 font-bold text-red-700">{(d.amount || 0).toLocaleString()} ريال</td>
+                                   <td className="p-3 whitespace-nowrap">{d.year || "-"}</td>
+                                   <td className="p-3">
+                                     {d.isShopDebt
+                                       ? d.debtType === "active-expired"
+                                         ? <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">إيجار عقد منتهٍ</span>
+                                         : <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">إيجار مؤرشف</span>
+                                       : <span className="bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">دين مستقل</span>
+                                     }
+                                   </td>
+                                   <td className="p-3 text-slate-500 max-w-[200px] truncate" title={d.details}>{d.details || "-"}</td>
+                                 </tr>
+                               ))}
+                             </tbody>
+                             {rptArrearsFlat.length > 0 && (
+                               <tfoot className="bg-slate-100 border-t-2 border-slate-300">
+                                 <tr>
+                                   <td colSpan="2" className="p-3 font-bold text-slate-800">الإجمالي الكلي للمتأخرات</td>
+                                   <td className="p-3 font-bold text-red-900">{rptArrearsTotal.toLocaleString()} ريال</td>
+                                   <td colSpan="3"></td>
+                                 </tr>
+                               </tfoot>
+                             )}
+                           </table>
+                         </div>
+                       ) : (
+                         <div className="flex flex-col gap-3">
+                           {rptArrearsGrouped.length === 0 ? (
+                             <div className="p-8 text-center text-slate-400 text-sm bg-slate-50 rounded-xl border border-slate-200">🎉 لا توجد متأخرات مستحقة حالياً.</div>
+                           ) : rptArrearsGrouped.map((group, i) => (
+                             <div key={i} className="border border-slate-200 rounded-xl overflow-hidden">
+                               <div className="flex items-center justify-between p-3 bg-slate-50 border-b border-slate-200">
+                                 <span className="font-bold text-slate-900 text-xs truncate max-w-[240px]" title={group.tenant}>👤 {group.tenant}</span>
+                                 <span className="bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap">{group.total.toLocaleString()} ريال</span>
+                               </div>
+                               <div className="divide-y divide-slate-100">
+                                 {group.items.map((d, j) => (
+                                   <div key={j} className="flex items-center justify-between px-4 py-2.5 text-xs hover:bg-slate-50 transition-colors gap-3">
+                                     <div className="flex items-center gap-2 min-w-0">
+                                       {d.isShopDebt
+                                         ? d.debtType === "active-expired"
+                                           ? <span className="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap flex-shrink-0">إيجار منتهٍ</span>
+                                           : <span className="bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap flex-shrink-0">إيجار مؤرشف</span>
+                                         : <span className="bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap flex-shrink-0">دين مستقل</span>
+                                       }
+                                       <span className="text-slate-500 truncate">{d.details || (d.isShopDebt ? `محل ${d.label}` : "-")}</span>
+                                     </div>
+                                     <span className="font-bold text-red-700 whitespace-nowrap">{(d.amount || 0).toLocaleString()} ريال</span>
+                                   </div>
+                                 ))}
+                               </div>
+                             </div>
+                           ))}
+                         </div>
+                       )}
+                     </div>
+                   )}
+
                  </div>
                )}
 
