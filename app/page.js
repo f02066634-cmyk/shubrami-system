@@ -1601,6 +1601,8 @@ export default function ShubramiSystem() {
         p_remaining:     remaining,
         p_method:        newPayMethod,
         p_status:        status,
+        p_reference_id:  null,
+        p_is_debt:       false,
       });
 
       if (txErr || !rpcData?.length) {
@@ -1789,7 +1791,6 @@ export default function ShubramiSystem() {
         p_reference_id:  targetDebt.id,
         p_is_debt:       true,
       });
-      console.error('[debt-rpc] txErr:', txErr, '| rpcData:', rpcData);
       if (txErr || !rpcData?.length) return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
       setTransactionsDB([...transactionsDB, rpcData[0]]);
     }
