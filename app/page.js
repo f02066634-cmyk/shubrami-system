@@ -2062,6 +2062,17 @@ export default function ShubramiSystem() {
   ).sort((a, b) => b.total - a.total);
 
   // ==========================================
+  // دالة التنقية المركزية — تهريب HTML لكل قيمة نصية من بيانات المستخدم
+  // ==========================================
+  const escapeHtml = (val) =>
+    String(val ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  // ==========================================
   // جميع دوال الطباعة والتصدير الأصلية بالكامل
   // ==========================================
   const printInstallmentsPDF = (data) => {
@@ -2105,13 +2116,15 @@ export default function ShubramiSystem() {
                       const shopData = shopsDB.find(s => s.shopNumber === inst.shop && !s.status.includes("أرشيف")) || shopsDB.find(s => s.shopNumber === inst.shop) || {};
                       const collected = shopData.collected || 0;
                       const remaining = (shopData.annualRent || 0) - collected;
-                      const displayName = shopData.isGroupMain ? `${shopData.tenant} (${(shopData.groupShops||[]).join('، ')})` : `${shopData.tenant || "-"} (${shopData.shopNumber})`;
+                      const displayName = shopData.isGroupMain
+                        ? `${escapeHtml(shopData.tenant)} (${(shopData.groupShops||[]).map(escapeHtml).join('، ')})`
+                        : `${escapeHtml(shopData.tenant || "-")} (${escapeHtml(shopData.shopNumber)})`;
                       return `
                       <tr>
-                          <td><b>${inst.shop}</b></td>
+                          <td><b>${escapeHtml(inst.shop)}</b></td>
                           <td>${displayName}</td>
                           <td class="text-blue">${inst.amount.toLocaleString()} ريال</td>
-                          <td>${inst.date}</td>
+                          <td>${escapeHtml(inst.date)}</td>
                           <td class="text-green">${collected.toLocaleString()} ريال</td>
                           <td class="text-red">${remaining.toLocaleString()} ريال</td>
                       </tr>
@@ -2162,10 +2175,10 @@ export default function ShubramiSystem() {
               <tbody>
                   ${data.map(d => `
                       <tr>
-                          <td><b>${d.isShopDebt ? d.label : d.id}</b></td>
-                          <td>${d.year}</td>
-                          <td>${d.tenant}</td>
-                          <td>${d.details}</td>
+                          <td><b>${escapeHtml(d.isShopDebt ? d.label : d.id)}</b></td>
+                          <td>${escapeHtml(d.year)}</td>
+                          <td>${escapeHtml(d.tenant)}</td>
+                          <td>${escapeHtml(d.details)}</td>
                           <td class="text-red">${d.amount.toLocaleString()} ريال</td>
                       </tr>
                   `).join('')}
@@ -2226,14 +2239,16 @@ export default function ShubramiSystem() {
               </thead>
               <tbody>
                   ${mainShops.map(s => {
-                      const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops || []).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
+                      const displayName = s.isGroupMain
+                        ? `${escapeHtml(s.tenant)} (${(s.groupShops || []).map(escapeHtml).join('، ')})`
+                        : `${escapeHtml(s.tenant)} (${escapeHtml(s.shopNumber)})`;
                       return `
                       <tr>
                           <td><b>${displayName}</b></td>
-                          <td>${s.ejarNumber}</td>
+                          <td>${escapeHtml(s.ejarNumber)}</td>
                           <td>${s.annualRent.toLocaleString()} ريال</td>
-                          <td>${s.startDate}</td>
-                          <td>${s.endDate}</td>
+                          <td>${escapeHtml(s.startDate)}</td>
+                          <td>${escapeHtml(s.endDate)}</td>
                           <td class="text-green">${s.collected.toLocaleString()} ريال</td>
                           <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
                           <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
@@ -2302,15 +2317,15 @@ export default function ShubramiSystem() {
               <tbody>
                   ${data.map(t => `
                       <tr>
-                          <td><b>${t.id}</b></td>
-                          <td>${t.updateDate} م</td>
-                          <td>${t.tenant}</td>
+                          <td><b>${escapeHtml(t.id)}</b></td>
+                          <td>${escapeHtml(t.updateDate)} م</td>
+                          <td>${escapeHtml(t.tenant)}</td>
                           <td>${t.targetAmount.toLocaleString()} ريال</td>
                           <td class="text-green">${t.paidAmount.toLocaleString()} ريال</td>
                           <td class="text-red">${t.remainingAmount.toLocaleString()} ريال</td>
-                          <td>${t.method}</td>
+                          <td>${escapeHtml(t.method)}</td>
                           <td>
-                            <span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${t.status}</span>
+                            <span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${escapeHtml(t.status)}</span>
                           </td>
                       </tr>
                   `).join('')}
@@ -2353,7 +2368,7 @@ export default function ShubramiSystem() {
     printWindow.document.write(`
       <html dir="rtl">
       <head>
-          <title>سند قبض - ${receipt.id}</title>
+          <title>سند قبض - ${escapeHtml(receipt.id)}</title>
           <style>
               body { 
                   font-family: 'Tajawal', Tahoma, Geneva, Verdana, sans-serif; 
@@ -2470,18 +2485,18 @@ export default function ShubramiSystem() {
           <div class="receipt-container">
               <div class="receipt-header">
                   <h2>سند قبض - أسواق الشبرمي</h2>
-                  <h4>رقم السند الموحد: ${receipt.id}</h4>
+                  <h4>رقم السند الموحد: ${escapeHtml(receipt.id)}</h4>
               </div>
-              
+
               <div class="receipt-body">
                   <div class="info-row">
                       <span class="info-label">تاريخ الإغلاق والاعتماد:</span>
-                      <span class="info-value">${receipt.updateDate} م</span>
+                      <span class="info-value">${escapeHtml(receipt.updateDate)} م</span>
                   </div>
                   <div class="info-row">
                       <span class="info-label">استلمنا من المكرم:</span>
                       <span class="info-value">
-                          ${receipt.tenant} 
+                          ${escapeHtml(receipt.tenant)}
                       </span>
                   </div>
                   <div class="info-row">
@@ -2490,7 +2505,7 @@ export default function ShubramiSystem() {
                   </div>
                   <div class="info-row">
                       <span class="info-label">طريقة الدفع والاستلام:</span>
-                      <span class="info-value">${receipt.method}</span>
+                      <span class="info-value">${escapeHtml(receipt.method)}</span>
                   </div>
               </div>
 
@@ -2507,6 +2522,421 @@ export default function ShubramiSystem() {
           </div>
           
           <button class="print-btn" onclick="window.print()">🖨️ اضغط هنا لطباعة السند فوراً</button>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // ==========================================
+  // طباعة كشف حساب المستأجر
+  // ==========================================
+  const printTenantStatementPDF = () => {
+    if (!stmtTenant) return showToast("اختر مستأجراً أولاً لطباعة الكشف", "warning");
+    const hasData = stmtCurrentShops.length > 0 || stmtArchivedShops.length > 0 || stmtDebts.length > 0 || stmtTransactions.length > 0 || stmtLegacyTx.length > 0;
+    if (!hasData) return showToast("لا توجد بيانات لهذا المستأجر للطباعة", "warning");
+
+    const today = new Date().toLocaleDateString('ar-EG');
+    const periodLabel = stmtTxYear === "الكل" ? "جميع السنوات" : `سنة ${stmtTxYear}`;
+    const e = escapeHtml;
+
+    const currentShopsRows = stmtCurrentShops.length === 0
+      ? `<tr><td colspan="7" class="no-data">لا توجد عقود حالية.</td></tr>`
+      : stmtCurrentShops.map(s => {
+          const bal = Math.max(0, (s.annualRent || 0) - (s.collected || 0));
+          const expired = isContractExpired(s.endDate);
+          return `<tr>
+            <td><b>${e(s.shopNumber)}</b></td>
+            <td>${e(s.ejarNumber || "-")}</td>
+            <td>${e(s.startDate || "-")}</td>
+            <td class="${expired ? "text-red" : ""}">${e(s.endDate || "-")}</td>
+            <td>${(s.annualRent || 0).toLocaleString()} ريال</td>
+            <td class="text-teal">${(s.collected || 0).toLocaleString()} ريال</td>
+            <td class="${bal > 0 ? "text-red" : "text-gray"}">${bal.toLocaleString()} ريال</td>
+          </tr>`;
+        }).join('');
+
+    const archivedShopsRows = stmtArchivedShops.length === 0
+      ? `<tr><td colspan="6" class="no-data">لا توجد عقود مؤرشفة.</td></tr>`
+      : stmtArchivedShops.map(s => `<tr>
+          <td><b>${e(s.shopNumber)}</b></td>
+          <td>${e(s.ejarNumber || "-")}</td>
+          <td>${e(s.startDate || "-")}</td>
+          <td>${e(s.endDate || "-")}</td>
+          <td>${(s.annualRent || 0).toLocaleString()} ريال</td>
+          <td class="text-teal">${(s.collected || 0).toLocaleString()} ريال</td>
+        </tr>`).join('');
+
+    const debtsRows = stmtDebts.length === 0
+      ? `<tr><td colspan="4" class="no-data">✓ لا توجد مديونيات مستقلة.</td></tr>`
+      : stmtDebts.map(d => `<tr>
+          <td><b>${e(d.id)}</b></td>
+          <td>${e(d.year || "-")}</td>
+          <td>${e(d.details || "-")}</td>
+          <td class="text-red">${(d.amount || 0).toLocaleString()} ريال</td>
+        </tr>`).join('');
+
+    const txRows = stmtTransactions.length === 0
+      ? `<tr><td colspan="7" class="no-data">لا توجد سندات في هذه الفترة.</td></tr>`
+      : stmtTransactions.map(t => `<tr>
+          <td><b>${e(t.id)}</b></td>
+          <td>${e(String(t.shop || "-"))}</td>
+          <td>${e(t.startDate || "-")}</td>
+          <td>${(t.targetAmount || 0).toLocaleString()} ريال</td>
+          <td class="text-teal">${(t.paidAmount || 0).toLocaleString()} ريال</td>
+          <td class="${(t.remainingAmount || 0) > 0 ? "text-red" : "text-gray"}">${(t.remainingAmount || 0).toLocaleString()} ريال</td>
+          <td>${e(t.method || "-")}</td>
+        </tr>`).join('');
+
+    const legacySection = stmtLegacyTx.length === 0 ? '' : `
+      <div class="legacy-note">
+        ⚠️ <b>سندات قديمة — ربط تقديري (غير مؤكّد):</b>
+        هذه السندات لا تحمل اسم المستأجر — تظهر لأن رقم محلها يطابق محلات هذا المستأجر
+        (${stmtAllShopNumbers.map(e).join('، ')}). قد تخص مستأجراً سابقاً.
+      </div>
+      <table>
+        <thead><tr><th>رقم السند</th><th>المحل</th><th>التاريخ</th><th>المدفوع</th><th>الطريقة</th><th>الحالة</th></tr></thead>
+        <tbody>
+          ${stmtLegacyTx.map(t => `<tr class="legacy-row">
+            <td><b>${e(t.id)}</b></td>
+            <td>${e(String(t.shop || "-"))}</td>
+            <td>${e(t.startDate || "-")}</td>
+            <td class="text-teal">${(t.paidAmount || 0).toLocaleString()} ريال</td>
+            <td>${e(t.method || "-")}</td>
+            <td>${e(t.status || "-")}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8">
+        <title>كشف حساب — ${e(stmtTenant)}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+          .page-header { border-bottom: 3px solid #1d4ed8; padding-bottom: 14px; margin-bottom: 20px; }
+          .page-header h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+          .page-header h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin-top: 4px; }
+          .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
+          .section { margin-bottom: 22px; }
+          .section-title { font-size: 14px; font-weight: 700; border-right: 4px solid #1d4ed8; padding-right: 8px; margin-bottom: 10px; color: #1e293b; }
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th { background: #e2e8f0; padding: 9px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px; }
+          td { padding: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          .text-red { color: #dc2626; font-weight: 700; }
+          .text-teal { color: #0f766e; font-weight: 700; }
+          .text-gray { color: #94a3b8; }
+          .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+          .summary-card { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; }
+          .summary-card .lbl { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+          .summary-card .val { font-size: 16px; font-weight: 800; color: #1d4ed8; }
+          .legacy-note { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; margin-bottom: 8px; }
+          .legacy-row td { opacity: 0.82; }
+          .no-data { text-align: center; color: #94a3b8; padding: 14px; }
+          .page-footer { border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
+          .btn { display: block; padding: 12px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 240px; font-size: 15px; font-weight: 700; margin: 24px auto; font-family: inherit; }
+          @media print { .btn { display: none !important; } body { padding: 14px; } }
+        </style>
+      </head>
+      <body>
+        <button class="btn" onclick="window.print()">🖨️ اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+
+        <div class="page-header">
+          <h1>🏢 أسواق الشبرمي</h1>
+          <h2>كشف حساب المستأجر — ${e(stmtTenant)}</h2>
+          <div class="meta">تاريخ الإصدار: ${today} م &nbsp;|&nbsp; الفترة المالية: ${e(periodLabel)}</div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">الملخص المالي الإجمالي</div>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="lbl">إجمالي الإيجار (تاريخياً)</div>
+              <div class="val">${stmtSumAnnualRent.toLocaleString()} ر.س</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">إجمالي المحصّل (عقود)</div>
+              <div class="val" style="color:#0f766e">${stmtSumCollectedContracts.toLocaleString()} ر.س</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">مديونيات مستقلة قائمة</div>
+              <div class="val" style="color:#d97706">${stmtSumDebts.toLocaleString()} ر.س</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">الرصيد المستحق الحالي</div>
+              <div class="val" style="color:${stmtSumCurrentBalance > 0 ? "#dc2626" : "#94a3b8"}">${stmtSumCurrentBalance.toLocaleString()} ر.س</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">📝 العقود الحالية (${stmtCurrentShops.length})</div>
+          <table>
+            <thead><tr><th>رقم المحل</th><th>رقم إيجار</th><th>البداية</th><th>الانتهاء</th><th>الإيجار السنوي</th><th>المحصّل</th><th>المتبقي</th></tr></thead>
+            <tbody>${currentShopsRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">🗄️ العقود المؤرشفة (${stmtArchivedShops.length})</div>
+          <table>
+            <thead><tr><th>رقم المحل</th><th>رقم إيجار</th><th>البداية</th><th>الانتهاء</th><th>الإيجار السنوي</th><th>المحصّل</th></tr></thead>
+            <tbody>${archivedShopsRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">📂 المديونيات المستقلة القائمة (${stmtDebts.length})</div>
+          <table>
+            <thead><tr><th>رقم الدين</th><th>السنة</th><th>التفاصيل</th><th>المبلغ المستحق</th></tr></thead>
+            <tbody>${debtsRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
+          <div class="section-title">💰 سندات القبض (${e(periodLabel)} — ${stmtTransactions.length + stmtLegacyTx.length} سند)</div>
+          <table>
+            <thead><tr><th>رقم السند</th><th>المحل</th><th>التاريخ</th><th>المستهدف</th><th>المدفوع</th><th>المتبقي</th><th>الطريقة</th></tr></thead>
+            <tbody>${txRows}</tbody>
+          </table>
+          ${legacySection}
+        </div>
+
+        <div class="page-footer">أسواق الشبرمي — طُبع بتاريخ ${today} م</div>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // ==========================================
+  // طباعة التقارير المالية
+  // ==========================================
+  const printFinancialReportPDF = () => {
+    const today = new Date().toLocaleDateString('ar-EG');
+    const e = escapeHtml;
+    let title, periodLabel, content;
+
+    if (rptTab === "income") {
+      const hasData = rptTx.length > 0 || rptExpFiltered.length > 0;
+      if (!hasData) return showToast("لا توجد بيانات للطباعة في هذه الفترة", "warning");
+
+      title = "تقرير الإيرادات والمصروفات";
+      if (rptMode === "year") {
+        periodLabel = rptYear === "الكل" ? "جميع السنوات" : `سنة ${rptYear}`;
+      } else {
+        periodLabel = `من ${rptFrom || "البداية"} إلى ${rptTo || "الآن"}`;
+      }
+      const netColor = rptNetIncome >= 0 ? "#0f766e" : "#dc2626";
+      const marginText = rptRevenue > 0 ? `هامش ${((rptNetIncome / rptRevenue) * 100).toFixed(1)}%` : "-";
+
+      const txRows = rptTx.length === 0
+        ? `<tr><td colspan="6" class="no-data">لا توجد سندات.</td></tr>`
+        : rptTx.map(t => `<tr>
+            <td><b>${e(t.id)}</b></td>
+            <td>${e(String(t.shop || "-"))}</td>
+            <td>${e(t.tenant || "-")}</td>
+            <td>${e(t.updateDate || t.startDate || "-")}</td>
+            <td class="text-teal">${(t.paidAmount || 0).toLocaleString()} ريال</td>
+            <td>${e(t.method || "-")}</td>
+          </tr>`).join('');
+
+      const expRows = rptExpFiltered.length === 0
+        ? `<tr><td colspan="4" class="no-data">لا توجد مصروفات.</td></tr>`
+        : rptExpFiltered.map(ex => `<tr>
+            <td>${e(ex.date || "-")}</td>
+            <td><b>${e(ex.category || "-")}</b></td>
+            <td>${(ex.amount || 0).toLocaleString()} ريال</td>
+            <td>${e(ex.notes || "-")}</td>
+          </tr>`).join('');
+
+      content = `
+        <div class="section">
+          <div class="summary-grid" style="grid-template-columns:repeat(3,1fr)">
+            <div class="summary-card">
+              <div class="lbl">إجمالي الإيرادات (${rptTx.length} سند)</div>
+              <div class="val">${rptRevenue.toLocaleString()} ريال</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">إجمالي المصروفات (${rptExpFiltered.length} مصروف)</div>
+              <div class="val" style="color:#475569">${rptExpTotal.toLocaleString()} ريال</div>
+            </div>
+            <div class="summary-card">
+              <div class="lbl">صافي الدخل (${e(marginText)})</div>
+              <div class="val" style="color:${netColor}">${rptNetIncome.toLocaleString()} ريال</div>
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">💰 سندات القبض (${rptTx.length} سند)</div>
+          <table>
+            <thead><tr><th>رقم السند</th><th>المحل</th><th>المستأجر</th><th>التاريخ</th><th>المدفوع</th><th>الطريقة</th></tr></thead>
+            <tbody>${txRows}</tbody>
+            ${rptTx.length > 0 ? `<tfoot class="total-row"><tr><td colspan="4">الإجمالي</td><td class="text-teal">${rptRevenue.toLocaleString()} ريال</td><td></td></tr></tfoot>` : ''}
+          </table>
+        </div>
+        <div class="section">
+          <div class="section-title">🛠️ المصروفات (${rptExpFiltered.length} مصروف)</div>
+          <table>
+            <thead><tr><th>التاريخ</th><th>البند</th><th>المبلغ</th><th>ملاحظات</th></tr></thead>
+            <tbody>${expRows}</tbody>
+            ${rptExpFiltered.length > 0 ? `<tfoot class="total-row"><tr><td colspan="2">الإجمالي</td><td>${rptExpTotal.toLocaleString()} ريال</td><td></td></tr></tfoot>` : ''}
+          </table>
+        </div>`;
+
+    } else if (rptTab === "shop") {
+      if (rptShopRows.length === 0) return showToast("لا توجد بيانات محلات للطباعة", "warning");
+
+      title = "تقرير الإيرادات حسب المحل";
+      periodLabel = "كامل السجل التاريخي";
+      const sortLabel = rptShopSort === "revenue_desc" ? "الأعلى إيراداً أولاً" : "الأدنى إيراداً أولاً";
+      const totalRev = rptShopRows.reduce((s, r) => s + r.revenue, 0);
+      const totalTx = rptShopRows.reduce((s, r) => s + r.txCount, 0);
+
+      const shopRows = rptShopRows.map(row => {
+        const statusMap = { "مؤجر": "مؤجر", "شاغر": "شاغر", "تحت الصيانة": "صيانة", "مدمج": "مدمج", "-": "-" };
+        const statusLabel = statusMap[row.status] ?? e(row.status);
+        return `<tr>
+          <td><b>${e(row.shopNum)}</b></td>
+          <td>${e(row.tenant)}</td>
+          <td>${e(statusLabel)}</td>
+          <td class="text-blue">${row.revenue.toLocaleString()} ريال</td>
+          <td>${row.txCount}</td>
+        </tr>`;
+      }).join('');
+
+      content = `
+        <div class="section">
+          <div class="section-title">🏪 إيرادات المحلات — ${e(sortLabel)}</div>
+          <table>
+            <thead><tr><th>رقم المحل</th><th>المستأجر الحالي</th><th>الحالة</th><th>إجمالي الإيراد</th><th>عدد السندات</th></tr></thead>
+            <tbody>${shopRows}</tbody>
+            <tfoot class="total-row">
+              <tr><td colspan="3">الإجمالي الكلي (${rptShopRows.length} محل)</td><td class="text-blue">${totalRev.toLocaleString()} ريال</td><td>${totalTx}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="notice">ملاحظة: المصروفات التشغيلية لا ترتبط بمحل محدد في بنية البيانات الحالية — راجع تقرير الإيرادات والمصروفات للإجمالي.</div>`;
+
+    } else {
+      if (allOutstandingDebts.length === 0) return showToast("لا توجد متأخرات للطباعة", "warning");
+
+      title = "تقرير المتأخرات المستحقة";
+      periodLabel = "وضع حالي";
+
+      const makeTypeLabel = (d) => d.isShopDebt
+        ? (d.debtType === "active-expired" ? "إيجار عقد منتهٍ" : "إيجار مؤرشف")
+        : "دين مستقل";
+
+      let arrearsTable;
+      if (!rptArrearsGroup) {
+        const rows = rptArrearsFlat.map(d => `<tr>
+          <td>${e(d.tenant || "-")}</td>
+          <td>${e(d.isShopDebt ? d.label : "-")}</td>
+          <td class="text-red">${(d.amount || 0).toLocaleString()} ريال</td>
+          <td>${e(d.year || "-")}</td>
+          <td>${e(makeTypeLabel(d))}</td>
+          <td>${e(d.details || "-")}</td>
+        </tr>`).join('');
+        arrearsTable = `<table>
+          <thead><tr><th>المستأجر</th><th>المحل</th><th>المبلغ المستحق</th><th>السنة</th><th>النوع</th><th>التفاصيل</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot class="total-row"><tr><td colspan="2">الإجمالي الكلي (${rptArrearsFlat.length} بند)</td><td class="text-red">${rptArrearsTotal.toLocaleString()} ريال</td><td colspan="3"></td></tr></tfoot>
+        </table>`;
+      } else {
+        const groupRows = rptArrearsGrouped.map(group => {
+          const items = group.items.map(d => `<tr class="group-item">
+            <td></td>
+            <td>${e(d.isShopDebt ? d.label : "-")}</td>
+            <td class="text-red">${(d.amount || 0).toLocaleString()} ريال</td>
+            <td>${e(d.year || "-")}</td>
+            <td>${e(makeTypeLabel(d))}</td>
+            <td>${e(d.details || "-")}</td>
+          </tr>`).join('');
+          return `<tr class="group-header">
+            <td><b>👤 ${e(group.tenant)}</b></td>
+            <td></td>
+            <td class="text-red"><b>${group.total.toLocaleString()} ريال</b></td>
+            <td colspan="3"></td>
+          </tr>${items}`;
+        }).join('');
+        arrearsTable = `<table>
+          <thead><tr><th>المستأجر</th><th>المحل</th><th>المبلغ</th><th>السنة</th><th>النوع</th><th>التفاصيل</th></tr></thead>
+          <tbody>${groupRows}</tbody>
+          <tfoot class="total-row"><tr><td colspan="2">الإجمالي الكلي (${rptArrearsGrouped.length} مستأجر)</td><td class="text-red">${rptArrearsTotal.toLocaleString()} ريال</td><td colspan="3"></td></tr></tfoot>
+        </table>`;
+      }
+
+      content = `
+        <div class="section">
+          <div class="arrears-total">
+            <div style="font-size:13px;color:#991b1b;font-weight:700;margin-bottom:6px">إجمالي المتأخرات المستحقة حالياً</div>
+            <div style="font-size:26px;font-weight:800;color:#7f1d1d">${rptArrearsTotal.toLocaleString()} ريال</div>
+            <div style="font-size:12px;color:#dc2626;margin-top:4px">${allOutstandingDebts.length} بند مستحق</div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">🔴 تفصيل المتأخرات ${rptArrearsGroup ? "(مجمّعة حسب المستأجر)" : "(مسطّحة)"}</div>
+          ${arrearsTable}
+        </div>`;
+    }
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8">
+        <title>${e(title)}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #1e293b; background: #fff; font-size: 13px; }
+          .page-header { border-bottom: 3px solid #1d4ed8; padding-bottom: 14px; margin-bottom: 20px; }
+          .page-header h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+          .page-header h2 { font-size: 16px; font-weight: 700; color: #1e293b; margin-top: 4px; }
+          .page-header .meta { font-size: 12px; color: #64748b; margin-top: 6px; }
+          .section { margin-bottom: 22px; }
+          .section-title { font-size: 14px; font-weight: 700; border-right: 4px solid #1d4ed8; padding-right: 8px; margin-bottom: 10px; color: #1e293b; }
+          .summary-grid { display: grid; gap: 10px; }
+          .summary-card { border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; }
+          .summary-card .lbl { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+          .summary-card .val { font-size: 17px; font-weight: 800; color: #1d4ed8; }
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th { background: #e2e8f0; padding: 9px 8px; text-align: right; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px; }
+          td { padding: 8px; border: 1px solid #e2e8f0; font-size: 12px; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          .total-row td { background: #cbd5e1; font-weight: 700; color: #0f172a; border-color: #94a3b8; }
+          .group-header td { background: #f1f5f9; font-weight: 700; border-top: 2px solid #94a3b8; }
+          .group-item td { padding-right: 22px; }
+          .text-red { color: #dc2626; font-weight: 700; }
+          .text-teal { color: #0f766e; font-weight: 700; }
+          .text-blue { color: #1d4ed8; font-weight: 700; }
+          .text-gray { color: #94a3b8; }
+          .no-data { text-align: center; color: #94a3b8; padding: 14px; }
+          .notice { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #92400e; margin-top: 12px; }
+          .arrears-total { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 8px; padding: 16px 20px; margin-bottom: 8px; }
+          .page-footer { border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
+          .btn { display: block; padding: 12px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; width: 240px; font-size: 15px; font-weight: 700; margin: 24px auto; font-family: inherit; }
+          @media print { .btn { display: none !important; } body { padding: 14px; } }
+        </style>
+      </head>
+      <body>
+        <button class="btn" onclick="window.print()">🖨️ اضغط هنا للطباعة أو الحفظ كـ PDF</button>
+
+        <div class="page-header">
+          <h1>🏢 أسواق الشبرمي</h1>
+          <h2>${e(title)}</h2>
+          <div class="meta">الفترة: ${e(periodLabel)} &nbsp;|&nbsp; تاريخ الطباعة: ${today} م</div>
+        </div>
+
+        ${content}
+
+        <div class="page-footer">أسواق الشبرمي — طُبع بتاريخ ${today} م</div>
       </body>
       </html>
     `);
@@ -3124,7 +3554,17 @@ export default function ShubramiSystem() {
 
                {activeTab === "tenant_statement" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
-                   <h3 className="text-base font-bold text-slate-900 mb-4">👤 كشف حساب المستأجر (للقراءة فقط)</h3>
+                   <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                     <h3 className="text-base font-bold text-slate-900">👤 كشف حساب المستأجر (للقراءة فقط)</h3>
+                     {stmtTenant && (
+                       <button
+                         onClick={printTenantStatementPDF}
+                         className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors"
+                       >
+                         🖨️ طباعة الكشف
+                       </button>
+                     )}
+                   </div>
 
                    <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
                      <div className="flex-1 min-w-[200px]">
@@ -3401,10 +3841,18 @@ export default function ShubramiSystem() {
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
                    <h3 className="text-base font-bold text-slate-900 mb-4">📊 التقارير المالية (للقراءة فقط)</h3>
 
-                   <div className="flex gap-4 mb-6 border-b border-slate-300 pb-2 flex-wrap">
-                     <button onClick={() => setRptTab("income")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "income" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>📈 الدخل والمصروفات</button>
-                     <button onClick={() => setRptTab("shop")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "shop" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🏪 حسب المحل</button>
-                     <button onClick={() => setRptTab("arrears")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "arrears" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔴 المتأخرات المفصّلة</button>
+                   <div className="flex items-center justify-between mb-6 border-b border-slate-300 pb-2 flex-wrap gap-2">
+                     <div className="flex gap-4 flex-wrap">
+                       <button onClick={() => setRptTab("income")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "income" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>📈 الدخل والمصروفات</button>
+                       <button onClick={() => setRptTab("shop")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "shop" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🏪 حسب المحل</button>
+                       <button onClick={() => setRptTab("arrears")} className={`px-3 py-1.5 font-bold transition-colors text-sm ${rptTab === "arrears" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔴 المتأخرات المفصّلة</button>
+                     </div>
+                     <button
+                       onClick={printFinancialReportPDF}
+                       className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+                     >
+                       🖨️ طباعة التقرير
+                     </button>
                    </div>
 
                    {/* التقرير 1 — الدخل والمصروفات بفترة */}
