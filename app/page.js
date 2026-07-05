@@ -1606,6 +1606,7 @@ export default function ShubramiSystem() {
       });
 
       if (txErr || !rpcData?.length) {
+        console.error("RPC full error (newPayment):", JSON.stringify(txErr), "| rpcData:", JSON.stringify(rpcData));
         return showToast(`🚫 فشل إنشاء السند — لم يُسجَّل أي شيء. يُرجى المحاولة مجدداً.`, "error", true);
       }
 
@@ -1791,7 +1792,10 @@ export default function ShubramiSystem() {
         p_reference_id:  targetDebt.id,
         p_is_debt:       true,
       });
-      if (txErr || !rpcData?.length) return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
+      if (txErr || !rpcData?.length) {
+        console.error("RPC full error (debtPayment):", JSON.stringify(txErr), "| rpcData:", JSON.stringify(rpcData));
+        return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
+      }
       setTransactionsDB([...transactionsDB, rpcData[0]]);
     }
 
