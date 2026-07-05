@@ -673,7 +673,11 @@ export default function ShubramiSystem() {
   const [debtTenant, setDebtTenant] = useState("");
   const [debtDetails, setDebtDetails] = useState("");
   const [debtAmount, setDebtAmount] = useState("");
-  
+  const [debtTenantSearch, setDebtTenantSearch] = useState("");
+  const [debtTenantIsNew, setDebtTenantIsNew] = useState(false);
+  const [debtTenantFreeText, setDebtTenantFreeText] = useState("");
+  const [debtReason, setDebtReason] = useState("");
+
   const [payDebtId, setPayDebtId] = useState("");
   const [payDebtAmount, setPayDebtAmount] = useState("");
   const [payDebtMethod, setPayDebtMethod] = useState("");
@@ -1726,16 +1730,41 @@ export default function ShubramiSystem() {
   const handleDebt = async (e) => {
     e.preventDefault();
     if (isSaving) return;
-    const newDebt = { id: `D-${Date.now()}`, year: debtYear, tenant: debtTenant, details: debtDetails, amount: Number(debtAmount) };
+
+    const resolvedTenant = debtTenantIsNew ? debtTenantFreeText.trim() : debtTenant;
+    if (!resolvedTenant) return showToast("الرجاء اختيار أو إدخال اسم المستأجر", "error");
+    if (!debtReason) return showToast("الرجاء اختيار سبب المديونية", "error");
+    const amountNum = Number(debtAmount);
+    if (!debtAmount || amountNum <= 0) return showToast("المبلغ يجب أن يكون أكبر من صفر", "error");
 
     setIsSaving(true);
     try {
-    const { error } = await supabase.from('debts').insert([newDebt]);
-    if (!error) {
-      setDebtsDB([...debtsDB, newDebt]);
-      setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
-      showToast("تم إدراج المديونية السابقة في قاعدة البيانات السحابية.", "success");
+    const { data: rpcData, error } = await supabase.rpc('rpc_add_manual_debt', {
+      p_tenant:  resolvedTenant,
+      p_year:    debtYear,
+      p_reason:  debtReason,
+      p_details: debtDetails,
+      p_amount:  amountNum,
+    });
+
+    if (error || !rpcData?.length) {
+      return showToast(`🚫 فشل إدراج المديونية: ${error?.message || "خطأ غير معروف"}`, "error", true);
     }
+
+    const inserted = rpcData[0];
+    setDebtsDB([...debtsDB, inserted]);
+
+    await logAction({
+      actionType: "إدراج مديونية يدوية",
+      entityType: "مديونية",
+      entityRef: resolvedTenant,
+      summary: `إدراج مديونية يدوية بقيمة ${amountNum} ريال على "${resolvedTenant}" (السبب: ${debtReason}).`,
+      details: { tenant: resolvedTenant, amount: amountNum, reason: debtReason, year: debtYear, notes: debtDetails, isNewTenant: debtTenantIsNew }
+    });
+
+    setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
+    setDebtTenantSearch(""); setDebtTenantIsNew(false); setDebtTenantFreeText(""); setDebtReason("");
+    showToast(`تم إدراج المديونية اليدوية بنجاح (${inserted.id}).`, "success");
     } finally {
       setIsSaving(false);
     }
@@ -4064,7 +4093,9 @@ export default function ShubramiSystem() {
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
                      <button onClick={() => setDebtSubTab("pay")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "pay" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>💰 سداد مديونية مستحقة</button>
-                     <button onClick={() => setDebtSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>✍️ إدراج مديونية يدوية</button>
+                     {currentUser?.role === "مدير" && (
+                       <button onClick={() => setDebtSubTab("new")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "new" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>✍️ إدراج مديونية يدوية</button>
+                     )}
                    </div>
 
                    {debtSubTab === "pay" && (
@@ -4100,18 +4131,75 @@ export default function ShubramiSystem() {
                       </form>
                    )}
 
-                   {debtSubTab === "new" && (
+                   {debtSubTab === "new" && currentUser?.role === "مدير" && (
                       <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ نهاية العقد / السنة المالية:</label>
                            <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
                          </div>
-                         <div>
+                         <div className="md:col-span-2">
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستأجر / الجهة:</label>
-                           <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={debtTenant} onChange={(e) => setDebtTenant(e.target.value)} required />
+                           {!debtTenantIsNew ? (
+                             <div className="flex gap-2 flex-wrap">
+                               <input
+                                 type="text"
+                                 placeholder="🔍 بحث..."
+                                 className="flex-1 min-w-[140px] rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors"
+                                 value={debtTenantSearch}
+                                 onChange={(e) => setDebtTenantSearch(e.target.value)}
+                               />
+                               <select
+                                 className="flex-1 min-w-[160px] rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors"
+                                 value={debtTenant}
+                                 onChange={(e) => setDebtTenant(e.target.value)}
+                                 required
+                               >
+                                 <option value="">-- اختر مستأجراً --</option>
+                                 {allStatementTenants
+                                   .filter(t => t.includes(debtTenantSearch.trim()))
+                                   .map(t => (<option key={t} value={t}>{t}</option>))}
+                               </select>
+                             </div>
+                           ) : (
+                             <div>
+                               <input
+                                 type="text"
+                                 placeholder="اكتب اسم المستأجر / الجهة الجديد"
+                                 className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors"
+                                 value={debtTenantFreeText}
+                                 onChange={(e) => setDebtTenantFreeText(e.target.value)}
+                                 required
+                               />
+                               <p className="text-amber-700 text-[11px] mt-1">⚠️ سيُنشئ هذا كياناً جديداً غير مرتبط بأي محل أو سجل سابق. تأكد من صحة الاسم.</p>
+                             </div>
+                           )}
+                           <label className="flex items-center gap-1.5 mt-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                             <input
+                               type="checkbox"
+                               checked={debtTenantIsNew}
+                               onChange={(e) => { setDebtTenantIsNew(e.target.checked); setDebtTenant(""); setDebtTenantFreeText(""); }}
+                             />
+                             ➕ اسم غير موجود في النظام
+                           </label>
                          </div>
                          <div className="md:col-span-2">
-                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تفاصيل المديونية:</label>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">سبب المديونية:</label>
+                           <select
+                             className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors"
+                             value={debtReason}
+                             onChange={(e) => setDebtReason(e.target.value)}
+                             required
+                           >
+                             <option value="">-- اختر سبب المديونية --</option>
+                             <option value="غرامة">غرامة</option>
+                             <option value="تلفيات">تلفيات</option>
+                             <option value="رسوم خدمات">رسوم خدمات</option>
+                             <option value="دين قديم">دين قديم</option>
+                             <option value="أخرى">أخرى</option>
+                           </select>
+                         </div>
+                         <div className="md:col-span-2">
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تفاصيل إضافية (اختياري):</label>
                            <textarea className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors min-h-[80px]" value={debtDetails} onChange={(e) => setDebtDetails(e.target.value)}></textarea>
                          </div>
                          <div>
