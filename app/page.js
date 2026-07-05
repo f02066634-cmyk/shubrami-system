@@ -669,7 +669,6 @@ export default function ShubramiSystem() {
   const [updatePayMethod, setUpdatePayMethod] = useState("");
   const [updatePayAmount, setUpdatePayAmount] = useState("");
 
-  const [debtYear, setDebtYear] = useState("");
   const [debtTenant, setDebtTenant] = useState("");
   const [debtDetails, setDebtDetails] = useState("");
   const [debtAmount, setDebtAmount] = useState("");
@@ -1737,11 +1736,13 @@ export default function ShubramiSystem() {
     const amountNum = Number(debtAmount);
     if (!debtAmount || amountNum <= 0) return showToast("المبلغ يجب أن يكون أكبر من صفر", "error");
 
+    const currentYear = new Date().getFullYear().toString();
+
     setIsSaving(true);
     try {
     const { data: rpcData, error } = await supabase.rpc('rpc_add_manual_debt', {
       p_tenant:  resolvedTenant,
-      p_year:    debtYear,
+      p_year:    currentYear,
       p_reason:  debtReason,
       p_details: debtDetails,
       p_amount:  amountNum,
@@ -1759,10 +1760,10 @@ export default function ShubramiSystem() {
       entityType: "مديونية",
       entityRef: resolvedTenant,
       summary: `إدراج مديونية يدوية بقيمة ${amountNum} ريال على "${resolvedTenant}" (السبب: ${debtReason}).`,
-      details: { tenant: resolvedTenant, amount: amountNum, reason: debtReason, year: debtYear, notes: debtDetails, isNewTenant: debtTenantIsNew }
+      details: { tenant: resolvedTenant, amount: amountNum, reason: debtReason, year: currentYear, notes: debtDetails, isNewTenant: debtTenantIsNew }
     });
 
-    setDebtYear(""); setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
+    setDebtTenant(""); setDebtDetails(""); setDebtAmount("");
     setDebtTenantSearch(""); setDebtTenantIsNew(false); setDebtTenantFreeText(""); setDebtReason("");
     showToast(`تم إدراج المديونية اليدوية بنجاح (${inserted.id}).`, "success");
     } finally {
@@ -4134,8 +4135,8 @@ export default function ShubramiSystem() {
                    {debtSubTab === "new" && currentUser?.role === "مدير" && (
                       <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                          <div>
-                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ نهاية العقد / السنة المالية:</label>
-                           <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={debtYear} onChange={(e) => setDebtYear(e.target.value)} required />
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">السنة المالية:</label>
+                           <p className="w-full rounded-lg border border-slate-300 p-2 bg-slate-100 text-slate-700 text-sm">📅 {new Date().getFullYear()}</p>
                          </div>
                          <div className="md:col-span-2">
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم المستأجر / الجهة:</label>
