@@ -690,6 +690,7 @@ export default function ShubramiSystem() {
   const [expNotes, setExpNotes] = useState("");
   const [expMethod, setExpMethod] = useState("");
   const [expYearFilter, setExpYearFilter] = useState("الكل");
+  const [expCategoryFilter, setExpCategoryFilter] = useState("الكل");
 
   const [newCatName, setNewCatName] = useState("");
   const [newCatUsers, setNewCatUsers] = useState([]);
@@ -1098,7 +1099,10 @@ export default function ShubramiSystem() {
   }))].filter(Boolean).sort((a, b) => b - a);
 
   const expenseYears = [...new Set(expensesDB.map(e => getYear(e.date)))].filter(Boolean).sort((a, b) => b - a);
-  const filteredExpenses = expensesDB.filter(e => expYearFilter === "الكل" || getYear(e.date) === expYearFilter);
+  const filteredExpenses = expensesDB.filter(e =>
+    (expYearFilter === "الكل" || getYear(e.date) === expYearFilter) &&
+    (expCategoryFilter === "الكل" || e.category_id === expCategoryFilter)
+  );
 
   const handleTransferToPayment = (shopNumber, amount, instId) => {
     setShowNotifications(false); 
@@ -2538,10 +2542,12 @@ export default function ShubramiSystem() {
           <tfoot class="total-row"><tr><td colspan="2">الإجمالي (${data.length} مصروف)</td><td class="text-red">${total.toLocaleString()} ريال</td><td colspan="2"></td></tr></tfoot>
         </table>
       </div>`;
+    const catLabel = expCategoryFilter === "الكل" ? "كل البنود" : (expenseCategoriesDB.find(c => c.id === expCategoryFilter)?.name || "-");
+    const yearLabel = expYearFilter === "الكل" ? "كل السنوات" : expYearFilter;
     printPage(
-      'سجل المصروفات التشغيلية',
+      `كشف مصروفات — ${expCategoryFilter === "الكل" ? "كل البنود" : `البند: ${catLabel}`}`,
       content,
-      `${expYearFilter === "الكل" ? "كل السنوات" : `السنة المالية: ${expYearFilter}`} — ${data.length} مصروف`
+      `السنة المالية: ${yearLabel} — ${data.length} مصروف`
     );
   };
 
@@ -4553,6 +4559,14 @@ export default function ShubramiSystem() {
                     <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
                       <h3 className="text-base font-bold text-slate-900">📋 سجل المصروفات التشغيلية</h3>
                       <div className="flex gap-3 items-end flex-wrap">
+                        <div className="min-w-[160px]">
+                          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={expCategoryFilter} onChange={(e) => setExpCategoryFilter(e.target.value)}>
+                            <option value="الكل">البند (الكل)</option>
+                            {expenseCategoriesDB.map(c => (
+                              <option key={c.id} value={c.id}>{c.name}{!c.is_active ? " ⛔ معطّل" : ""}</option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="min-w-[140px]">
                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={expYearFilter} onChange={(e) => setExpYearFilter(e.target.value)}>
                             <option value="الكل">السنة (الكل)</option>
