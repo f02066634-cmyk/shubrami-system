@@ -1783,11 +1783,12 @@ export default function ShubramiSystem() {
     setIsSaving(true);
     try {
     const { data: rpcData, error } = await supabase.rpc('rpc_add_manual_debt', {
-      p_tenant:  resolvedTenant,
-      p_year:    currentYear,
-      p_reason:  debtReason,
-      p_details: debtDetails,
-      p_amount:  amountNum,
+      p_tenant:      resolvedTenant,
+      p_year:        currentYear,
+      p_reason:      debtReason,
+      p_details:     debtDetails,
+      p_amount:      amountNum,
+      p_is_external: debtTenantIsNew,
     });
 
     if (error || !rpcData?.length) {
@@ -2271,7 +2272,7 @@ export default function ShubramiSystem() {
   // ==========================================
   const allStatementTenants = [...new Set([
     ...shopsDB.map(s => s.tenant),
-    ...debtsDB.map(d => d.tenant),
+    ...debtsDB.filter(d => !d.is_external).map(d => d.tenant),
     ...transactionsDB.map(t => t.tenant),
   ].map(n => (n || "").trim()).filter(Boolean))].sort();
 
@@ -2293,7 +2294,7 @@ export default function ShubramiSystem() {
   ].filter(Boolean))];
 
   const stmtDebts = stmtTenant
-    ? debtsDB.filter(d => (d.tenant || "").trim() === stmtTenant && d.amount > 0)
+    ? debtsDB.filter(d => (d.tenant || "").trim() === stmtTenant && d.amount > 0 && !d.is_external)
     : [];
 
   const stmtAllTenantTx = stmtTenant
