@@ -688,6 +688,8 @@ export default function ShubramiSystem() {
   const [expCategoryId, setExpCategoryId] = useState("");
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
+  const [expMethod, setExpMethod] = useState("");
+  const [expYearFilter, setExpYearFilter] = useState("الكل");
 
   const [newCatName, setNewCatName] = useState("");
   const [newCatUsers, setNewCatUsers] = useState([]);
@@ -1094,6 +1096,9 @@ export default function ShubramiSystem() {
     const parts = String(t.id).split('-');
     return parts.length > 1 ? parts[1] : null;
   }))].filter(Boolean).sort((a, b) => b - a);
+
+  const expenseYears = [...new Set(expensesDB.map(e => getYear(e.date)))].filter(Boolean).sort((a, b) => b - a);
+  const filteredExpenses = expensesDB.filter(e => expYearFilter === "الكل" || getYear(e.date) === expYearFilter);
 
   const handleTransferToPayment = (shopNumber, amount, instId) => {
     setShowNotifications(false); 
@@ -1887,6 +1892,7 @@ export default function ShubramiSystem() {
     e.preventDefault();
     if (isSaving) return;
     if (!expCategoryId) return showToast("الرجاء اختيار بند الصرف", "error");
+    if (!expMethod) return showToast("الرجاء اختيار طريقة الصرف", "error");
     const amountNum = Number(expAmount);
     if (!expAmount || amountNum <= 0) return showToast("المبلغ يجب أن يكون أكبر من صفر", "error");
 
@@ -1898,6 +1904,7 @@ export default function ShubramiSystem() {
       category_id: expCategoryId,
       created_by: currentUser.id,
       amount: amountNum,
+      payment_method: expMethod,
       notes: expNotes
     };
 
@@ -1906,7 +1913,7 @@ export default function ShubramiSystem() {
     const { error } = await supabase.from('expenses').insert([newExpense]);
     if (!error) {
       setExpensesDB([...expensesDB, newExpense]);
-      setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes("");
+      setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes(""); setExpMethod("");
       showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
     } else {
       showToast(`🚫 فشل تسجيل المصروف: ${error.message}`, "error", true);
@@ -2507,6 +2514,35 @@ export default function ShubramiSystem() {
         </table>
       </div>`;
     printPage('تقرير المديونيات المستحقة والمعلقة', content, `${data.length} بند مديونية`);
+  };
+
+  const printExpensesPDF = (data) => {
+    if (data.length === 0) return showToast("لا توجد مصروفات في الفرز الحالي لطباعتها", "warning");
+    const e = escapeHtml;
+    const total = data.reduce((s, ex) => s + ex.amount, 0);
+    const rows = data.map(ex => {
+      const catName = expenseCategoriesDB.find(c => c.id === ex.category_id)?.name || ex.category || "-";
+      return `<tr>
+        <td>${e(ex.date)}</td>
+        <td><b>${e(catName)}</b></td>
+        <td class="text-red">${ex.amount.toLocaleString()} ريال</td>
+        <td>${e(ex.payment_method)}</td>
+        <td>${e(ex.notes)}</td>
+      </tr>`;
+    }).join('');
+    const content = `
+      <div class="section">
+        <table>
+          <thead><tr><th>التاريخ</th><th>البند</th><th>المبلغ</th><th>طريقة الصرف</th><th>ملاحظات</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot class="total-row"><tr><td colspan="2">الإجمالي (${data.length} مصروف)</td><td class="text-red">${total.toLocaleString()} ريال</td><td colspan="2"></td></tr></tfoot>
+        </table>
+      </div>`;
+    printPage(
+      'سجل المصروفات التشغيلية',
+      content,
+      `${expYearFilter === "الكل" ? "كل السنوات" : `السنة المالية: ${expYearFilter}`} — ${data.length} مصروف`
+    );
   };
 
   const printRentedShopsPDF = (filteredData) => {
@@ -4495,6 +4531,15 @@ export default function ShubramiSystem() {
                          </select>
                        </div>
                        <div>
+                         <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الصرف:</label>
+                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expMethod} onChange={(e) => setExpMethod(e.target.value)} required>
+                           <option value="">-- اختر --</option>
+                           <option value="نقد">نقد</option>
+                           <option value="تحويل بنكي">تحويل بنكي</option>
+                           <option value="شيك">شيك</option>
+                         </select>
+                       </div>
+                       <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ:</label>
                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} required />
                        </div>
@@ -4505,7 +4550,20 @@ export default function ShubramiSystem() {
                        <button type="submit" disabled={isSaving} className="md:col-span-2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ التسجيل..." : "🚨 تسجيل المصروف"}</button>
                     </form>
 
-                    <h3 className="text-base font-bold text-slate-900 mb-4">📋 سجل المصروفات التشغيلية</h3>
+                    <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
+                      <h3 className="text-base font-bold text-slate-900">📋 سجل المصروفات التشغيلية</h3>
+                      <div className="flex gap-3 items-end flex-wrap">
+                        <div className="min-w-[140px]">
+                          <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={expYearFilter} onChange={(e) => setExpYearFilter(e.target.value)}>
+                            <option value="الكل">السنة (الكل)</option>
+                            {expenseYears.map(year => (
+                              <option key={year} value={year}>{year}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <button onClick={() => printExpensesPDF(filteredExpenses)} className="bg-white border border-slate-400 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">🖨️ طباعة سجل المصروفات</button>
+                      </div>
+                    </div>
                     <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
@@ -4513,24 +4571,26 @@ export default function ShubramiSystem() {
                            <th className="p-3">التاريخ</th>
                            <th className="p-3">البند</th>
                            <th className="p-3 text-slate-900">المبلغ</th>
+                           <th className="p-3">طريقة الصرف</th>
                            <th className="p-3">ملاحظات</th>
                            {currentUser?.role === "مدير" && (<th className="p-3">الموظف المنفّذ</th>)}
                          </tr>
                        </thead>
                        <tbody>
-                         {expensesDB.map((e, i) => (
+                         {filteredExpenses.map((e, i) => (
                            <tr key={i} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
                              <td className="p-3 text-slate-700">{e.date}</td>
                              <td className="p-3 font-semibold text-slate-800">{expenseCategoriesDB.find(c => c.id === e.category_id)?.name || e.category || "-"}</td>
                              <td className="p-3 font-bold text-slate-900">{e.amount.toLocaleString()}</td>
+                             <td className="p-3 text-slate-600">{e.payment_method || "-"}</td>
                              <td className="p-3 text-slate-600">{e.notes}</td>
                              {currentUser?.role === "مدير" && (
                                <td className="p-3 text-slate-600">{usersDB.find(u => u.id === e.created_by)?.name || "-"}</td>
                              )}
                            </tr>
                          ))}
-                         {expensesDB.length === 0 && (
-                            <tr><td colSpan={currentUser?.role === "مدير" ? 5 : 4} className="p-5 text-center text-slate-500">لا توجد مصروفات مسجلة.</td></tr>
+                         {filteredExpenses.length === 0 && (
+                            <tr><td colSpan={currentUser?.role === "مدير" ? 6 : 5} className="p-5 text-center text-slate-500">لا توجد مصروفات مسجلة.</td></tr>
                          )}
                        </tbody>
                      </table>
