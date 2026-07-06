@@ -610,6 +610,7 @@ export default function ShubramiSystem() {
   const [contractSubTab, setContractSubTab] = useState("new");
   const [paymentSubTab, setPaymentSubTab] = useState("new");
   const [debtSubTab, setDebtSubTab] = useState("pay");
+  const [expenseSubTab, setExpenseSubTab] = useState("log");
 
   const [newUserName, setNewUserName] = useState("");
   const [newUserUsername, setNewUserUsername] = useState("");
@@ -621,6 +622,8 @@ export default function ShubramiSystem() {
   const [transactionsDB, setTransactionsDB] = useState([]);
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
+  const [expenseCategoriesDB, setExpenseCategoriesDB] = useState([]);
+  const [categoryAssignmentsDB, setCategoryAssignmentsDB] = useState([]);
   const [installmentsDB, setInstallmentsDB] = useState([]); 
 
   const [filterContractStatus, setFilterContractStatus] = useState("الكل");
@@ -685,6 +688,10 @@ export default function ShubramiSystem() {
   const [expCat, setExpCat] = useState("");
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
+
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatUsers, setNewCatUsers] = useState([]);
+  const [editingCategory, setEditingCategory] = useState(null);
 
   const [instShop, setInstShop] = useState("");
   const [instAmount, setInstAmount] = useState("");
@@ -803,6 +810,27 @@ export default function ShubramiSystem() {
     setAuditLogsDB(data || []);
   };
 
+  // بنود المصروفات وتخصيصاتها — تُجلب فقط للمدير (RLS يقصر الإدارة الكاملة عليه)، لشاشة "إدارة بنود المصروفات"
+  const fetchExpenseCategories = async () => {
+    const { data, error } = await supabase.from('expense_categories').select('*').order('created_at');
+    if (error) {
+      console.error("Error fetching expense_categories:", error);
+      setExpenseCategoriesDB([]);
+      return;
+    }
+    setExpenseCategoriesDB(data || []);
+  };
+
+  const fetchExpenseCategoryAssignments = async () => {
+    const { data, error } = await supabase.from('expense_category_assignments').select('*');
+    if (error) {
+      console.error("Error fetching expense_category_assignments:", error);
+      setCategoryAssignmentsDB([]);
+      return;
+    }
+    setCategoryAssignmentsDB(data || []);
+  };
+
   // تُستدعى عند وجود جلسة Auth صالحة (تسجيل دخول جديد أو استرجاع جلسة محفوظة)
   const loadSessionAndData = async (session) => {
     try {
@@ -834,6 +862,8 @@ export default function ShubramiSystem() {
         setActiveTab("dashboard");
         await fetchUsersList();
         await fetchAuditLogs();
+        await fetchExpenseCategories();
+        await fetchExpenseCategoryAssignments();
       } else {
         const allowed = userObj.allowedTabs || [];
         setActiveTab(allowed.length > 0 ? allowed[0] : "");
@@ -1863,6 +1893,165 @@ export default function ShubramiSystem() {
       setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
       showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
     }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddExpenseCategory = async (e) => {
+    e.preventDefault();
+    if (isSaving) return;
+    const name = newCatName.trim();
+    if (!name) return showToast("اسم البند مطلوب", "error");
+    if (newCatUsers.length === 0) return showToast("اختر موظفاً واحداً على الأقل لهذا البند", "error");
+
+    setIsSaving(true);
+    try {
+      const { data: catData, error: catErr } = await supabase.from('expense_categories').insert([{ name }]).select();
+      if (catErr || !catData?.length) {
+        const msg = catErr?.code === '23505' ? "اسم البند موجود مسبقاً" : (catErr?.message || "خطأ غير معروف");
+        return showToast(`🚫 فشل إنشاء البند: ${msg}`, "error", true);
+      }
+
+      const newCategory = catData[0];
+      setExpenseCategoriesDB(prev => [...prev, newCategory]);
+
+      const { data: assignData, error: assignErr } = await supabase
+        .from('expense_category_assignments')
+        .insert(newCatUsers.map(uid => ({ category_id: newCategory.id, user_id: uid })))
+        .select();
+
+      const assignedNames = usersDB.filter(u => newCatUsers.includes(u.id)).map(u => u.name);
+
+      if (assignErr) {
+        showToast(`⚠️ تم إنشاء البند "${name}" لكن فشل تعيين الموظفين. عدّل التخصيص يدوياً من القائمة.`, "error", true);
+      } else {
+        setCategoryAssignmentsDB(prev => [...prev, ...(assignData || [])]);
+      }
+
+      await logAction({
+        actionType: "إضافة بند مصروفات",
+        entityType: "بند مصروفات",
+        entityRef: name,
+        summary: `إضافة بند مصروفات "${name}"${assignedNames.length ? ` وتعيينه لـ: ${assignedNames.join('، ')}` : ' (فشل تعيين الموظفين)'}.`,
+        details: { name, assignedUserIds: newCatUsers }
+      });
+
+      setNewCatName(""); setNewCatUsers([]);
+      if (!assignErr) showToast(`تم إنشاء بند "${name}" بنجاح.`, "success");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleToggleCategoryActive = async (category) => {
+    const { error } = await supabase
+      .from('expense_categories')
+      .update({ is_active: !category.is_active })
+      .eq('id', category.id);
+
+    if (error) return showToast(`🚫 فشل تحديث حالة البند: ${error.message}`, "error", true);
+
+    setExpenseCategoriesDB(prev => prev.map(c => c.id === category.id ? { ...c, is_active: !category.is_active } : c));
+    await logAction({
+      actionType: category.is_active ? "تعطيل بند مصروفات" : "إعادة تفعيل بند مصروفات",
+      entityType: "بند مصروفات",
+      entityRef: category.name,
+      summary: `${category.is_active ? "تعطيل" : "إعادة تفعيل"} بند "${category.name}".`
+    });
+    showToast(`${category.is_active ? "تم تعطيل" : "تم تفعيل"} البند "${category.name}".`, "success");
+  };
+
+  const handleDeleteExpenseCategory = async (category) => {
+    const hasExpenses = expensesDB.some(e => e.category_id === category.id);
+    if (hasExpenses) {
+      return showToast(`⚠️ لا يمكن حذف البند "${category.name}" لوجود مصروفات مسجَّلة تحته. يمكنك تعطيله بدلاً من ذلك.`, "error", true);
+    }
+    if (!(await showConfirm({ message: `هل أنت متأكد من حذف البند "${category.name}" نهائياً؟` }))) return;
+
+    const { error } = await supabase.from('expense_categories').delete().eq('id', category.id);
+    if (error) {
+      const msg = error.code === '23503'
+        ? `لا يمكن حذف البند "${category.name}" لوجود مصروفات مسجَّلة تحته. يمكنك تعطيله بدلاً من ذلك.`
+        : `فشل حذف البند: ${error.message}`;
+      return showToast(`🚫 ${msg}`, "error", true);
+    }
+
+    setExpenseCategoriesDB(prev => prev.filter(c => c.id !== category.id));
+    setCategoryAssignmentsDB(prev => prev.filter(a => a.category_id !== category.id));
+    await logAction({
+      actionType: "حذف بند مصروفات",
+      entityType: "بند مصروفات",
+      entityRef: category.name,
+      summary: `حذف بند مصروفات "${category.name}".`
+    });
+    showToast(`تم حذف البند "${category.name}".`, "success");
+  };
+
+  const openEditCategoryAssignments = (category) => {
+    const userIds = categoryAssignmentsDB.filter(a => a.category_id === category.id).map(a => a.user_id);
+    setEditingCategory({ ...category, userIds });
+  };
+
+  const handleToggleEditCategoryUser = (userId) => {
+    setEditingCategory(prev => ({
+      ...prev,
+      userIds: prev.userIds.includes(userId)
+        ? prev.userIds.filter(id => id !== userId)
+        : [...prev.userIds, userId]
+    }));
+  };
+
+  const handleSaveCategoryAssignments = async () => {
+    if (!editingCategory || isSaving) return;
+    if (editingCategory.userIds.length === 0) {
+      return showToast("يجب أن يبقى موظف واحد على الأقل مخصّصاً للبند", "error");
+    }
+
+    const currentUserIds = categoryAssignmentsDB.filter(a => a.category_id === editingCategory.id).map(a => a.user_id);
+    const toAdd = editingCategory.userIds.filter(id => !currentUserIds.includes(id));
+    const toRemove = currentUserIds.filter(id => !editingCategory.userIds.includes(id));
+
+    if (toAdd.length === 0 && toRemove.length === 0) {
+      setEditingCategory(null);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      if (toAdd.length > 0) {
+        const { data, error } = await supabase
+          .from('expense_category_assignments')
+          .insert(toAdd.map(uid => ({ category_id: editingCategory.id, user_id: uid })))
+          .select();
+        if (error) return showToast(`🚫 فشل إضافة الموظفين: ${error.message}`, "error", true);
+        setCategoryAssignmentsDB(prev => [...prev, ...(data || [])]);
+      }
+
+      if (toRemove.length > 0) {
+        const { error } = await supabase
+          .from('expense_category_assignments')
+          .delete()
+          .eq('category_id', editingCategory.id)
+          .in('user_id', toRemove);
+        if (error) return showToast(`🚫 فشل إزالة الموظفين: ${error.message}`, "error", true);
+        setCategoryAssignmentsDB(prev => prev.filter(a => !(a.category_id === editingCategory.id && toRemove.includes(a.user_id))));
+      }
+
+      const addedNames = usersDB.filter(u => toAdd.includes(u.id)).map(u => u.name);
+      const removedNames = usersDB.filter(u => toRemove.includes(u.id)).map(u => u.name);
+      await logAction({
+        actionType: "تعديل تخصيص بند مصروفات",
+        entityType: "بند مصروفات",
+        entityRef: editingCategory.name,
+        summary: `تعديل تخصيص بند "${editingCategory.name}"` +
+          (addedNames.length ? ` — أُضيف: ${addedNames.join('، ')}` : '') +
+          (removedNames.length ? ` — أُزيل: ${removedNames.join('، ')}` : '') + '.',
+        details: { categoryId: editingCategory.id, added: toAdd, removed: toRemove }
+      });
+
+      setEditingCategory(null);
+      showToast("تم تحديث تخصيص البند بنجاح.", "success");
     } finally {
       setIsSaving(false);
     }
@@ -4264,6 +4453,15 @@ export default function ShubramiSystem() {
 
                {activeTab === "expenses" && (
                  <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                   <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
+                     <button onClick={() => setExpenseSubTab("log")} className={`px-3 py-1.5 font-bold transition-colors ${expenseSubTab === "log" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>📋 سجل المصروفات</button>
+                     {currentUser?.role === "مدير" && (
+                       <button onClick={() => setExpenseSubTab("categories")} className={`px-3 py-1.5 font-bold transition-colors ${expenseSubTab === "categories" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🗂️ إدارة البنود</button>
+                     )}
+                   </div>
+
+                   {expenseSubTab === "log" && (
+                     <>
                     <form onSubmit={handleExpense} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">التاريخ:</label>
@@ -4283,7 +4481,7 @@ export default function ShubramiSystem() {
                        </div>
                        <button type="submit" disabled={isSaving} className="md:col-span-2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ التسجيل..." : "🚨 تسجيل المصروف"}</button>
                     </form>
-                    
+
                     <h3 className="text-base font-bold text-slate-900 mb-4">📋 سجل المصروفات التشغيلية</h3>
                     <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
@@ -4309,6 +4507,113 @@ export default function ShubramiSystem() {
                          )}
                        </tbody>
                      </table>
+                   </div>
+                     </>
+                   )}
+
+                   {expenseSubTab === "categories" && currentUser?.role === "مدير" && (
+                     <>
+                       <form onSubmit={handleAddExpenseCategory} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                         <div className="md:col-span-2">
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم البند الجديد:</label>
+                           <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} required />
+                         </div>
+                         <div className="md:col-span-2">
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تعيين الموظفين (يمكن اختيار أكثر من موظف لبند مشترك):</label>
+                           <div className="flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-52 overflow-y-auto">
+                             {usersDB.filter(u => u.role === "موظف").map(u => (
+                               <label key={u.id} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                                 <input
+                                   type="checkbox"
+                                   checked={newCatUsers.includes(u.id)}
+                                   onChange={() => setNewCatUsers(prev => prev.includes(u.id) ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                                 />
+                                 {u.name}
+                               </label>
+                             ))}
+                             {usersDB.filter(u => u.role === "موظف").length === 0 && (
+                               <p className="text-xs text-slate-500">لا يوجد موظفون في النظام بعد.</p>
+                             )}
+                           </div>
+                         </div>
+                         <button type="submit" disabled={isSaving} className="md:col-span-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "➕ إضافة البند"}</button>
+                       </form>
+
+                       <h3 className="text-base font-bold text-slate-900 mb-4">🗂️ البنود الحالية</h3>
+                       <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                         <table className="w-full text-right text-slate-800 text-xs">
+                           <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                             <tr>
+                               <th className="p-3">البند</th>
+                               <th className="p-3">الموظفون المخصَّصون</th>
+                               <th className="p-3">الإجراءات</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {expenseCategoriesDB.map(cat => {
+                               const assignedNames = categoryAssignmentsDB
+                                 .filter(a => a.category_id === cat.id)
+                                 .map(a => usersDB.find(u => u.id === a.user_id)?.name || "؟")
+                                 .join('، ');
+                               return (
+                                 <tr key={cat.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                                   <td className="p-3 font-semibold text-slate-800">
+                                     {cat.name}
+                                     {!cat.is_active && (
+                                       <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 border border-slate-300">⛔ معطّل</span>
+                                     )}
+                                   </td>
+                                   <td className="p-3 text-slate-600">{assignedNames || "—"}</td>
+                                   <td className="p-3">
+                                     <div className="flex gap-2 flex-wrap">
+                                       <button onClick={() => openEditCategoryAssignments(cat)} className="text-[11px] font-bold px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200 transition-colors">✏️ تعديل التخصيص</button>
+                                       <button onClick={() => handleToggleCategoryActive(cat)} className={`text-[11px] font-bold px-2 py-1 rounded border transition-colors ${cat.is_active ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200" : "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200"}`}>
+                                         {cat.is_active ? "🚫 تعطيل" : "✅ تفعيل"}
+                                       </button>
+                                       <button onClick={() => handleDeleteExpenseCategory(cat)} className="text-[11px] font-bold px-2 py-1 rounded bg-red-100 text-red-800 border border-red-300 hover:bg-red-200 transition-colors">🗑️ حذف</button>
+                                     </div>
+                                   </td>
+                                 </tr>
+                               );
+                             })}
+                             {expenseCategoriesDB.length === 0 && (
+                               <tr><td colSpan="3" className="p-5 text-center text-slate-500">لا توجد بنود مصروفات بعد.</td></tr>
+                             )}
+                           </tbody>
+                         </table>
+                       </div>
+                     </>
+                   )}
+                 </div>
+               )}
+
+               {editingCategory && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                   <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-md relative">
+                     <button onClick={() => setEditingCategory(null)} className="absolute top-4 left-5 text-slate-400 hover:text-red-500 text-2xl font-bold transition-colors">&times;</button>
+                     <h3 className="text-slate-900 font-extrabold mb-2 flex items-center gap-2 text-lg">
+                       <span>✏️</span> تعديل تخصيص: {editingCategory.name}
+                     </h3>
+                     <p className="text-xs text-slate-500 mb-5 border-b border-slate-200 pb-3">حدد الموظفين المسموح لهم بتسجيل مصروفات تحت هذا البند.</p>
+
+                     <div className="flex flex-col gap-3 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 max-h-64 overflow-y-auto">
+                       {usersDB.filter(u => u.role === "موظف").map(u => (
+                         <label key={u.id} className="flex items-center gap-3 text-sm text-slate-800 cursor-pointer font-semibold p-2 hover:bg-white rounded transition-colors">
+                           <input
+                             type="checkbox"
+                             checked={editingCategory.userIds.includes(u.id)}
+                             onChange={() => handleToggleEditCategoryUser(u.id)}
+                             className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-600"
+                           />
+                           {u.name}
+                         </label>
+                       ))}
+                     </div>
+
+                     <div className="flex gap-3">
+                       <button onClick={handleSaveCategoryAssignments} disabled={isSaving} className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "💾 حفظ التخصيص"}</button>
+                       <button onClick={() => setEditingCategory(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">إلغاء</button>
+                     </div>
                    </div>
                  </div>
                )}
