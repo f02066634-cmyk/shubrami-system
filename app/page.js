@@ -1077,12 +1077,17 @@ export default function ShubramiSystem() {
           ? `إيجار متبقٍ على عقد ساري منتهي التاريخ - ${s.shopNumber}`
           : `إيجار متبقٍ على عقد مؤرشف - ${s.shopNumber}`,
         amount: s.annualRent - s.collected,
+        originalAmount: s.annualRent,
+        collectedAmount: s.collected,
         isShopDebt: true,
         debtType: s.status === "مؤجر" ? "active-expired" : "archived"
       };
     });
 
-  const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => ({ ...d, isShopDebt: false }));
+  const manualDebts = debtsDB.filter(d => d.amount > 0).map(d => {
+    const original = d.original_amount ?? d.amount;
+    return { ...d, isShopDebt: false, originalAmount: original, collectedAmount: original - d.amount };
+  });
   const allOutstandingDebts = [...expiredShopsDebts, ...manualDebts];
 
   const availableYears = [...new Set(shopsDB.filter(s => !s.status.includes("أرشيف") && s.startDate !== "-").flatMap(s => [getYear(s.startDate), getYear(s.endDate)]))].sort((a, b) => b - a);
@@ -1648,6 +1653,7 @@ export default function ShubramiSystem() {
         p_status:        status,
         p_reference_id:  null,
         p_is_debt:       false,
+        p_is_external:   false,
       });
 
       if (txErr || !rpcData?.length) {
@@ -1863,6 +1869,7 @@ export default function ShubramiSystem() {
         p_status:        (targetDebt.amount - payAmt === 0) ? "مغلق (سداد مديونية)" : "سداد جزئي (مديونية)",
         p_reference_id:  targetDebt.id,
         p_is_debt:       true,
+        p_is_external:   !!targetDebt.is_external,
       });
       if (txErr || !rpcData?.length) return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
       setTransactionsDB([...transactionsDB, rpcData[0]]);
@@ -2273,7 +2280,7 @@ export default function ShubramiSystem() {
   const allStatementTenants = [...new Set([
     ...shopsDB.map(s => s.tenant),
     ...debtsDB.filter(d => !d.is_external).map(d => d.tenant),
-    ...transactionsDB.map(t => t.tenant),
+    ...transactionsDB.filter(t => !t.is_external).map(t => t.tenant),
   ].map(n => (n || "").trim()).filter(Boolean))].sort();
 
   const filteredStatementTenants = stmtSearch.trim() === ""
@@ -2298,7 +2305,7 @@ export default function ShubramiSystem() {
     : [];
 
   const stmtAllTenantTx = stmtTenant
-    ? transactionsDB.filter(t => (t.tenant || "").trim() === stmtTenant)
+    ? transactionsDB.filter(t => (t.tenant || "").trim() === stmtTenant && !t.is_external)
     : [];
   const stmtTxYears = [...new Set(
     stmtAllTenantTx.map(t => String(t.id).split('-')[1]).filter(Boolean)
@@ -4478,12 +4485,14 @@ export default function ShubramiSystem() {
                            <th className="p-3">تاريخ نهاية العقد</th>
                            <th className="p-3">المستأجر</th>
                            <th className="p-3">التفاصيل</th>
+                           <th className="p-3">المبلغ المطلوب</th>
+                           <th className="p-3 text-teal-700">المحصّل</th>
                            <th className="p-3 text-red-600">المبلغ المتبقي</th>
                          </tr>
                        </thead>
                        <tbody>
                          {allOutstandingDebts.length === 0 ? (
-                           <tr><td colSpan="5" className="p-5 text-center text-slate-500">لا توجد مديونيات مستحقة.</td></tr>
+                           <tr><td colSpan="7" className="p-5 text-center text-slate-500">لا توجد مديونيات مستحقة.</td></tr>
                          ) : (
                            allOutstandingDebts.map((d) => (
                              <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
@@ -4502,6 +4511,8 @@ export default function ShubramiSystem() {
                                  )}
                                  <div className="truncate">{d.details}</div>
                                </td>
+                               <td className="p-3 text-slate-700">{d.originalAmount.toLocaleString()}</td>
+                               <td className="p-3 font-semibold text-teal-700">{d.collectedAmount.toLocaleString()}</td>
                                <td className="p-3 font-bold text-red-600">{d.amount.toLocaleString()}</td>
                              </tr>
                            ))
