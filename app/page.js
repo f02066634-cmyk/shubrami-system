@@ -685,7 +685,7 @@ export default function ShubramiSystem() {
   const [payDebtMethod, setPayDebtMethod] = useState("");
 
   const [expDate, setExpDate] = useState("");
-  const [expCat, setExpCat] = useState("");
+  const [expCategoryId, setExpCategoryId] = useState("");
   const [expAmount, setExpAmount] = useState("");
   const [expNotes, setExpNotes] = useState("");
 
@@ -862,12 +862,15 @@ export default function ShubramiSystem() {
         setActiveTab("dashboard");
         await fetchUsersList();
         await fetchAuditLogs();
-        await fetchExpenseCategories();
         await fetchExpenseCategoryAssignments();
       } else {
         const allowed = userObj.allowedTabs || [];
         setActiveTab(allowed.length > 0 ? allowed[0] : "");
       }
+
+      // بنود المصروفات النشطة/المخصَّصة تُجلب لكل الأدوار — RLS تُرشّحها تلقائياً
+      // (المدير يرى الكل، الموظف يرى بنوده فقط)، فلا حاجة لفلترة إضافية هنا.
+      await fetchExpenseCategories();
 
       await fetchAppData(userObj);
     } catch (err) {
@@ -1883,15 +1886,30 @@ export default function ShubramiSystem() {
   const handleExpense = async (e) => {
     e.preventDefault();
     if (isSaving) return;
-    const newExpense = { id: `E-${Date.now()}`, date: expDate, category: expCat, amount: Number(expAmount), notes: expNotes };
+    if (!expCategoryId) return showToast("الرجاء اختيار بند الصرف", "error");
+    const amountNum = Number(expAmount);
+    if (!expAmount || amountNum <= 0) return showToast("المبلغ يجب أن يكون أكبر من صفر", "error");
+
+    const category = expenseCategoriesDB.find(c => c.id === expCategoryId);
+    const newExpense = {
+      id: `E-${Date.now()}`,
+      date: expDate,
+      category: category?.name || null,
+      category_id: expCategoryId,
+      created_by: currentUser.id,
+      amount: amountNum,
+      notes: expNotes
+    };
 
     setIsSaving(true);
     try {
     const { error } = await supabase.from('expenses').insert([newExpense]);
     if (!error) {
       setExpensesDB([...expensesDB, newExpense]);
-      setExpDate(""); setExpCat(""); setExpAmount(""); setExpNotes("");
+      setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes("");
       showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
+    } else {
+      showToast(`🚫 فشل تسجيل المصروف: ${error.message}`, "error", true);
     }
     } finally {
       setIsSaving(false);
@@ -4469,7 +4487,12 @@ export default function ShubramiSystem() {
                        </div>
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">بند الصرف:</label>
-                         <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expCat} onChange={(e) => setExpCat(e.target.value)} required />
+                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expCategoryId} onChange={(e) => setExpCategoryId(e.target.value)} required>
+                           <option value="">-- اختر بند الصرف --</option>
+                           {expenseCategoriesDB.filter(c => c.is_active).map(c => (
+                             <option key={c.id} value={c.id}>{c.name}</option>
+                           ))}
+                         </select>
                        </div>
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ:</label>
@@ -4491,19 +4514,23 @@ export default function ShubramiSystem() {
                            <th className="p-3">البند</th>
                            <th className="p-3 text-slate-900">المبلغ</th>
                            <th className="p-3">ملاحظات</th>
+                           {currentUser?.role === "مدير" && (<th className="p-3">الموظف المنفّذ</th>)}
                          </tr>
                        </thead>
                        <tbody>
                          {expensesDB.map((e, i) => (
                            <tr key={i} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
                              <td className="p-3 text-slate-700">{e.date}</td>
-                             <td className="p-3 font-semibold text-slate-800">{e.category}</td>
+                             <td className="p-3 font-semibold text-slate-800">{expenseCategoriesDB.find(c => c.id === e.category_id)?.name || e.category || "-"}</td>
                              <td className="p-3 font-bold text-slate-900">{e.amount.toLocaleString()}</td>
                              <td className="p-3 text-slate-600">{e.notes}</td>
+                             {currentUser?.role === "مدير" && (
+                               <td className="p-3 text-slate-600">{usersDB.find(u => u.id === e.created_by)?.name || "-"}</td>
+                             )}
                            </tr>
                          ))}
                          {expensesDB.length === 0 && (
-                            <tr><td colSpan="4" className="p-5 text-center text-slate-500">لا توجد مصروفات مسجلة.</td></tr>
+                            <tr><td colSpan={currentUser?.role === "مدير" ? 5 : 4} className="p-5 text-center text-slate-500">لا توجد مصروفات مسجلة.</td></tr>
                          )}
                        </tbody>
                      </table>
