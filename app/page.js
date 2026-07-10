@@ -9,8 +9,60 @@ const TX_TYPE_DEBT = 'مديونية';
 const isContractExpired = (endDate) => {
   if (!endDate || endDate === "-") return false;
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  return new Date(endDate) < today; 
+  return new Date(endDate) < today;
 };
+
+// ==================== Pagination موحّد لكل الجداول ====================
+function usePagination(items, resetDeps = [], defaultPageSize = 25) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+
+  // إعادة التعيين للصفحة الأولى تعتمد على متغيرات الفلتر الفعلية (resetDeps)،
+  // وليس على مرجع المصفوفة المفلترة نفسها — لأن الأخيرة تُعاد بناؤها كمصفوفة
+  // جديدة في كل تصيير بصرف النظر عن تغيّر أي فلتر فعلياً.
+  useEffect(() => { setPage(1); }, resetDeps);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = items.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  return { pageItems, page: safePage, setPage, totalPages, pageSize, setPageSize, totalItems: items.length };
+}
+
+const PaginationControls = ({ page, totalPages, onPageChange, pageSize, onPageSizeChange, totalItems }) => (
+  <div className="flex items-center justify-between flex-wrap gap-3 mt-3 text-xs">
+    <span className="text-slate-600 font-semibold">
+      عرض {totalItems === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalItems)} من {totalItems}
+    </span>
+    <div className="flex items-center gap-2">
+      <select
+        value={pageSize}
+        onChange={(e) => onPageSizeChange(Number(e.target.value))}
+        className="rounded-lg border border-slate-400 p-1.5 bg-white text-slate-900 outline-none font-bold text-xs"
+      >
+        <option value={20}>20</option>
+        <option value={25}>25</option>
+        <option value={30}>30</option>
+        <option value={50}>50</option>
+      </select>
+      <button
+        onClick={() => onPageChange(page - 1)}
+        disabled={page <= 1}
+        className="px-3 py-1.5 rounded-lg border border-slate-400 bg-white font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+      >
+        السابق
+      </button>
+      <span className="font-bold text-slate-800 px-1">صفحة {page} من {totalPages}</span>
+      <button
+        onClick={() => onPageChange(page + 1)}
+        disabled={page >= totalPages}
+        className="px-3 py-1.5 rounded-lg border border-slate-400 bg-white font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+      >
+        التالي
+      </button>
+    </div>
+  </div>
+);
 
 // ==================== مكوّن لوحة المؤشرات (مستقل) ====================
 const DashboardIndicators = ({
@@ -302,6 +354,14 @@ const FinancialCollection = ({
   printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF,
   isSaving
 }) => {
+  const {
+    pageItems: pagedTransactions,
+    page: txPage, setPage: setTxPage,
+    totalPages: txTotalPages,
+    pageSize: txPageSize, setPageSize: setTxPageSize,
+    totalItems: txTotalItems
+  } = usePagination(filteredTransactions, [searchReceipt, filterReceiptStatus, filterReceiptYear]);
+
   return (
     <div className="animate-fade-in text-sm">
       <div className="flex gap-4 mb-6 border-b border-slate-300 pb-2 flex-wrap">
@@ -530,7 +590,7 @@ const FinancialCollection = ({
           <tbody>
             {filteredTransactions.length > 0 ? (
               <>
-                {filteredTransactions.map((t) => (
+                {pagedTransactions.map((t) => (
                   <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-100">
                     <td className="p-3 font-bold text-slate-900">{t.id}</td>
                     <td className="p-3 text-slate-600">{t.updateDate}</td>
@@ -565,6 +625,16 @@ const FinancialCollection = ({
           </tbody>
         </table>
       </div>
+      {filteredTransactions.length > 0 && (
+        <PaginationControls
+          page={txPage}
+          totalPages={txTotalPages}
+          onPageChange={setTxPage}
+          pageSize={txPageSize}
+          onPageSizeChange={setTxPageSize}
+          totalItems={txTotalItems}
+        />
+      )}
     </div>
   );
 };
