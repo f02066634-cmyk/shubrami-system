@@ -4439,7 +4439,7 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "debts" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-xl p-7 shadow-md border border-slate-300 border-t-4 border-t-red-600 animate-fade-in text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
                      <button onClick={() => setDebtSubTab("pay")} className={`px-3 py-1.5 font-bold transition-colors ${debtSubTab === "pay" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>💰 سداد مديونية مستحقة</button>
                      {currentUser?.role === "مدير" && (
@@ -4448,7 +4448,7 @@ export default function ShubramiSystem() {
                    </div>
 
                    {debtSubTab === "pay" && (
-                      <form onSubmit={handleDebtPayment} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                      <form onSubmit={handleDebtPayment} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                          <div className="md:col-span-2">
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اختر المديونية المستحقة للسداد:</label>
                            <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={payDebtId} onChange={(e) => setPayDebtId(e.target.value)} required>
@@ -4481,7 +4481,7 @@ export default function ShubramiSystem() {
                    )}
 
                    {debtSubTab === "new" && currentUser?.role === "مدير" && (
-                      <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                      <form onSubmit={handleDebt} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">السنة المالية:</label>
                            <p className="w-full rounded-lg border border-slate-300 p-2 bg-slate-100 text-slate-700 text-sm">📅 {new Date().getFullYear()}</p>
@@ -4565,28 +4565,28 @@ export default function ShubramiSystem() {
                     
                     <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
                        <h3 className="text-base font-bold text-slate-900">📊 جدول المديونيات المستحقة والمعلقة</h3>
-                       <button onClick={() => printDebtsPDF(allOutstandingDebts)} className="bg-white border border-slate-400 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">📄 طباعة الجدول</button>
+                       <button onClick={() => printDebtsPDF(allOutstandingDebts)} className="bg-white border border-slate-300 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">📄 طباعة الجدول</button>
                     </div>
-                    
-                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white custom-scrollbar">
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white custom-scrollbar">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                          <tr>
-                           <th className="p-3">المعرف / المحل</th>
-                           <th className="p-3">تاريخ نهاية العقد</th>
-                           <th className="p-3">المستأجر</th>
-                           <th className="p-3">التفاصيل</th>
-                           <th className="p-3">المبلغ المطلوب</th>
-                           <th className="p-3 text-teal-700">المحصّل</th>
-                           <th className="p-3 text-red-600">المبلغ المتبقي</th>
+                           <th className="p-3.5">المعرف / المحل</th>
+                           <th className="p-3.5">تاريخ نهاية العقد</th>
+                           <th className="p-3.5">المستأجر</th>
+                           <th className="p-3.5">التفاصيل</th>
+                           <th className="p-3.5">المبلغ المطلوب</th>
+                           <th className="p-3.5 text-teal-700">المحصّل</th>
+                           <th className="p-3.5 text-red-600">المبلغ المتبقي</th>
                          </tr>
                        </thead>
                        <tbody>
                          {allOutstandingDebts.length === 0 ? (
                            <tr><td colSpan="7" className="p-5 text-center text-slate-500">لا توجد مديونيات مستحقة.</td></tr>
                          ) : (
-                           allOutstandingDebts.map((d) => (
-                             <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                           allOutstandingDebts.map((d, i) => (
+                             <tr key={d.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                <td className="p-3 font-bold text-slate-900">{d.isShopDebt ? d.label : d.id}</td>
                                <td className="p-3 text-slate-700">{d.year}</td>
                                <td className="p-3 text-slate-700">{d.tenant}</td>
@@ -4615,7 +4615,7 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "expenses" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-xl p-7 shadow-md border border-slate-300 border-t-4 border-t-amber-500 animate-fade-in text-sm">
                    <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
                      <button onClick={() => setExpenseSubTab("log")} className={`px-3 py-1.5 font-bold transition-colors ${expenseSubTab === "log" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>📋 سجل المصروفات</button>
                      {currentUser?.role === "مدير" && (
@@ -4625,7 +4625,7 @@ export default function ShubramiSystem() {
 
                    {expenseSubTab === "log" && (
                      <>
-                    <form onSubmit={handleExpense} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                    <form onSubmit={handleExpense} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">التاريخ:</label>
                          <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expDate} onChange={(e) => setExpDate(e.target.value)} required />
@@ -4659,7 +4659,7 @@ export default function ShubramiSystem() {
                        <button type="submit" disabled={isSaving} className="md:col-span-2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ التسجيل..." : "🚨 تسجيل المصروف"}</button>
                     </form>
 
-                    <div className="flex justify-between items-end mb-4 flex-wrap gap-4">
+                    <div className="flex justify-between items-end mb-4 flex-wrap gap-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
                       <h3 className="text-base font-bold text-slate-900">📋 سجل المصروفات التشغيلية</h3>
                       <div className="flex gap-3 items-end flex-wrap">
                         <div className="min-w-[160px]">
@@ -4678,24 +4678,24 @@ export default function ShubramiSystem() {
                             ))}
                           </select>
                         </div>
-                        <button onClick={() => printExpensesPDF(filteredExpenses)} className="bg-white border border-slate-400 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">🖨️ طباعة سجل المصروفات</button>
+                        <button onClick={() => printExpensesPDF(filteredExpenses)} className="bg-white border border-slate-300 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-slate-100 transition-colors">🖨️ طباعة سجل المصروفات</button>
                       </div>
                     </div>
-                    <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                    <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                          <tr>
-                           <th className="p-3">التاريخ</th>
-                           <th className="p-3">البند</th>
-                           <th className="p-3 text-slate-900">المبلغ</th>
-                           <th className="p-3">طريقة الصرف</th>
-                           <th className="p-3">ملاحظات</th>
-                           {currentUser?.role === "مدير" && (<th className="p-3">الموظف المنفّذ</th>)}
+                           <th className="p-3.5">التاريخ</th>
+                           <th className="p-3.5">البند</th>
+                           <th className="p-3.5 text-slate-900">المبلغ</th>
+                           <th className="p-3.5">طريقة الصرف</th>
+                           <th className="p-3.5">ملاحظات</th>
+                           {currentUser?.role === "مدير" && (<th className="p-3.5">الموظف المنفّذ</th>)}
                          </tr>
                        </thead>
                        <tbody>
                          {filteredExpenses.map((e, i) => (
-                           <tr key={i} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                           <tr key={i} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                              <td className="p-3 text-slate-700">{e.date}</td>
                              <td className="p-3 font-semibold text-slate-800">{expenseCategoriesDB.find(c => c.id === e.category_id)?.name || e.category || "-"}</td>
                              <td className="p-3 font-bold text-slate-900">{e.amount.toLocaleString()}</td>
@@ -4717,7 +4717,7 @@ export default function ShubramiSystem() {
 
                    {expenseSubTab === "categories" && currentUser?.role === "مدير" && (
                      <>
-                       <form onSubmit={handleAddExpenseCategory} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                       <form onSubmit={handleAddExpenseCategory} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                          <div className="md:col-span-2">
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم البند الجديد:</label>
                            <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} required />
@@ -4744,23 +4744,23 @@ export default function ShubramiSystem() {
                        </form>
 
                        <h3 className="text-base font-bold text-slate-900 mb-4">🗂️ البنود الحالية</h3>
-                       <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                       <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                          <table className="w-full text-right text-slate-800 text-xs">
                            <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                              <tr>
-                               <th className="p-3">البند</th>
-                               <th className="p-3">الموظفون المخصَّصون</th>
-                               <th className="p-3">الإجراءات</th>
+                               <th className="p-3.5">البند</th>
+                               <th className="p-3.5">الموظفون المخصَّصون</th>
+                               <th className="p-3.5">الإجراءات</th>
                              </tr>
                            </thead>
                            <tbody>
-                             {expenseCategoriesDB.map(cat => {
+                             {expenseCategoriesDB.map((cat, i) => {
                                const assignedNames = categoryAssignmentsDB
                                  .filter(a => a.category_id === cat.id)
                                  .map(a => usersDB.find(u => u.id === a.user_id)?.name || "؟")
                                  .join('، ');
                                return (
-                                 <tr key={cat.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                                 <tr key={cat.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                    <td className="p-3 font-semibold text-slate-800">
                                      {cat.name}
                                      {!cat.is_active && (
