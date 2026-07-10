@@ -3663,15 +3663,15 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "archive" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-xl p-7 shadow-md border border-slate-300 border-t-4 border-t-slate-500 animate-fade-in text-sm">
                    <h3 className="text-base font-bold text-slate-900 mb-4">🗄️ أرشيف العقود (سجل تاريخي - للعرض فقط)</h3>
 
-                   <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
+                   <div className="flex gap-3 mb-4 bg-slate-100 p-4 rounded-xl border border-slate-300 flex-wrap">
                      <div className="flex-1 min-w-[200px]">
                        <input type="text" placeholder="🔍 بحث برقم المحل أو المستأجر..." className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={archiveSearch} onChange={(e) => setArchiveSearch(e.target.value)} />
                      </div>
                      <div className="flex-1 min-w-[150px]">
-                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={archiveActionFilter} onChange={(e) => setArchiveActionFilter(e.target.value)}>
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={archiveActionFilter} onChange={(e) => setArchiveActionFilter(e.target.value)}>
                          <option value="الكل">نوع الإجراء (الكل)</option>
                          <option value="أرشيف - مجدد">مجدد</option>
                          <option value="أرشيف - مخلى">مخلى</option>
@@ -3679,36 +3679,36 @@ export default function ShubramiSystem() {
                        </select>
                      </div>
                      <div className="flex-1 min-w-[170px]">
-                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={archiveYearFilter} onChange={(e) => setArchiveYearFilter(e.target.value)}>
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={archiveYearFilter} onChange={(e) => setArchiveYearFilter(e.target.value)}>
                          <option value="الكل">سنة انتهاء العقد (الكل)</option>
                          {archiveYears.map(year => (<option key={year} value={year}>{year}</option>))}
                        </select>
                      </div>
                      <div className="flex-1 min-w-[170px]">
-                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={archiveTenantFilter} onChange={(e) => setArchiveTenantFilter(e.target.value)}>
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={archiveTenantFilter} onChange={(e) => setArchiveTenantFilter(e.target.value)}>
                          <option value="الكل">المستأجر / الكيان (الكل)</option>
                          {archiveTenants.map(tenant => (<option key={tenant} value={tenant}>{tenant}</option>))}
                        </select>
                      </div>
                    </div>
 
-                   <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                   <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                          <tr>
-                           <th className="p-3 font-semibold">رقم المحل</th>
-                           <th className="p-3 font-semibold">المستأجر (الكيان)</th>
-                           <th className="p-3 font-semibold text-blue-700">رقم عقد إيجار</th>
-                           <th className="p-3 font-semibold">البداية</th>
-                           <th className="p-3 font-semibold">النهاية</th>
-                           <th className="p-3 font-semibold">الإيجار السنوي</th>
-                           <th className="p-3 font-semibold">المحصّل</th>
-                           <th className="p-3 font-semibold">نوع الإجراء</th>
+                           <th className="p-3.5 font-semibold">رقم المحل</th>
+                           <th className="p-3.5 font-semibold">المستأجر (الكيان)</th>
+                           <th className="p-3.5 font-semibold text-blue-700">رقم عقد إيجار</th>
+                           <th className="p-3.5 font-semibold">البداية</th>
+                           <th className="p-3.5 font-semibold">النهاية</th>
+                           <th className="p-3.5 font-semibold">الإيجار السنوي</th>
+                           <th className="p-3.5 font-semibold">المحصّل</th>
+                           <th className="p-3.5 font-semibold">نوع الإجراء</th>
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredArchive.map((s) => (
-                           <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                         {filteredArchive.map((s, i) => (
+                           <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                              <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
                              <td className="p-3 font-bold text-slate-900">{s.tenant}</td>
                              <td className="p-3 font-bold text-blue-700">{s.ejarNumber}</td>
@@ -3733,7 +3733,7 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "tenant_statement" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-xl p-7 shadow-md border border-slate-300 border-t-4 border-t-blue-700 animate-fade-in text-sm">
                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                      <h3 className="text-base font-bold text-slate-900">👤 كشف حساب المستأجر (للقراءة فقط)</h3>
                      {stmtTenant && (
@@ -3746,7 +3746,7 @@ export default function ShubramiSystem() {
                      )}
                    </div>
 
-                   <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
+                   <div className="flex gap-3 mb-4 bg-slate-100 p-4 rounded-xl border border-slate-300 flex-wrap">
                      <div className="flex-1 min-w-[200px]">
                        <input
                          type="text"
@@ -3758,7 +3758,7 @@ export default function ShubramiSystem() {
                      </div>
                      <div className="flex-1 min-w-[220px]">
                        <select
-                         className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs"
+                         className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs"
                          value={stmtTenant}
                          onChange={e => { setStmtTenant(e.target.value); setStmtTxYear("الكل"); setStmtShowArchive(false); }}
                        >
@@ -3798,28 +3798,28 @@ export default function ShubramiSystem() {
                        {/* العقود الحالية */}
                        <div>
                          <h4 className="text-sm font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">📝 العقود الحالية</h4>
-                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                            <table className="w-full text-right text-slate-800 text-xs">
                              <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                                <tr>
-                                 <th className="p-3 font-semibold">رقم المحل</th>
-                                 <th className="p-3 font-semibold">رقم عقد إيجار</th>
-                                 <th className="p-3 font-semibold">تاريخ البداية</th>
-                                 <th className="p-3 font-semibold">تاريخ الانتهاء</th>
-                                 <th className="p-3 font-semibold">الإيجار السنوي</th>
-                                 <th className="p-3 font-semibold">المحصّل</th>
-                                 <th className="p-3 font-semibold">المتبقي</th>
-                                 <th className="p-3 font-semibold">الحالة</th>
+                                 <th className="p-3.5 font-semibold">رقم المحل</th>
+                                 <th className="p-3.5 font-semibold">رقم عقد إيجار</th>
+                                 <th className="p-3.5 font-semibold">تاريخ البداية</th>
+                                 <th className="p-3.5 font-semibold">تاريخ الانتهاء</th>
+                                 <th className="p-3.5 font-semibold">الإيجار السنوي</th>
+                                 <th className="p-3.5 font-semibold">المحصّل</th>
+                                 <th className="p-3.5 font-semibold">المتبقي</th>
+                                 <th className="p-3.5 font-semibold">الحالة</th>
                                </tr>
                              </thead>
                              <tbody>
                                {stmtCurrentShops.length === 0 ? (
                                  <tr><td colSpan="8" className="p-5 text-center text-slate-400">لا توجد عقود حالية لهذا المستأجر.</td></tr>
-                               ) : stmtCurrentShops.map(s => {
+                               ) : stmtCurrentShops.map((s, i) => {
                                  const bal = Math.max(0, (s.annualRent || 0) - (s.collected || 0));
                                  const expired = isContractExpired(s.endDate);
                                  return (
-                                   <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                   <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                      <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
                                      <td className="p-3 font-bold text-blue-700">{s.ejarNumber || "-"}</td>
                                      <td className="p-3">{s.startDate || "-"}</td>
@@ -3851,24 +3851,24 @@ export default function ShubramiSystem() {
                            <span>🗄️ أرشيف العقود السابقة ({stmtArchivedShops.length})</span>
                          </button>
                          {stmtShowArchive && (
-                           <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                           <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                              <table className="w-full text-right text-slate-800 text-xs">
                                <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                                  <tr>
-                                   <th className="p-3 font-semibold">رقم المحل</th>
-                                   <th className="p-3 font-semibold">رقم عقد إيجار</th>
-                                   <th className="p-3 font-semibold">البداية</th>
-                                   <th className="p-3 font-semibold">الانتهاء</th>
-                                   <th className="p-3 font-semibold">الإيجار</th>
-                                   <th className="p-3 font-semibold">المحصّل</th>
-                                   <th className="p-3 font-semibold">نوع الإجراء</th>
+                                   <th className="p-3.5 font-semibold">رقم المحل</th>
+                                   <th className="p-3.5 font-semibold">رقم عقد إيجار</th>
+                                   <th className="p-3.5 font-semibold">البداية</th>
+                                   <th className="p-3.5 font-semibold">الانتهاء</th>
+                                   <th className="p-3.5 font-semibold">الإيجار</th>
+                                   <th className="p-3.5 font-semibold">المحصّل</th>
+                                   <th className="p-3.5 font-semibold">نوع الإجراء</th>
                                  </tr>
                                </thead>
                                <tbody>
                                  {stmtArchivedShops.length === 0 ? (
                                    <tr><td colSpan="7" className="p-5 text-center text-slate-400">لا توجد عقود مؤرشفة.</td></tr>
-                                 ) : stmtArchivedShops.map(s => (
-                                   <tr key={s.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                 ) : stmtArchivedShops.map((s, i) => (
+                                   <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                      <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
                                      <td className="p-3 text-blue-700">{s.ejarNumber || "-"}</td>
                                      <td className="p-3">{s.startDate || "-"}</td>
@@ -3891,21 +3891,21 @@ export default function ShubramiSystem() {
                        {/* المديونيات المستقلة */}
                        <div>
                          <h4 className="text-sm font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">📂 المديونيات المستقلة القائمة</h4>
-                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                            <table className="w-full text-right text-slate-800 text-xs">
                              <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                                <tr>
-                                 <th className="p-3 font-semibold">رقم الدين</th>
-                                 <th className="p-3 font-semibold">السنة</th>
-                                 <th className="p-3 font-semibold">التفاصيل</th>
-                                 <th className="p-3 font-semibold">المبلغ المستحق</th>
+                                 <th className="p-3.5 font-semibold">رقم الدين</th>
+                                 <th className="p-3.5 font-semibold">السنة</th>
+                                 <th className="p-3.5 font-semibold">التفاصيل</th>
+                                 <th className="p-3.5 font-semibold">المبلغ المستحق</th>
                                </tr>
                              </thead>
                              <tbody>
                                {stmtDebts.length === 0 ? (
                                  <tr><td colSpan="4" className="p-5 text-center text-slate-400">لا توجد مديونيات مستقلة.</td></tr>
-                               ) : stmtDebts.map(d => (
-                                 <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                               ) : stmtDebts.map((d, i) => (
+                                 <tr key={d.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                    <td className="p-3 font-bold text-slate-900">{d.id}</td>
                                    <td className="p-3">{d.year || "-"}</td>
                                    <td className="p-3 text-slate-600">{d.details || "-"}</td>
@@ -3922,7 +3922,7 @@ export default function ShubramiSystem() {
                          <div className="flex items-center justify-between mb-2 border-b border-slate-200 pb-1">
                            <h4 className="text-sm font-bold text-slate-800">💰 سندات القبض المرتبطة</h4>
                            <select
-                             className="rounded-lg border border-slate-300 p-1 bg-white text-slate-800 outline-none text-xs"
+                             className="rounded-lg border border-slate-300 p-1 bg-white text-slate-800 outline-none focus:border-blue-700 transition-colors text-xs"
                              value={stmtTxYear}
                              onChange={e => setStmtTxYear(e.target.value)}
                            >
@@ -3930,25 +3930,25 @@ export default function ShubramiSystem() {
                              {stmtTxYears.map(y => <option key={y} value={y}>{y}</option>)}
                            </select>
                          </div>
-                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                            <table className="w-full text-right text-slate-800 text-xs">
                              <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                                <tr>
-                                 <th className="p-3 font-semibold">رقم السند</th>
-                                 <th className="p-3 font-semibold">المحل</th>
-                                 <th className="p-3 font-semibold">التاريخ</th>
-                                 <th className="p-3 font-semibold">المستهدف</th>
-                                 <th className="p-3 font-semibold">المدفوع</th>
-                                 <th className="p-3 font-semibold">المتبقي</th>
-                                 <th className="p-3 font-semibold">الطريقة</th>
-                                 <th className="p-3 font-semibold">الحالة</th>
+                                 <th className="p-3.5 font-semibold">رقم السند</th>
+                                 <th className="p-3.5 font-semibold">المحل</th>
+                                 <th className="p-3.5 font-semibold">التاريخ</th>
+                                 <th className="p-3.5 font-semibold">المستهدف</th>
+                                 <th className="p-3.5 font-semibold">المدفوع</th>
+                                 <th className="p-3.5 font-semibold">المتبقي</th>
+                                 <th className="p-3.5 font-semibold">الطريقة</th>
+                                 <th className="p-3.5 font-semibold">الحالة</th>
                                </tr>
                              </thead>
                              <tbody>
                                {stmtTransactions.length === 0 ? (
                                  <tr><td colSpan="8" className="p-5 text-center text-slate-400">لا توجد سندات قبض مسجّلة.</td></tr>
-                               ) : stmtTransactions.map(t => (
-                                 <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                               ) : stmtTransactions.map((t, i) => (
+                                 <tr key={t.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                    <td className="p-3 font-bold text-slate-900">{t.id}</td>
                                    <td className="p-3">{t.shop || "-"}</td>
                                    <td className="p-3 whitespace-nowrap">{t.startDate || "-"}</td>
@@ -3982,16 +3982,16 @@ export default function ShubramiSystem() {
                                  </div>
                                </div>
                              </div>
-                             <div className="overflow-x-auto rounded-lg border border-amber-200 bg-white">
+                             <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white">
                                <table className="w-full text-right text-slate-800 text-xs">
                                  <thead className="bg-amber-100 text-amber-900 border-b border-amber-200">
                                    <tr>
-                                     <th className="p-3 font-semibold">رقم السند</th>
-                                     <th className="p-3 font-semibold">المحل</th>
-                                     <th className="p-3 font-semibold">التاريخ</th>
-                                     <th className="p-3 font-semibold">المدفوع</th>
-                                     <th className="p-3 font-semibold">الطريقة</th>
-                                     <th className="p-3 font-semibold">الحالة</th>
+                                     <th className="p-3.5 font-semibold">رقم السند</th>
+                                     <th className="p-3.5 font-semibold">المحل</th>
+                                     <th className="p-3.5 font-semibold">التاريخ</th>
+                                     <th className="p-3.5 font-semibold">المدفوع</th>
+                                     <th className="p-3.5 font-semibold">الطريقة</th>
+                                     <th className="p-3.5 font-semibold">الحالة</th>
                                    </tr>
                                  </thead>
                                  <tbody>
@@ -4018,7 +4018,7 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "financial_reports" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-xl p-7 shadow-md border border-slate-300 border-t-4 border-t-blue-700 animate-fade-in text-sm">
                    <h3 className="text-base font-bold text-slate-900 mb-4">📊 التقارير المالية (للقراءة فقط)</h3>
 
                    <div className="flex items-center justify-between mb-6 border-b border-slate-300 pb-2 flex-wrap gap-2">
@@ -4038,7 +4038,7 @@ export default function ShubramiSystem() {
                    {/* التقرير 1 — الدخل والمصروفات بفترة */}
                    {rptTab === "income" && (
                      <div className="flex flex-col gap-5">
-                       <div className="bg-slate-100 p-3 rounded-xl border border-slate-300">
+                       <div className="bg-slate-100 p-4 rounded-xl border border-slate-300">
                          <div className="flex gap-6 mb-3 flex-wrap">
                            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
                              <input type="radio" name="rptMode" value="year" checked={rptMode === "year"} onChange={() => setRptMode("year")} />
@@ -4050,7 +4050,7 @@ export default function ShubramiSystem() {
                            </label>
                          </div>
                          {rptMode === "year" ? (
-                           <select className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptYear} onChange={e => setRptYear(e.target.value)}>
+                           <select className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={rptYear} onChange={e => setRptYear(e.target.value)}>
                              <option value="الكل">الكل (جميع السنوات)</option>
                              {dashboardAvailableYears.map(y => <option key={y} value={y}>{y}</option>)}
                            </select>
@@ -4058,11 +4058,11 @@ export default function ShubramiSystem() {
                            <div className="flex gap-4 flex-wrap items-end">
                              <div>
                                <label className="text-[11px] text-slate-600 block mb-1">من:</label>
-                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptFrom} onChange={e => setRptFrom(e.target.value)} />
+                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={rptFrom} onChange={e => setRptFrom(e.target.value)} />
                              </div>
                              <div>
                                <label className="text-[11px] text-slate-600 block mb-1">إلى:</label>
-                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={rptTo} onChange={e => setRptTo(e.target.value)} />
+                               <input type="date" className="rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={rptTo} onChange={e => setRptTo(e.target.value)} />
                              </div>
                              {(rptFrom || rptTo) && (
                                <button onClick={() => { setRptFrom(""); setRptTo(""); }} className="text-xs text-slate-500 hover:text-slate-800 underline pb-2">مسح</button>
@@ -4099,20 +4099,20 @@ export default function ShubramiSystem() {
                              <table className="w-full text-right text-slate-800 text-xs">
                                <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                                  <tr>
-                                   <th className="p-3 font-semibold">رقم السند</th>
-                                   <th className="p-3 font-semibold">المحل</th>
-                                   <th className="p-3 font-semibold">المستأجر</th>
-                                   <th className="p-3 font-semibold">التاريخ</th>
-                                   <th className="p-3 font-semibold">المدفوع</th>
-                                   <th className="p-3 font-semibold">الطريقة</th>
-                                   <th className="p-3 font-semibold">الحالة</th>
+                                   <th className="p-3.5 font-semibold">رقم السند</th>
+                                   <th className="p-3.5 font-semibold">المحل</th>
+                                   <th className="p-3.5 font-semibold">المستأجر</th>
+                                   <th className="p-3.5 font-semibold">التاريخ</th>
+                                   <th className="p-3.5 font-semibold">المدفوع</th>
+                                   <th className="p-3.5 font-semibold">الطريقة</th>
+                                   <th className="p-3.5 font-semibold">الحالة</th>
                                  </tr>
                                </thead>
                                <tbody>
                                  {rptTx.length === 0 ? (
                                    <tr><td colSpan="7" className="p-5 text-center text-slate-400">لا توجد سندات في هذه الفترة.</td></tr>
-                                 ) : rptTx.map(t => (
-                                   <tr key={t.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                 ) : rptTx.map((t, i) => (
+                                   <tr key={t.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                      <td className="p-3 font-bold text-slate-900">{t.id}</td>
                                      <td className="p-3">{t.shop || "-"}</td>
                                      <td className="p-3">{t.tenant || "-"}</td>
@@ -4145,17 +4145,17 @@ export default function ShubramiSystem() {
                              <table className="w-full text-right text-slate-800 text-xs">
                                <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                                  <tr>
-                                   <th className="p-3 font-semibold">التاريخ</th>
-                                   <th className="p-3 font-semibold">البند</th>
-                                   <th className="p-3 font-semibold">المبلغ</th>
-                                   <th className="p-3 font-semibold">ملاحظات</th>
+                                   <th className="p-3.5 font-semibold">التاريخ</th>
+                                   <th className="p-3.5 font-semibold">البند</th>
+                                   <th className="p-3.5 font-semibold">المبلغ</th>
+                                   <th className="p-3.5 font-semibold">ملاحظات</th>
                                  </tr>
                                </thead>
                                <tbody>
                                  {rptExpFiltered.length === 0 ? (
                                    <tr><td colSpan="4" className="p-5 text-center text-slate-400">لا توجد مصروفات في هذه الفترة.</td></tr>
                                  ) : rptExpFiltered.map((e, i) => (
-                                   <tr key={i} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                   <tr key={i} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                      <td className="p-3 whitespace-nowrap">{e.date || "-"}</td>
                                      <td className="p-3 font-semibold text-slate-800">{e.category || "-"}</td>
                                      <td className="p-3 font-bold text-slate-800">{(e.amount || 0).toLocaleString()}</td>
@@ -4179,28 +4179,28 @@ export default function ShubramiSystem() {
 
                        <div className="flex items-center justify-between flex-wrap gap-3">
                          <h4 className="text-sm font-bold text-slate-800">🏪 إيرادات المحلات (كامل السجل التاريخي)</h4>
-                         <select className="rounded-lg border border-slate-300 p-1.5 bg-white text-slate-800 outline-none text-xs" value={rptShopSort} onChange={e => setRptShopSort(e.target.value)}>
+                         <select className="rounded-lg border border-slate-300 p-1.5 bg-white text-slate-800 outline-none focus:border-blue-700 transition-colors text-xs" value={rptShopSort} onChange={e => setRptShopSort(e.target.value)}>
                            <option value="revenue_desc">الأعلى إيراداً أولاً</option>
                            <option value="revenue_asc">الأدنى إيراداً أولاً</option>
                          </select>
                        </div>
 
-                       <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                       <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                          <table className="w-full text-right text-slate-800 text-xs">
                            <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                              <tr>
-                               <th className="p-3 font-semibold">رقم المحل</th>
-                               <th className="p-3 font-semibold">المستأجر الحالي</th>
-                               <th className="p-3 font-semibold">الحالة</th>
-                               <th className="p-3 font-semibold">إجمالي الإيرادات</th>
-                               <th className="p-3 font-semibold">عدد السندات</th>
+                               <th className="p-3.5 font-semibold">رقم المحل</th>
+                               <th className="p-3.5 font-semibold">المستأجر الحالي</th>
+                               <th className="p-3.5 font-semibold">الحالة</th>
+                               <th className="p-3.5 font-semibold">إجمالي الإيرادات</th>
+                               <th className="p-3.5 font-semibold">عدد السندات</th>
                              </tr>
                            </thead>
                            <tbody>
                              {rptShopRows.length === 0 ? (
                                <tr><td colSpan="5" className="p-5 text-center text-slate-400">لا توجد بيانات.</td></tr>
-                             ) : rptShopRows.map(row => (
-                               <tr key={row.shopNum} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                             ) : rptShopRows.map((row, i) => (
+                               <tr key={row.shopNum} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                  <td className="p-3 font-bold text-slate-900">{row.shopNum}</td>
                                  <td className="p-3 text-slate-700">{row.tenant}</td>
                                  <td className="p-3">
@@ -4247,23 +4247,23 @@ export default function ShubramiSystem() {
                        </label>
 
                        {!rptArrearsGroup ? (
-                         <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                            <table className="w-full text-right text-slate-800 text-xs">
                              <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                                <tr>
-                                 <th className="p-3 font-semibold">المستأجر</th>
-                                 <th className="p-3 font-semibold">المحل</th>
-                                 <th className="p-3 font-semibold">المبلغ المستحق</th>
-                                 <th className="p-3 font-semibold">تاريخ الاستحقاق</th>
-                                 <th className="p-3 font-semibold">النوع</th>
-                                 <th className="p-3 font-semibold">التفاصيل</th>
+                                 <th className="p-3.5 font-semibold">المستأجر</th>
+                                 <th className="p-3.5 font-semibold">المحل</th>
+                                 <th className="p-3.5 font-semibold">المبلغ المستحق</th>
+                                 <th className="p-3.5 font-semibold">تاريخ الاستحقاق</th>
+                                 <th className="p-3.5 font-semibold">النوع</th>
+                                 <th className="p-3.5 font-semibold">التفاصيل</th>
                                </tr>
                              </thead>
                              <tbody>
                                {rptArrearsFlat.length === 0 ? (
                                  <tr><td colSpan="6" className="p-8 text-center text-slate-400 text-sm">🎉 لا توجد متأخرات مستحقة حالياً.</td></tr>
-                               ) : rptArrearsFlat.map(d => (
-                                 <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                               ) : rptArrearsFlat.map((d, i) => (
+                                 <tr key={d.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                    <td className="p-3 font-bold text-slate-900 max-w-[160px] truncate" title={d.tenant}>{d.tenant || "-"}</td>
                                    <td className="p-3">{d.isShopDebt ? d.label : "-"}</td>
                                    <td className="p-3 font-bold text-red-700">{(d.amount || 0).toLocaleString()} ريال</td>
