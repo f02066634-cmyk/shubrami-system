@@ -163,7 +163,7 @@ const DashboardIndicators = ({
 
   return (
     <div className="space-y-8 mb-12 animate-fade-in text-sm">
-      <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-lg flex-wrap gap-4">
+      <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-md border border-slate-200 flex-wrap gap-4">
          <h3 className="text-lg font-bold text-slate-900">📊 لوحة المؤشرات المالية</h3>
          <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-300">
             <label className="font-semibold text-slate-700 text-xs">تحديد السنة المالية للمؤشرات:</label>
@@ -179,37 +179,37 @@ const DashboardIndicators = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-        <div className="bg-white p-7 rounded-xl shadow-lg text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-teal-600 inline-block"></span> إجمالي التحصيلات
            </h4>
            <p className="text-4xl font-extrabold text-teal-700">{dashTotalCollected.toLocaleString()}</p>
-           <p className="text-[11px] text-slate-400 font-semibold mt-2">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
+           <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
-        <div className="bg-white p-7 rounded-xl shadow-lg text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> إجمالي المصروفات
            </h4>
            <p className="text-4xl font-extrabold text-amber-700">{dashTotalExpenses.toLocaleString()}</p>
-           <p className="text-[11px] text-slate-400 font-semibold mt-2">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
+           <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
-        <div className="bg-white p-7 rounded-xl shadow-lg text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-blue-700 inline-block"></span> صافي الدخل
            </h4>
            <p className="text-4xl font-extrabold text-blue-700">{dashNetIncome.toLocaleString()}</p>
-           <p className="text-[11px] text-slate-400 font-semibold mt-2">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
+           <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
-        <div className="bg-white p-7 rounded-xl shadow-lg text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span> الديون المستحقة المعلقة
            </h4>
            <p className="text-4xl font-extrabold text-red-600">{dashTotalDebts.toLocaleString()}</p>
-           <p className="text-[11px] text-slate-400 font-semibold mt-2">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
+           <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
       </div>
 
-      <div className="bg-white p-7 rounded-xl shadow-lg">
+      <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200">
          <div className="flex justify-between items-center mb-5">
            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
              <span>🎯</span> كفاءة أداء التحصيل {dashboardYear !== 'الكل' ? <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">(لسنة {dashboardYear})</span> : <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">(للعقود السارية حالياً)</span>}
@@ -240,7 +240,7 @@ const DashboardIndicators = ({
          </div>
       </div>
 
-      <div className="bg-white p-7 rounded-xl shadow-lg">
+      <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200">
          <div className="flex justify-between items-center mb-5">
            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
              <span>📈</span> توقعات التدفق النقدي <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">مؤشر لحظي</span>
@@ -272,7 +272,7 @@ const DashboardIndicators = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1 bg-white p-7 rounded-xl shadow-lg flex flex-col justify-center">
+        <div className="md:col-span-1 bg-white p-7 rounded-xl shadow-md border border-slate-200 flex flex-col justify-center">
           <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center justify-center gap-2">
             🏢 الإشغال ({totalShops} محل) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
           </h3>
@@ -303,7 +303,7 @@ const DashboardIndicators = ({
           </div>
         </div>
 
-        <div className="md:col-span-2 bg-white p-7 rounded-xl shadow-lg flex flex-col">
+        <div className="md:col-span-2 bg-white p-7 rounded-xl shadow-md border border-slate-200 flex flex-col">
           <div className="flex justify-between items-center mb-5">
              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                <span>⚠️</span> عقود تنتهي قريباً (60 يوم) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
