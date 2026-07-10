@@ -97,7 +97,7 @@ const DashboardIndicators = ({
   });
 
   const availableForRent = trueVacant + expiredRented;
-  const totalShops = 166;
+  const totalShops = Object.keys(latestShopRecords).length;
   const occupancyRate = ((activeRented / totalShops) * 100).toFixed(1);
 
   const upcomingExpirations = shopsDB.filter(s => {
@@ -178,26 +178,38 @@ const DashboardIndicators = ({
          </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
         <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">إجمالي التحصيلات</h4>
-           <p className="text-xl font-extrabold text-blue-700">{dashTotalCollected.toLocaleString()} ريال</p>
+           <h4 className="text-slate-600 font-bold mb-2 text-xs flex items-center justify-center gap-1.5">
+             <span className="w-2 h-2 rounded-full bg-teal-600 inline-block"></span> إجمالي التحصيلات
+           </h4>
+           <p className="text-2xl font-extrabold text-teal-700">{dashTotalCollected.toLocaleString()}</p>
+           <p className="text-[11px] text-slate-400 font-semibold mt-1">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
         </div>
         <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">إجمالي المصروفات</h4>
-           <p className="text-xl font-extrabold text-slate-700">{dashTotalExpenses.toLocaleString()} ريال</p>
+           <h4 className="text-slate-600 font-bold mb-2 text-xs flex items-center justify-center gap-1.5">
+             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> إجمالي المصروفات
+           </h4>
+           <p className="text-2xl font-extrabold text-amber-700">{dashTotalExpenses.toLocaleString()}</p>
+           <p className="text-[11px] text-slate-400 font-semibold mt-1">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
         </div>
         <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">صافي الدخل</h4>
-           <p className="text-xl font-extrabold text-teal-700">{dashNetIncome.toLocaleString()} ريال</p>
+           <h4 className="text-slate-600 font-bold mb-2 text-xs flex items-center justify-center gap-1.5">
+             <span className="w-2 h-2 rounded-full bg-blue-700 inline-block"></span> صافي الدخل
+           </h4>
+           <p className="text-2xl font-extrabold text-blue-700">{dashNetIncome.toLocaleString()}</p>
+           <p className="text-[11px] text-slate-400 font-semibold mt-1">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
         </div>
         <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 text-center">
-           <h4 className="text-slate-600 font-bold mb-1 text-xs">الديون المستحقة المعلقة</h4>
-           <p className="text-xl font-extrabold text-red-600">{dashTotalDebts.toLocaleString()} ريال</p>
+           <h4 className="text-slate-600 font-bold mb-2 text-xs flex items-center justify-center gap-1.5">
+             <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span> الديون المستحقة المعلقة
+           </h4>
+           <p className="text-2xl font-extrabold text-red-600">{dashTotalDebts.toLocaleString()}</p>
+           <p className="text-[11px] text-slate-400 font-semibold mt-1">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</p>
         </div>
       </div>
 
-      <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 mt-4">
+      <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300">
          <div className="flex justify-between items-center mb-4">
            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
              <span>🎯</span> كفاءة أداء التحصيل {dashboardYear !== 'الكل' ? <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">(لسنة {dashboardYear})</span> : <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">(للعقود السارية حالياً)</span>}
@@ -228,29 +240,38 @@ const DashboardIndicators = ({
          </div>
       </div>
 
-      <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300 mt-4">
+      <div className="bg-white p-5 rounded-xl shadow-md border border-slate-300">
          <div className="flex justify-between items-center mb-4">
            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
              <span>📈</span> توقعات التدفق النقدي <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">مؤشر لحظي</span>
            </h3>
          </div>
          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متأخرات مستحقة الدفع</p>
-               <p className="text-xl font-extrabold text-red-600">{overdueInstallments.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-red-600 flex justify-between items-center shadow-sm">
+               <div>
+                  <p className="text-slate-600 font-bold text-xs">متأخرات مستحقة الدفع</p>
+                  <p className="text-lg font-extrabold text-red-600">{overdueInstallments.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+               </div>
+               <div className="text-xl">⏰</div>
             </div>
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 30 يوم</p>
-               <p className="text-xl font-extrabold text-teal-700">{expected30Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-teal-600 flex justify-between items-center shadow-sm">
+               <div>
+                  <p className="text-slate-600 font-bold text-xs">متوقع خلال 30 يوم</p>
+                  <p className="text-lg font-extrabold text-teal-700">{expected30Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+               </div>
+               <div className="text-xl">📆</div>
             </div>
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-300 flex flex-col justify-center items-center text-center">
-               <p className="text-slate-600 font-bold mb-1 text-xs">متوقع خلال 31 - 60 يوم</p>
-               <p className="text-xl font-extrabold text-blue-700">{expected31To60Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+            <div className="bg-slate-50 p-3 rounded-lg border-r-4 border-blue-700 flex justify-between items-center shadow-sm">
+               <div>
+                  <p className="text-slate-600 font-bold text-xs">متوقع خلال 31 - 60 يوم</p>
+                  <p className="text-lg font-extrabold text-blue-700">{expected31To60Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+               </div>
+               <div className="text-xl">🗓️</div>
             </div>
          </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-1 bg-white p-5 rounded-xl shadow-md border border-slate-300 flex flex-col justify-center">
           <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center justify-center gap-2">
             🏢 الإشغال ({totalShops} محل) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
@@ -298,10 +319,10 @@ const DashboardIndicators = ({
                 <table className="w-full text-right text-slate-800 text-xs">
                   <thead className="bg-slate-200 text-slate-800 border-b border-slate-300">
                     <tr>
-                      <th className="p-2 font-semibold">المستأجر (الكيان الموحد)</th>
-                      <th className="p-2 font-semibold">النهاية</th>
-                      <th className="p-2 font-semibold">المتبقي</th>
-                      <th className="p-2 font-semibold text-red-600">مديونية</th>
+                      <th className="p-2.5 font-semibold">المستأجر (الكيان الموحد)</th>
+                      <th className="p-2.5 font-semibold">النهاية</th>
+                      <th className="p-2.5 font-semibold">المتبقي</th>
+                      <th className="p-2.5 font-semibold text-red-600">مديونية</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -315,13 +336,13 @@ const DashboardIndicators = ({
 
                       return (
                         <tr key={shop.id} className={`border-b border-slate-200 transition-colors ${rowClass}`}>
-                          <td className="p-2 font-bold text-slate-900 truncate max-w-[150px]" title={displayName}>{displayName}</td>
-                          <td className="p-2 text-slate-700">{shop.endDate}</td>
-                          <td className="p-2">
+                          <td className="p-2.5 font-bold text-slate-900 truncate max-w-[150px]" title={displayName}>{displayName}</td>
+                          <td className="p-2.5 text-slate-700">{shop.endDate}</td>
+                          <td className="p-2.5">
                             <span className={`px-2 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap ${statusClass}`}>{statusText}</span>
                             {tier === "red" && <div className="text-red-600 font-bold text-[10px] mt-1">⚠️ عليه دين - يتطلب قرار</div>}
                           </td>
-                          <td className="p-2 font-bold text-red-600">{remainingRent > 0 ? `${remainingRent.toLocaleString()} ريال` : "—"}</td>
+                          <td className="p-2.5 font-bold text-red-600">{remainingRent > 0 ? `${remainingRent.toLocaleString()} ريال` : "—"}</td>
                         </tr>
                       );
                     })}
