@@ -4328,48 +4328,48 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "audit" && currentUser.role === "مدير" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
+                 <div className="bg-white rounded-xl p-7 shadow-md border border-slate-300 border-t-4 border-t-slate-500 animate-fade-in text-sm">
                    <h3 className="text-base font-bold text-slate-900 mb-4">📜 سجل التدقيق (للقراءة فقط - غير قابل للتغيير)</h3>
 
-                   <div className="flex gap-3 mb-4 bg-slate-100 p-3 rounded-xl border border-slate-300 flex-wrap">
+                   <div className="flex gap-3 mb-4 bg-slate-100 p-4 rounded-xl border border-slate-300 flex-wrap">
                      <div className="flex-1 min-w-[200px]">
                        <input type="text" placeholder="🔍 بحث في الملخص أو مرجع الكيان..." className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={auditSearch} onChange={(e) => setAuditSearch(e.target.value)} />
                      </div>
                      <div className="flex-1 min-w-[150px]">
-                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={auditUserFilter} onChange={(e) => setAuditUserFilter(e.target.value)}>
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={auditUserFilter} onChange={(e) => setAuditUserFilter(e.target.value)}>
                          <option value="الكل">المستخدم (الكل)</option>
                          {auditUsers.map(u => (<option key={u} value={u}>{u}</option>))}
                        </select>
                      </div>
                      <div className="flex-1 min-w-[170px]">
-                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)}>
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)}>
                          <option value="الكل">نوع الإجراء (الكل)</option>
                          {auditActionTypes.map(a => (<option key={a} value={a}>{a}</option>))}
                        </select>
                      </div>
                      <div className="flex-1 min-w-[150px]">
-                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={auditYearFilter} onChange={(e) => setAuditYearFilter(e.target.value)}>
+                       <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors text-xs" value={auditYearFilter} onChange={(e) => setAuditYearFilter(e.target.value)}>
                          <option value="الكل">السنة (الكل)</option>
                          {auditYears.map(year => (<option key={year} value={year}>{year}</option>))}
                        </select>
                      </div>
                    </div>
 
-                   <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                   <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                          <tr>
-                           <th className="p-3 font-semibold">التاريخ والوقت</th>
-                           <th className="p-3 font-semibold">المستخدم</th>
-                           <th className="p-3 font-semibold">نوع الإجراء</th>
-                           <th className="p-3 font-semibold">الكيان المتأثر</th>
-                           <th className="p-3 font-semibold">الملخص</th>
-                           <th className="p-3 font-semibold">التفاصيل</th>
+                           <th className="p-3.5 font-semibold">التاريخ والوقت</th>
+                           <th className="p-3.5 font-semibold">المستخدم</th>
+                           <th className="p-3.5 font-semibold">نوع الإجراء</th>
+                           <th className="p-3.5 font-semibold">الكيان المتأثر</th>
+                           <th className="p-3.5 font-semibold">الملخص</th>
+                           <th className="p-3.5 font-semibold">التفاصيل</th>
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredAuditLogs.map((log) => (
-                           <tr key={log.id} className="border-b border-slate-200 hover:bg-slate-100 transition-colors">
+                         {filteredAuditLogs.map((log, i) => (
+                           <tr key={log.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                              <td className="p-3 whitespace-nowrap"><span dir="ltr" className="inline-block">{formatAuditDateTime(log.created_at)}</span></td>
                              <td className="p-3 font-bold text-slate-900">{log.user_name || "-"}</td>
                              <td className="p-3">
@@ -4823,11 +4823,11 @@ export default function ShubramiSystem() {
                )}
 
                {activeTab === "users" && currentUser.role === "مدير" && (
-                 <div className="bg-white rounded-2xl p-5 shadow-md border border-slate-300 animate-fade-in text-sm">
-                   
+                 <div className="bg-white rounded-xl p-7 shadow-md border border-slate-300 border-t-4 border-t-blue-700 animate-fade-in text-sm">
+
                    <div className="bg-slate-100 p-5 rounded-xl border border-slate-300 mb-8">
                       <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><span>➕</span> إضافة مستخدم جديد للنظام</h3>
-                      <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                          <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الاسم الكامل:</label>
                            <input type="text" required className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
@@ -4877,19 +4877,19 @@ export default function ShubramiSystem() {
                    </div>
 
                    <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2"><span>👥</span> قائمة المستخدمين المسجلين</h3>
-                   <div className="overflow-x-auto rounded-lg border border-slate-300 shadow-sm bg-white">
+                   <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
                      <table className="w-full text-right text-slate-800 text-xs">
                        <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                          <tr>
-                           <th className="p-3">الاسم الكامل</th>
-                           <th className="p-3">اسم الدخول</th>
-                           <th className="p-3">الصلاحية</th>
-                           <th className="p-3 text-center">إجراءات</th>
+                           <th className="p-3.5">الاسم الكامل</th>
+                           <th className="p-3.5">اسم الدخول</th>
+                           <th className="p-3.5">الصلاحية</th>
+                           <th className="p-3.5 text-center">إجراءات</th>
                          </tr>
                        </thead>
                        <tbody>
-                         {usersDB.map(user => (
-                           <tr key={user.id} className="border-b border-slate-200 hover:bg-slate-100">
+                         {usersDB.map((user, i) => (
+                           <tr key={user.id} className={`border-b border-slate-200 hover:bg-slate-100 ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                              <td className="p-3 font-bold text-slate-900">{user.name}</td>
                              <td className="p-3 text-slate-600">{user.username}</td>
                              <td className="p-3">
