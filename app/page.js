@@ -163,7 +163,7 @@ const DashboardIndicators = ({
 
   return (
     <div className="space-y-8 mb-12 animate-fade-in text-sm">
-      <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-md border border-slate-200 flex-wrap gap-4">
+      <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-blue-700 flex-wrap gap-4">
          <h3 className="text-lg font-bold text-slate-900">📊 لوحة المؤشرات المالية</h3>
          <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-300">
             <label className="font-semibold text-slate-700 text-xs">تحديد السنة المالية للمؤشرات:</label>
@@ -179,37 +179,37 @@ const DashboardIndicators = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-teal-600 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-teal-600 inline-block"></span> إجمالي التحصيلات
            </h4>
-           <p className="text-4xl font-extrabold text-teal-700">{dashTotalCollected.toLocaleString()}</p>
+           <p className="text-4xl font-semibold text-teal-700">{dashTotalCollected.toLocaleString()}</p>
            <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
-        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-amber-500 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> إجمالي المصروفات
            </h4>
-           <p className="text-4xl font-extrabold text-amber-700">{dashTotalExpenses.toLocaleString()}</p>
+           <p className="text-4xl font-semibold text-amber-700">{dashTotalExpenses.toLocaleString()}</p>
            <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
-        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-blue-700 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-blue-700 inline-block"></span> صافي الدخل
            </h4>
-           <p className="text-4xl font-extrabold text-blue-700">{dashNetIncome.toLocaleString()}</p>
+           <p className="text-4xl font-semibold text-blue-700">{dashNetIncome.toLocaleString()}</p>
            <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
-        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200 text-center">
+        <div className="bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-red-600 text-center">
            <h4 className="text-slate-600 font-bold mb-3 text-xs flex items-center justify-center gap-1.5">
              <span className="w-2 h-2 rounded-full bg-red-600 inline-block"></span> الديون المستحقة المعلقة
            </h4>
-           <p className="text-4xl font-extrabold text-red-600">{dashTotalDebts.toLocaleString()}</p>
+           <p className="text-4xl font-semibold text-red-600">{dashTotalDebts.toLocaleString()}</p>
            <span className="inline-block mt-3 px-3 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-700">ريال · {dashboardYear === "الكل" ? "كل السنوات" : `سنة ${dashboardYear}`}</span>
         </div>
       </div>
 
-      <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200">
+      <div className="bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-blue-700">
          <div className="flex justify-between items-center mb-5">
            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
              <span>🎯</span> كفاءة أداء التحصيل {dashboardYear !== 'الكل' ? <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 text-xs">(لسنة {dashboardYear})</span> : <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">(للعقود السارية حالياً)</span>}
@@ -219,28 +219,28 @@ const DashboardIndicators = ({
             <div className="bg-slate-50 p-4 rounded-lg border-r-4 border-teal-600 flex justify-between items-center shadow-sm">
                <div>
                   <p className="text-slate-600 font-bold text-xs">مسدد بالكامل</p>
-                  <p className="text-xl font-extrabold text-teal-700">{fullyPaid}</p>
+                  <p className="text-xl font-semibold text-teal-700">{fullyPaid}</p>
                </div>
                <div className="text-xl">✔️</div>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg border-r-4 border-amber-500 flex justify-between items-center shadow-sm">
                <div>
                   <p className="text-slate-600 font-bold text-xs">سداد جزئي</p>
-                  <p className="text-xl font-extrabold text-amber-600">{partiallyPaid}</p>
+                  <p className="text-xl font-semibold text-amber-600">{partiallyPaid}</p>
                </div>
                <div className="text-xl">⏳</div>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg border-r-4 border-red-600 flex justify-between items-center shadow-sm">
                <div>
                   <p className="text-slate-600 font-bold text-xs">لم يسدد</p>
-                  <p className="text-xl font-extrabold text-red-600">{unpaid}</p>
+                  <p className="text-xl font-semibold text-red-600">{unpaid}</p>
                </div>
                <div className="text-xl">⚠️</div>
             </div>
          </div>
       </div>
 
-      <div className="bg-white p-7 rounded-xl shadow-md border border-slate-200">
+      <div className="bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-blue-700">
          <div className="flex justify-between items-center mb-5">
            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
              <span>📈</span> توقعات التدفق النقدي <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">مؤشر لحظي</span>
@@ -250,21 +250,21 @@ const DashboardIndicators = ({
             <div className="bg-slate-50 p-4 rounded-lg border-r-4 border-red-600 flex justify-between items-center shadow-sm">
                <div>
                   <p className="text-slate-600 font-bold text-xs">متأخرات مستحقة الدفع</p>
-                  <p className="text-xl font-extrabold text-red-600">{overdueInstallments.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+                  <p className="text-xl font-semibold text-red-600">{overdueInstallments.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
                </div>
                <div className="text-xl">⏰</div>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg border-r-4 border-teal-600 flex justify-between items-center shadow-sm">
                <div>
                   <p className="text-slate-600 font-bold text-xs">متوقع خلال 30 يوم</p>
-                  <p className="text-xl font-extrabold text-teal-700">{expected30Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+                  <p className="text-xl font-semibold text-teal-700">{expected30Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
                </div>
                <div className="text-xl">📆</div>
             </div>
             <div className="bg-slate-50 p-4 rounded-lg border-r-4 border-blue-700 flex justify-between items-center shadow-sm">
                <div>
                   <p className="text-slate-600 font-bold text-xs">متوقع خلال 31 - 60 يوم</p>
-                  <p className="text-xl font-extrabold text-blue-700">{expected31To60Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
+                  <p className="text-xl font-semibold text-blue-700">{expected31To60Days.toLocaleString()} <span className="text-xs font-normal text-slate-500">ريال</span></p>
                </div>
                <div className="text-xl">🗓️</div>
             </div>
@@ -272,7 +272,7 @@ const DashboardIndicators = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1 bg-white p-7 rounded-xl shadow-md border border-slate-200 flex flex-col justify-center">
+        <div className="md:col-span-1 bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-blue-700 flex flex-col justify-center">
           <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center justify-center gap-2">
             🏢 الإشغال ({totalShops} محل) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
           </h3>
@@ -303,7 +303,7 @@ const DashboardIndicators = ({
           </div>
         </div>
 
-        <div className="md:col-span-2 bg-white p-7 rounded-xl shadow-md border border-slate-200 flex flex-col">
+        <div className="md:col-span-2 bg-white p-7 rounded-xl shadow-md border border-slate-300 border-t-4 border-t-red-600 flex flex-col">
           <div className="flex justify-between items-center mb-5">
              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                <span>⚠️</span> عقود تنتهي قريباً (60 يوم) <span className="text-[10px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">لحظي</span>
