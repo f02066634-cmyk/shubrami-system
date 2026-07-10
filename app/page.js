@@ -373,7 +373,7 @@ const FinancialCollection = ({
       {paymentSubTab === "new" && (
         <form onSubmit={handleNewPayment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف (العقود السارية המوحدة):</label>
+            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">العقد المستهدف (العقود السارية الموحدة):</label>
             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-600 transition-colors" value={newPayShop} onChange={(e) => setNewPayShop(e.target.value)} required>
               <option value="">-- اختر المستأجر / العقد --</option>
               {shopsDB.filter(s => s.status === "مؤجر" && !isContractExpired(s.endDate)).map(s => {
