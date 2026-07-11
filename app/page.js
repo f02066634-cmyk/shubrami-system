@@ -1241,59 +1241,27 @@ export default function ShubramiSystem() {
         return showToast("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!", "error");
     }
 
-    const mainShopName = newContractShops[0];
-
-    const mainUpdate = {
-      status: "مؤجر",
-      tenant: newContractTenant,
-      ejarNumber: newContractEjarNumber,
-      annualRent: Number(newContractRent),
-      startDate: newContractStart,
-      endDate: newContractEnd,
-      isGroupMain: newContractShops.length > 1,
-      groupShops: newContractShops.length > 1 ? newContractShops : null
-    };
-
-    const dependentUpdate = {
-      status: "مدمج",
-      tenant: newContractTenant,
-      ejarNumber: newContractEjarNumber,
-      annualRent: 0,
-      startDate: newContractStart,
-      endDate: newContractEnd,
-      isGroupMain: false,
-      groupShops: newContractShops
-    };
-
-    const targetIDs = [];
-    for (const shopNum of newContractShops) {
-       const shopRecord = shopsDB.find(s => s.shopNumber === shopNum && s.status === "شاغر");
-       if (!shopRecord) {
-           return showToast(`خطأ: المحل ${shopNum} غير متاح حالياً! لم يتم حفظ العقد لحماية البيانات.`, "error");
-       }
-       targetIDs.push({ id: shopRecord.id, num: shopNum });
+    const targetIDs = newContractShops.map(shopNum => shopsDB.find(s => s.shopNumber === shopNum)?.id);
+    if (targetIDs.some(id => !id)) {
+      return showToast("خطأ: أحد المحلات المُدخلة غير موجود في النظام.", "error");
     }
 
     setIsSaving(true);
     try {
-      for (const target of targetIDs) {
-         const payload = target.num === mainShopName ? mainUpdate : dependentUpdate;
-         const { error: shopErr } = await supabase.from('shops').update(payload).eq('id', target.id);
-         if (shopErr) {
-           return showToast(
-             `🚫 فشل حفظ بيانات المحل ${target.num}. العقد لم يُحفظ بالكامل — يُنصح بتحديث الصفحة ومراجعة حالة المحلات قبل المتابعة.`,
-             "error", true
-           );
-         }
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('rpc_new_contract', {
+        p_shop_ids:    targetIDs,
+        p_tenant:      newContractTenant,
+        p_ejar_number: newContractEjarNumber,
+        p_start_date:  newContractStart,
+        p_end_date:    newContractEnd,
+        p_annual_rent: Number(newContractRent),
+      });
+
+      if (rpcErr) {
+        return showToast(`🚫 ${rpcErr.message}`, "error", true);
       }
 
-      setShopsDB(shopsDB.map(s => {
-         const matchedTarget = targetIDs.find(t => t.id === s.id);
-         if (matchedTarget) {
-             return { ...s, ...(matchedTarget.num === mainShopName ? mainUpdate : dependentUpdate) };
-         }
-         return s;
-      }));
+      setShopsDB(shopsDB.map(s => rpcData.updated_shops.find(u => u.id === s.id) || s));
 
       setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
       setNewContractRent(""); setNewContractStart(""); setNewContractEnd("");
@@ -1595,7 +1563,8 @@ export default function ShubramiSystem() {
           p_start_date:     editContractStart,
           p_end_date:       editContractEnd,
           p_annual_rent:    Number(editContractRent),
-          p_admin_override: true
+          p_admin_override: true,
+          p_entity_id:      originalRow.entity_id
         });
         if (overrideRpcErr) {
           return showToast(
@@ -1654,7 +1623,8 @@ export default function ShubramiSystem() {
         p_ejar_number: editContractEjarNumber,
         p_start_date:  editContractStart,
         p_end_date:    editContractEnd,
-        p_annual_rent: Number(editContractRent)
+        p_annual_rent: Number(editContractRent),
+        p_entity_id:   originalRow.entity_id
       });
       if (renewRpcErr) {
         return showToast(
@@ -1745,6 +1715,7 @@ export default function ShubramiSystem() {
         p_reference_id:  null,
         p_is_debt:       false,
         p_is_external:   false,
+        p_entity_id:     activeShop.entity_id ?? null,
       });
 
       if (txErr || !rpcData?.length) {
@@ -1945,6 +1916,9 @@ export default function ShubramiSystem() {
       setTransactionsDB(newTxDB);
     } else {
       const today = new Date().toISOString().split('T')[0];
+      const debtEntityId = targetDebt.isShopDebt
+        ? (shopsDB.find(s => s.id === targetDebt.id)?.entity_id ?? null)
+        : (targetDebt.entity_id ?? null);
       const { data: rpcData, error: txErr } = await supabase.rpc('rpc_next_receipt', {
         p_type:          TX_TYPE_DEBT,
         p_start_date:    today,
@@ -1961,6 +1935,7 @@ export default function ShubramiSystem() {
         p_reference_id:  targetDebt.id,
         p_is_debt:       true,
         p_is_external:   !!targetDebt.is_external,
+        p_entity_id:     debtEntityId,
       });
       if (txErr || !rpcData?.length) return showToast(`🚫 فشل إنشاء سند سداد المديونية. لم يُسجَّل السداد — يُرجى المحاولة مجدداً.`, "error", true);
       setTransactionsDB([...transactionsDB, rpcData[0]]);
