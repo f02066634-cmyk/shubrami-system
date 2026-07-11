@@ -3823,15 +3823,24 @@ export default function ShubramiSystem() {
                                ) : stmtCurrentShops.map((s, i) => {
                                  const bal = Math.max(0, (s.annualRent || 0) - (s.collected || 0));
                                  const expired = isContractExpired(s.endDate);
+                                 const mainShop = s.status === "مدمج" && s.entity_id
+                                   ? stmtCurrentShops.find(s2 => s2.entity_id === s.entity_id && s2.status === "مؤجر")
+                                   : null;
                                  return (
                                    <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                      <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
                                      <td className="p-3 font-bold text-blue-700">{s.ejarNumber || "-"}</td>
                                      <td className="p-3">{s.startDate || "-"}</td>
                                      <td className={`p-3 ${expired ? "text-red-700 font-bold" : ""}`}>{s.endDate || "-"}</td>
-                                     <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
-                                     <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
-                                     <td className={`p-3 font-bold ${bal > 0 ? "text-red-700" : "text-slate-500"}`}>{bal.toLocaleString()}</td>
+                                     {mainShop ? (
+                                       <td colSpan="3" className="p-3 text-blue-700 font-semibold">🔗 ضمن كيان — محسوب في {mainShop.shopNumber}</td>
+                                     ) : (
+                                       <>
+                                         <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
+                                         <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
+                                         <td className={`p-3 font-bold ${bal > 0 ? "text-red-700" : "text-slate-500"}`}>{bal.toLocaleString()}</td>
+                                       </>
+                                     )}
                                      <td className="p-3">
                                        {s.status === "مؤجر" && !expired && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">✅ ساري</span>}
                                        {s.status === "مؤجر" && expired && <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>}
