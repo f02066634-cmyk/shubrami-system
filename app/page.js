@@ -2327,9 +2327,25 @@ export default function ShubramiSystem() {
     ? allStatementTenants
     : allStatementTenants.filter(t => t.includes(stmtSearch.trim()));
 
-  const stmtCurrentShops = stmtTenant
-    ? shopsDB.filter(s => !s.status.includes("أرشيف") && (s.tenant || "").trim() === stmtTenant)
+  const stmtActiveEntityIds = stmtTenant
+    ? [...new Set(
+        shopsDB.filter(s => !s.status.includes("أرشيف") && (s.tenant || "").trim() === stmtTenant && s.entity_id)
+          .map(s => s.entity_id)
+      )]
     : [];
+  const stmtCurrentShops = stmtTenant
+    ? shopsDB.filter(s => !s.status.includes("أرشيف") && s.entity_id && stmtActiveEntityIds.includes(s.entity_id))
+    : [];
+  const stmtEntityGroups = stmtActiveEntityIds.map(eid => {
+    const members = stmtCurrentShops.filter(s => s.entity_id === eid);
+    const main = members.find(s => s.status === "مؤجر");
+    return {
+      entityId: eid,
+      mainShop: main?.shopNumber || null,
+      allShops: members.map(s => s.shopNumber),
+      totalAnnualRent: members.reduce((sum, s) => sum + (s.annualRent || 0), 0),
+    };
+  });
   const stmtArchivedShops = stmtTenant
     ? shopsDB
         .filter(s => s.status.includes("أرشيف") && (s.tenant || "").trim() === stmtTenant)
@@ -2341,11 +2357,13 @@ export default function ShubramiSystem() {
   ].filter(Boolean))];
 
   const stmtDebts = stmtTenant
-    ? debtsDB.filter(d => (d.tenant || "").trim() === stmtTenant && d.amount > 0 && !d.is_external)
+    ? debtsDB.filter(d => d.amount > 0 && !d.is_external &&
+        (d.entity_id ? stmtActiveEntityIds.includes(d.entity_id) : (d.tenant || "").trim() === stmtTenant))
     : [];
 
   const stmtAllTenantTx = stmtTenant
-    ? transactionsDB.filter(t => (t.tenant || "").trim() === stmtTenant && !t.is_external)
+    ? transactionsDB.filter(t => !t.is_external &&
+        (t.entity_id ? stmtActiveEntityIds.includes(t.entity_id) : (t.tenant || "").trim() === stmtTenant))
     : [];
   const stmtTxYears = [...new Set(
     stmtAllTenantTx.map(t => String(t.id).split('-')[1]).filter(Boolean)
@@ -2404,14 +2422,34 @@ export default function ShubramiSystem() {
   Object.values(latestShopRecords).forEach(s => {
     if (!rptShopRevMap[s.shopNumber]) rptShopRevMap[s.shopNumber] = { revenue: 0, txCount: 0 };
   });
+  const entityMainByEntityId = {};
+  Object.values(latestShopRecords).forEach(s => {
+    if (s.entity_id && s.status === "مؤجر") entityMainByEntityId[s.entity_id] = s.shopNumber;
+  });
   const rptShopRows = Object.entries(rptShopRevMap)
-    .map(([shopNum, data]) => ({
-      shopNum,
-      revenue: data.revenue,
-      txCount: data.txCount,
-      tenant: latestShopRecords[shopNum]?.tenant || "-",
-      status: latestShopRecords[shopNum]?.status || "-",
-    }))
+    .map(([shopNum, data]) => {
+      const rec = latestShopRecords[shopNum];
+      const mainShopNum = rec?.entity_id ? entityMainByEntityId[rec.entity_id] : null;
+      const isDependent = rec?.status === "مدمج" && mainShopNum && mainShopNum !== shopNum;
+      const groupMembers = (!isDependent && rec?.entity_id)
+        ? Object.values(latestShopRecords).filter(s2 => s2.entity_id === rec.entity_id && s2.shopNumber !== shopNum).map(s2 => s2.shopNumber)
+        : [];
+      const lastEntityShops = rec?.status === "شاغر" && rec?.last_entity_id
+        ? shopsDB.filter(s => s.entity_id === rec.last_entity_id)
+        : [];
+      return {
+        shopNum,
+        revenue: data.revenue,
+        txCount: data.txCount,
+        tenant: rec?.tenant || "-",
+        status: rec?.status || "-",
+        isDependent,
+        mainShopNum: isDependent ? mainShopNum : null,
+        groupMembers,
+        lastTenant: lastEntityShops[0]?.tenant || null,
+        lastGroupShops: lastEntityShops.map(s => s.shopNumber),
+      };
+    })
     .sort((a, b) => rptShopSort === "revenue_asc" ? a.revenue - b.revenue : b.revenue - a.revenue);
 
   // التقرير 3 — المتأخرات (يعيد استخدام allOutstandingDebts المحسوب مسبقاً)
@@ -2984,11 +3022,19 @@ export default function ShubramiSystem() {
       const shopRows = rptShopRows.map(row => {
         const statusMap = { "مؤجر": "مؤجر", "شاغر": "شاغر", "تحت الصيانة": "صيانة", "مدمج": "مدمج", "-": "-" };
         const statusLabel = statusMap[row.status] ?? e(row.status);
+        const statusCell = row.status === "شاغر" && row.lastTenant
+          ? `${e(statusLabel)}<br><small>🕓 آخر مستأجر: ${e(row.lastTenant)} (${e(row.lastGroupShops.join('، '))})</small>`
+          : e(statusLabel);
+        const revenueCell = row.isDependent
+          ? `🔗 ضمن كيان — محسوب في ${e(row.mainShopNum)}`
+          : row.groupMembers.length > 0
+            ? `<span class="text-blue">${row.revenue.toLocaleString()} ريال</span><br><small>🏠 رئيسي كيان (محلات: ${e(row.groupMembers.join('، '))})</small>`
+            : `<span class="text-blue">${row.revenue.toLocaleString()} ريال</span>`;
         return `<tr>
           <td><b>${e(row.shopNum)}</b></td>
           <td>${e(row.tenant)}</td>
-          <td>${e(statusLabel)}</td>
-          <td class="text-blue">${row.revenue.toLocaleString()} ريال</td>
+          <td>${statusCell}</td>
+          <td>${revenueCell}</td>
           <td>${row.txCount}</td>
         </tr>`;
       }).join('');
@@ -3744,6 +3790,16 @@ export default function ShubramiSystem() {
                          </div>
                        </div>
 
+                       {stmtEntityGroups.length > 0 && (
+                         <div className="flex flex-col gap-2">
+                           {stmtEntityGroups.map(g => (
+                             <div key={g.entityId} className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
+                               🏢 الكيان الحالي: {g.allShops.map(sn => sn === g.mainShop ? `${sn} (رئيسي)` : sn).join('، ')} — الإيجار السنوي الكلي: <b>{g.totalAnnualRent.toLocaleString()} ر.س</b>
+                             </div>
+                           ))}
+                         </div>
+                       )}
+
                        {/* العقود الحالية */}
                        <div>
                          <h4 className="text-sm font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">📝 العقود الحالية</h4>
@@ -3767,15 +3823,24 @@ export default function ShubramiSystem() {
                                ) : stmtCurrentShops.map((s, i) => {
                                  const bal = Math.max(0, (s.annualRent || 0) - (s.collected || 0));
                                  const expired = isContractExpired(s.endDate);
+                                 const mainShop = s.status === "مدمج" && s.entity_id
+                                   ? stmtCurrentShops.find(s2 => s2.entity_id === s.entity_id && s2.status === "مؤجر")
+                                   : null;
                                  return (
                                    <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                      <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
                                      <td className="p-3 font-bold text-blue-700">{s.ejarNumber || "-"}</td>
                                      <td className="p-3">{s.startDate || "-"}</td>
                                      <td className={`p-3 ${expired ? "text-red-700 font-bold" : ""}`}>{s.endDate || "-"}</td>
-                                     <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
-                                     <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
-                                     <td className={`p-3 font-bold ${bal > 0 ? "text-red-700" : "text-slate-500"}`}>{bal.toLocaleString()}</td>
+                                     {mainShop ? (
+                                       <td colSpan="3" className="p-3 text-blue-700 font-semibold">🔗 ضمن كيان — محسوب في {mainShop.shopNumber}</td>
+                                     ) : (
+                                       <>
+                                         <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
+                                         <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
+                                         <td className={`p-3 font-bold ${bal > 0 ? "text-red-700" : "text-slate-500"}`}>{bal.toLocaleString()}</td>
+                                       </>
+                                     )}
                                      <td className="p-3">
                                        {s.status === "مؤجر" && !expired && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">✅ ساري</span>}
                                        {s.status === "مؤجر" && expired && <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>}
@@ -4158,8 +4223,22 @@ export default function ShubramiSystem() {
                                    {row.status === "تحت الصيانة" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔧 صيانة</span>}
                                    {row.status === "مدمج" && <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔗 مدمج</span>}
                                    {row.status === "-" && <span className="text-slate-400 text-[10px]">-</span>}
+                                   {row.status === "شاغر" && row.lastTenant && (
+                                     <div className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">🕓 آخر مستأجر: {row.lastTenant} ({row.lastGroupShops.join('، ')})</div>
+                                   )}
                                  </td>
-                                 <td className="p-3 font-bold text-blue-700">{row.revenue.toLocaleString()} ريال</td>
+                                 <td className="p-3">
+                                   {row.isDependent ? (
+                                     <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔗 ضمن كيان — محسوب في {row.mainShopNum}</span>
+                                   ) : (
+                                     <>
+                                       <span className="font-bold text-blue-700">{row.revenue.toLocaleString()} ريال</span>
+                                       {row.groupMembers.length > 0 && (
+                                         <div className="text-[10px] text-slate-500 mt-1 whitespace-nowrap">🏠 رئيسي كيان (محلات: {row.groupMembers.join('، ')})</div>
+                                       )}
+                                     </>
+                                   )}
+                                 </td>
                                  <td className="p-3 text-slate-600">{row.txCount}</td>
                                </tr>
                              ))}
