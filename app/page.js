@@ -1326,52 +1326,26 @@ export default function ShubramiSystem() {
        }
 
        const groupToUpdate = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
-       
-       for (const sNum of groupToUpdate) {
-          const shopToArchive = shopsDB.find(s => s.shopNumber === sNum && (s.status === "مؤجر" || s.status === "مدمج") && s.tenant === originalRow.tenant);
-          if (shopToArchive) {
-              const { error: archErr } = await supabase.from('shops').update({ status: "أرشيف - مخلى" }).eq('id', shopToArchive.id);
-              if (archErr) {
-                return showToast(
-                  `🚫 فشل أرشفة المحل ${sNum} أثناء الإخلاء. العملية متوقفة — يُرجى مراجعة البيانات وإعادة المحاولة.`,
-                  "error", true
-                );
-              }
-          }
-       }
+       const groupShopRows = groupToUpdate
+         .map(sNum => shopsDB.find(s => s.shopNumber === sNum && s.tenant === originalRow.tenant && (s.status === "مؤجر" || s.status === "مدمج")))
+         .filter(Boolean);
 
-       const newVacantRows = groupToUpdate.map((sNum, index) => ({
-          id: `row-${Date.now()}-${index}`,
-          shopNumber: sNum,
-          area: originalRow.area || 60,
-          status: "شاغر",
-          tenant: "-",
-          ejarNumber: "-",
-          annualRent: originalRow.annualRent || 15000,
-          startDate: "-",
-          endDate: "-",
-          collected: 0,
-          isGroupMain: false,
-          groupShops: null
-       }));
-
-       const { error: insertVacantErr } = await supabase.from('shops').insert(newVacantRows);
-       if (insertVacantErr) {
-         return showToast(
-           `🚫 تمت أرشفة المحلات القديمة، لكن فشل توليد الصفوف الشاغرة. قاعدة البيانات تحتاج مراجعة يدوية لإتمام العملية.`,
-           "error", true
-         );
-       }
-
-       setShopsDB(prev => {
-          const archivedState = prev.map(s => {
-             if (groupToUpdate.includes(s.shopNumber) && (s.status === "مؤجر" || s.status === "مدمج") && s.tenant === originalRow.tenant) {
-                 return { ...s, status: "أرشيف - مخلى" };
-             }
-             return s;
-          });
-          return [...archivedState, ...newVacantRows];
+       const { data: vacateResult, error: vacateRpcErr } = await supabase.rpc('rpc_vacate_contract', {
+         p_shop_ids:        groupShopRows.map(s => s.id),
+         p_installment_ids: [],
+         p_hard_delete:     false
        });
+       if (vacateRpcErr) {
+         return showToast(`🚫 ${vacateRpcErr.message}`, "error", true);
+       }
+
+       setShopsDB(prev => [
+         ...prev.map(s => vacateResult.archived_shops.find(a => a.id === s.id) || s),
+         ...vacateResult.vacant_shops
+       ]);
+       if (vacateResult.debts && vacateResult.debts.length > 0) {
+         setDebtsDB(prev => [...prev, ...vacateResult.debts]);
+       }
 
        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
        setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
