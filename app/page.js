@@ -1241,7 +1241,7 @@ export default function ShubramiSystem() {
         return showToast("🚫 خطأ زمني: لا يجوز أن يكون تاريخ نهاية العقد سابقاً لتاريخ البداية أو مساوياً له!", "error");
     }
 
-    const targetIDs = newContractShops.map(shopNum => shopsDB.find(s => s.shopNumber === shopNum)?.id);
+    const targetIDs = newContractShops.map(shopNum => shopsDB.find(s => s.shopNumber === shopNum && s.status === "شاغر")?.id);
     if (targetIDs.some(id => !id)) {
       return showToast("خطأ: أحد المحلات المُدخلة غير موجود في النظام.", "error");
     }
@@ -2190,15 +2190,8 @@ export default function ShubramiSystem() {
 
   const latestShopRecords = {};
   shopsDB.forEach(shop => {
-    const currentIdNum = parseInt(String(shop.id).replace(/\D/g, '')) || 0;
-    const existingIdNum = latestShopRecords[shop.shopNumber] 
-      ? (parseInt(String(latestShopRecords[shop.shopNumber].id).replace(/\D/g, '')) || 0) 
-      : -1;
-    
     if (!shop.status.includes("أرشيف")) {
-      if (!latestShopRecords[shop.shopNumber] || currentIdNum > existingIdNum) {
-        latestShopRecords[shop.shopNumber] = shop;
-      }
+      latestShopRecords[shop.shopNumber] = shop;
     }
   });
 
