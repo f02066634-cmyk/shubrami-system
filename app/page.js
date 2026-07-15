@@ -753,7 +753,7 @@ export default function ShubramiSystem() {
   const [editContractRent, setEditContractRent] = useState(0);
   const [editContractStart, setEditContractStart] = useState("");
   const [editContractEnd, setEditContractEnd] = useState("");
-  const [editVacateActualDate, setEditVacateActualDate] = useState(new Date().toISOString().split('T')[0]);
+  const [editVacateActualDate, setEditVacateActualDate] = useState("");
 
   const [newPayShop, setNewPayShop] = useState("");
   const [newPayMethod, setNewPayMethod] = useState("");
@@ -1355,7 +1355,7 @@ export default function ShubramiSystem() {
 
        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
        setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
-       setEditVacateActualDate(new Date().toISOString().split('T')[0]);
+       setEditVacateActualDate("");
        return showToast("تم الإخلاء بنجاح! السجل القديم الآن في الأرشيف وتم تفكيك وتوليد المحلات الشاغرة.", "success");
     }
 
@@ -3488,6 +3488,7 @@ export default function ShubramiSystem() {
                            const row = shopsDB.find(s => s.id === e.target.value);
                            if(row) {
                              setEditContractId(row.id); setEditContractShop(row.shopNumber); setEditContractStatus(row.status); setEditContractTenant(row.tenant); setEditContractEjarNumber(row.ejarNumber === "-" ? "" : row.ejarNumber); setEditContractRent(row.annualRent); setEditContractStart(row.startDate); setEditContractEnd(row.endDate);
+                             setEditVacateActualDate(row.endDate);
                            }
                          }} required>
                            <option value="">-- المحلات المؤجرة المتاحة --</option>
