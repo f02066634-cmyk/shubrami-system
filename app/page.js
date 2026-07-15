@@ -1325,7 +1325,7 @@ export default function ShubramiSystem() {
           return showToast(`🚫 تاريخ المغادرة الفعلي يجب أن يقع بين تاريخ بداية العقد (${originalRow.startDate}) ونهايته (${originalRow.endDate}).`, "error");
        }
 
-       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان التعاقدي.\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
+       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان التعاقدي.\nسيُسجَّل تاريخ المغادرة الفعلي: ${editVacateActualDate}\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
        if (!(await showConfirm({ message: confirmMsg }))) {
          return;
        }
@@ -3536,9 +3536,10 @@ export default function ShubramiSystem() {
                        )}
 
                        {editContractId && editContractStatus !== "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && (
-                         <div className="md:col-span-2">
-                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تاريخ المغادرة الفعلي:</label>
+                         <div className="md:col-span-2 p-3 bg-amber-50 rounded-lg border border-amber-300">
+                           <label className="block mb-1.5 font-bold text-amber-800 text-xs">تاريخ المغادرة الفعلي:</label>
                            <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={editVacateActualDate} onChange={(e) => setEditVacateActualDate(e.target.value)} required />
+                           <p className="text-[11px] text-amber-700 font-bold mt-2">⚠️ إن كان المستأجر يغادر قبل نهاية العقد، عدّل هذا التاريخ ليعكس تاريخ المغادرة الفعلي — وإلا سيُسجَّل إخلاء عادي بتاريخ نهاية العقد.</p>
                          </div>
                        )}
 
