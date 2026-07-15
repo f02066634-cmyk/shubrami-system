@@ -753,6 +753,7 @@ export default function ShubramiSystem() {
   const [editContractRent, setEditContractRent] = useState(0);
   const [editContractStart, setEditContractStart] = useState("");
   const [editContractEnd, setEditContractEnd] = useState("");
+  const [editVacateActualDate, setEditVacateActualDate] = useState("");
 
   const [newPayShop, setNewPayShop] = useState("");
   const [newPayMethod, setNewPayMethod] = useState("");
@@ -1320,7 +1321,11 @@ export default function ShubramiSystem() {
           return showToast(`🚫 منع إداري: يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`, "error");
        }
 
-       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان التعاقدي.\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
+       if (editVacateActualDate < originalRow.startDate || editVacateActualDate > originalRow.endDate) {
+          return showToast(`🚫 تاريخ المغادرة الفعلي يجب أن يقع بين تاريخ بداية العقد (${originalRow.startDate}) ونهايته (${originalRow.endDate}).`, "error");
+       }
+
+       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان التعاقدي.\nسيُسجَّل تاريخ المغادرة الفعلي: ${editVacateActualDate}\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
        if (!(await showConfirm({ message: confirmMsg }))) {
          return;
        }
@@ -1333,7 +1338,8 @@ export default function ShubramiSystem() {
        const { data: vacateResult, error: vacateRpcErr } = await supabase.rpc('rpc_vacate_contract', {
          p_shop_ids:        groupShopRows.map(s => s.id),
          p_installment_ids: [],
-         p_hard_delete:     false
+         p_hard_delete:     false,
+         p_actual_end_date: editVacateActualDate
        });
        if (vacateRpcErr) {
          return showToast(`🚫 ${vacateRpcErr.message}`, "error", true);
@@ -1349,6 +1355,7 @@ export default function ShubramiSystem() {
 
        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
        setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
+       setEditVacateActualDate("");
        return showToast("تم الإخلاء بنجاح! السجل القديم الآن في الأرشيف وتم تفكيك وتوليد المحلات الشاغرة.", "success");
     }
 
@@ -3481,6 +3488,7 @@ export default function ShubramiSystem() {
                            const row = shopsDB.find(s => s.id === e.target.value);
                            if(row) {
                              setEditContractId(row.id); setEditContractShop(row.shopNumber); setEditContractStatus(row.status); setEditContractTenant(row.tenant); setEditContractEjarNumber(row.ejarNumber === "-" ? "" : row.ejarNumber); setEditContractRent(row.annualRent); setEditContractStart(row.startDate); setEditContractEnd(row.endDate);
+                             setEditVacateActualDate(row.endDate);
                            }
                          }} required>
                            <option value="">-- المحلات المؤجرة المتاحة --</option>
@@ -3524,6 +3532,14 @@ export default function ShubramiSystem() {
                          <div className="md:col-span-2 p-3 bg-red-50 text-red-700 rounded-lg border border-red-200 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">🔒</span>
                            <span>تنبيه إداري: هذا العقد ساري. يمنع النظام تعديل بياناته الأساسية.</span>
+                         </div>
+                       )}
+
+                       {editContractId && editContractStatus !== "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && (
+                         <div className="md:col-span-2 p-3 bg-amber-50 rounded-lg border border-amber-300">
+                           <label className="block mb-1.5 font-bold text-amber-800 text-xs">تاريخ المغادرة الفعلي:</label>
+                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={editVacateActualDate} onChange={(e) => setEditVacateActualDate(e.target.value)} required />
+                           <p className="text-[11px] text-amber-700 font-bold mt-2">⚠️ إن كان المستأجر يغادر قبل نهاية العقد، عدّل هذا التاريخ ليعكس تاريخ المغادرة الفعلي — وإلا سيُسجَّل إخلاء عادي بتاريخ نهاية العقد.</p>
                          </div>
                        )}
 
