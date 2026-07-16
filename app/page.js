@@ -2391,12 +2391,12 @@ export default function ShubramiSystem() {
 
   const stmtDebts = stmtTenant
     ? debtsDB.filter(d => d.amount > 0 && !d.is_external &&
-        (d.entity_id ? stmtActiveEntityIds.includes(d.entity_id) : (d.tenant || "").trim() === stmtTenant))
+        (stmtActiveEntityIds.includes(d.entity_id) || (d.tenant || "").trim() === stmtTenant))
     : [];
 
   const stmtAllTenantTx = stmtTenant
     ? transactionsDB.filter(t => !t.is_external &&
-        (t.entity_id ? stmtActiveEntityIds.includes(t.entity_id) : (t.tenant || "").trim() === stmtTenant))
+        (stmtActiveEntityIds.includes(t.entity_id) || (t.tenant || "").trim() === stmtTenant))
     : [];
   const stmtTxYears = [...new Set(
     stmtAllTenantTx.map(t => String(t.id).split('-')[1]).filter(Boolean)
