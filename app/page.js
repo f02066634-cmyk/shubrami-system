@@ -754,6 +754,8 @@ export default function ShubramiSystem() {
   const [editContractStart, setEditContractStart] = useState("");
   const [editContractEnd, setEditContractEnd] = useState("");
   const [editVacateActualDate, setEditVacateActualDate] = useState("");
+  const [editVacateDebtAmount, setEditVacateDebtAmount] = useState("");
+  const [editVacateDebtReason, setEditVacateDebtReason] = useState("");
 
   const [newPayShop, setNewPayShop] = useState("");
   const [newPayMethod, setNewPayMethod] = useState("");
@@ -1306,9 +1308,19 @@ export default function ShubramiSystem() {
     setIsSaving(true);
     try {
     if (!isRenewal && editContractStatus !== "مؤجر" && originalRow.status === "مؤجر") {
-       
+
+       let approvedDebtAmount = null;
        if (remainingBalance > 0) {
-          return showToast(`🚫 منع مالي: لا يمكن إخلاء الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`, "error");
+          if (currentUser?.role !== "مدير") {
+             return showToast(`🚫 منع مالي: لا يمكن إخلاء الكيان إلى "${editContractStatus}"!\nيوجد مبلغ متبقي من الإيجار بقيمة (${remainingBalance} ريال).`, "error");
+          }
+          if (!editVacateDebtReason.trim()) {
+             return showToast("🚫 يجب إدخال سبب اعتماد قرار المبلغ المتبقي.", "error");
+          }
+          approvedDebtAmount = Number(editVacateDebtAmount);
+          if (isNaN(approvedDebtAmount) || approvedDebtAmount < 0 || approvedDebtAmount > remainingBalance) {
+             return showToast(`🚫 المبلغ المعتمد كدين يجب أن يكون بين 0 والمتبقي الفعلي (${remainingBalance} ريال).`, "error");
+          }
        }
 
        const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
@@ -1325,7 +1337,10 @@ export default function ShubramiSystem() {
           return showToast(`🚫 تاريخ المغادرة الفعلي يجب أن يقع بين تاريخ بداية العقد (${originalRow.startDate}) ونهايته (${originalRow.endDate}).`, "error");
        }
 
-       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان التعاقدي.\nسيُسجَّل تاريخ المغادرة الفعلي: ${editVacateActualDate}\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
+       const debtNote = remainingBalance > 0
+         ? `\n⚠️ يوجد متبقٍ (${remainingBalance} ريال) — سيُعتمد كدين: ${approvedDebtAmount} ريال (وسيُعفى ${remainingBalance - approvedDebtAmount} ريال).`
+         : '';
+       const confirmMsg = `⚠️ تحذير هام:\n\nأنت على وشك إخلاء هذا الكيان التعاقدي.\nسيُسجَّل تاريخ المغادرة الفعلي: ${editVacateActualDate}${debtNote}\nسيتم تحويل العقد الحالي إلى (أرشيف تاريخي)، وتوليد محلات شاغرة جديدة.\n\nهل أنت متأكد من رغبتك في الاستمرار؟`;
        if (!(await showConfirm({ message: confirmMsg }))) {
          return;
        }
@@ -1336,10 +1351,11 @@ export default function ShubramiSystem() {
          .filter(Boolean);
 
        const { data: vacateResult, error: vacateRpcErr } = await supabase.rpc('rpc_vacate_contract', {
-         p_shop_ids:        groupShopRows.map(s => s.id),
-         p_installment_ids: [],
-         p_hard_delete:     false,
-         p_actual_end_date: editVacateActualDate
+         p_shop_ids:              groupShopRows.map(s => s.id),
+         p_installment_ids:       [],
+         p_hard_delete:           false,
+         p_actual_end_date:       editVacateActualDate,
+         p_debt_override_amount:  approvedDebtAmount
        });
        if (vacateRpcErr) {
          return showToast(`🚫 ${vacateRpcErr.message}`, "error", true);
@@ -1353,9 +1369,26 @@ export default function ShubramiSystem() {
          setDebtsDB(prev => [...prev, ...vacateResult.debts]);
        }
 
+       if (remainingBalance > 0) {
+         await logAction({
+           actionType: "إخلاء مبكر باستثناء إداري",
+           entityType: "عقد",
+           entityRef: groupToUpdate.join('، '),
+           summary: `إخلاء مبكر استثنائي بموافقة المدير للمستأجر "${originalRow.tenant}" - المتبقي الفعلي (${remainingBalance} ريال)، اعتُمد كدين (${approvedDebtAmount} ريال)، وأُعفي (${remainingBalance - approvedDebtAmount} ريال).`,
+           details: {
+             tenant: originalRow.tenant,
+             shopNumbers: groupToUpdate,
+             actualRemaining: remainingBalance,
+             approvedDebt: approvedDebtAmount,
+             waivedAmount: remainingBalance - approvedDebtAmount,
+             reason: editVacateDebtReason
+           }
+         });
+       }
+
        setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
        setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
-       setEditVacateActualDate("");
+       setEditVacateActualDate(""); setEditVacateDebtAmount(""); setEditVacateDebtReason("");
        return showToast("تم الإخلاء بنجاح! السجل القديم الآن في الأرشيف وتم تفكيك وتوليد المحلات الشاغرة.", "success");
     }
 
@@ -3540,6 +3573,16 @@ export default function ShubramiSystem() {
                            <label className="block mb-1.5 font-bold text-amber-800 text-xs">تاريخ المغادرة الفعلي:</label>
                            <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={editVacateActualDate} onChange={(e) => setEditVacateActualDate(e.target.value)} required />
                            <p className="text-[11px] text-amber-700 font-bold mt-2">⚠️ إن كان المستأجر يغادر قبل نهاية العقد، عدّل هذا التاريخ ليعكس تاريخ المغادرة الفعلي — وإلا سيُسجَّل إخلاء عادي بتاريخ نهاية العقد.</p>
+                         </div>
+                       )}
+
+                       {editContractId && editContractStatus !== "مؤجر" && !isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) &&
+                        currentUser?.role === "مدير" &&
+                        ((shopsDB.find(s=>s.id===editContractId)?.annualRent || 0) - (shopsDB.find(s=>s.id===editContractId)?.collected || 0)) > 0 && (
+                         <div className="md:col-span-2 p-3 bg-amber-50 rounded-lg border border-amber-300">
+                           <p className="text-xs font-bold text-amber-800 mb-2">⚠️ استثناء إداري: يوجد متبقٍ ({((shopsDB.find(s=>s.id===editContractId)?.annualRent || 0) - (shopsDB.find(s=>s.id===editContractId)?.collected || 0)).toLocaleString()} ريال). حدّد المبلغ المعتمد كدين:</p>
+                           <input type="number" min="0" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors mb-2" value={editVacateDebtAmount} onChange={(e) => setEditVacateDebtAmount(e.target.value)} placeholder="المبلغ المعتمد كدين" required />
+                           <textarea className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={editVacateDebtReason} onChange={(e) => setEditVacateDebtReason(e.target.value)} placeholder="سبب القرار (إلزامي)" required />
                          </div>
                        )}
 
