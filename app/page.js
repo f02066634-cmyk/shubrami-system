@@ -4786,7 +4786,7 @@ export default function ShubramiSystem() {
                         <div className="min-w-[160px]">
                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none text-xs" value={expCategoryFilter} onChange={(e) => setExpCategoryFilter(e.target.value)}>
                             <option value="الكل">البند (الكل)</option>
-                            {expenseCategoriesDB.map(c => (
+                            {expenseCategoriesDB.filter(c => currentUser?.role === "مدير" || c.is_active).map(c => (
                               <option key={c.id} value={c.id}>{c.name}{!c.is_active ? " ⛔ معطّل" : ""}</option>
                             ))}
                           </select>
