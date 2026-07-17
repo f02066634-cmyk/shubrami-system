@@ -1709,6 +1709,17 @@ export default function ShubramiSystem() {
     const existingOpen = transactionsDB.find(t => t.shop === newPayShop && t.status === "مفتوح (قيد التحصيل)");
     if (existingOpen) return showToast(`الكيان مرتبط بسند مفتوح رقم ${existingOpen.id}. يرجى إغلاقه أولاً.`, "success");
 
+    // تنبيه واعٍ: تحصيل مباشر (غير مرتبط باستحقاق مجدول محدد) سيُسقط أي استحقاق مجدول قائم للمحل
+    if (!payingInstId) {
+      const threatenedInst = installmentsDB.find(i => i.shop === activeShop.shopNumber && i.status !== "ملغى");
+      if (threatenedInst) {
+        const proceed = await showConfirm({
+          message: `⚠️ يوجد استحقاق مجدول لهذا المحل (المبلغ: ${threatenedInst.amount} ريال، تاريخ الاستحقاق: ${threatenedInst.date}).\nحفظ هذا التحصيل سيُلغي هذا الاستحقاق المجدول نهائياً.\n\nهل تريد المتابعة؟`
+        });
+        if (!proceed) return;
+      }
+    }
+
     const remaining = targetNum - amountNum;
     const status = remaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
     const today = new Date().toISOString().split('T')[0];
@@ -1761,6 +1772,13 @@ export default function ShubramiSystem() {
           );
         }
         setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
+        await logAction({
+          actionType: "حذف استحقاق",
+          entityType: "استحقاق",
+          entityRef: instToDelete.shop,
+          summary: `إلغاء استحقاق مجدول للمحل ${instToDelete.shop} (بقيمة ${instToDelete.amount} ريال، تاريخ الاستحقاق ${instToDelete.date}) نتيجة تسجيل سند التحصيل ${inserted.id}.`,
+          details: { ...instToDelete, causedByReceipt: inserted.id }
+        });
       }
 
       setPayingInstId("");
@@ -1792,13 +1810,22 @@ export default function ShubramiSystem() {
     const updatedStatus = updatedRemaining === 0 ? "مغلق (مكتمل)" : "مفتوح (قيد التحصيل)";
     const newMethod = tx.method.includes(updatePayMethod) ? tx.method : `${tx.method} و ${updatePayMethod}`;
 
-    const updatedTx = { 
-      paidAmount: updatedPaid, 
-      remainingAmount: updatedRemaining, 
-      status: updatedStatus, 
-      method: newMethod, 
-      updateDate: new Date().toISOString().split('T')[0] 
+    const updatedTx = {
+      paidAmount: updatedPaid,
+      remainingAmount: updatedRemaining,
+      status: updatedStatus,
+      method: newMethod,
+      updateDate: new Date().toISOString().split('T')[0]
     };
+
+    // تنبيه واعٍ: إضافة دفعة على السند ستُسقط أي استحقاق مجدول قائم للمحل
+    const threatenedInst = installmentsDB.find(i => i.shop === tx.shop && i.status !== "ملغى");
+    if (threatenedInst) {
+      const proceed = await showConfirm({
+        message: `⚠️ يوجد استحقاق مجدول لهذا المحل (المبلغ: ${threatenedInst.amount} ريال، تاريخ الاستحقاق: ${threatenedInst.date}).\nحفظ هذه الدفعة سيُلغي هذا الاستحقاق المجدول نهائياً.\n\nهل تريد المتابعة؟`
+      });
+      if (!proceed) return;
+    }
 
     setIsSaving(true);
     try {
@@ -1826,6 +1853,13 @@ export default function ShubramiSystem() {
            );
          }
          setInstallmentsDB(installmentsDB.filter(i => i.id !== instToDelete.id));
+         await logAction({
+           actionType: "حذف استحقاق",
+           entityType: "استحقاق",
+           entityRef: instToDelete.shop,
+           summary: `إلغاء استحقاق مجدول للمحل ${instToDelete.shop} (بقيمة ${instToDelete.amount} ريال، تاريخ الاستحقاق ${instToDelete.date}) نتيجة إضافة دفعة على السند ${updatePayReceipt}.`,
+           details: { ...instToDelete, causedByReceipt: updatePayReceipt }
+         });
       }
 
       setTransactionsDB(transactionsDB.map(t => t.id === updatePayReceipt ? { ...t, ...updatedTx } : t));
