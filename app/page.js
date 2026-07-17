@@ -2179,6 +2179,13 @@ export default function ShubramiSystem() {
     if (isSaving) return;
     if (!instShop || !instAmount || !instDate) return showToast("الرجاء تعبئة جميع بيانات الجدولة", "error");
 
+    const targetEntityId = shopsDB.find(s => s.shopNumber === instShop && s.status === "مؤجر")?.entity_id;
+    const openTx = transactionsDB.find(t => t.status === "مفتوح (قيد التحصيل)" &&
+      ((targetEntityId && t.entity_id === targetEntityId) || t.shop === instShop));
+    if (openTx) {
+      return showToast(`🚫 يوجد سند مفتوح (قيد التحصيل) لهذا الكيان بالفعل — رقم السند: ${openTx.id}، المحل: ${openTx.shop}، المدفوع حتى الآن: ${openTx.paidAmount}/${openTx.targetAmount} ريال. يرجى إكمال تحصيله أولاً قبل جدولة استحقاق جديد.`, "error");
+    }
+
     const newInst = {
       id: `INST-${Date.now()}`,
       shop: instShop,
