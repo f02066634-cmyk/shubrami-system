@@ -790,6 +790,15 @@ export default function ShubramiSystem() {
   const [newCatUsers, setNewCatUsers] = useState([]);
   const [editingCategory, setEditingCategory] = useState(null);
 
+  const [bankAccountsDB, setBankAccountsDB] = useState([]);
+  const [bankAccountAssignmentsDB, setBankAccountAssignmentsDB] = useState([]);
+  const [newBankName, setNewBankName] = useState("");
+  const [newBankBankName, setNewBankBankName] = useState("");
+  const [newBankNumber, setNewBankNumber] = useState("");
+  const [newBankUsers, setNewBankUsers] = useState([]);
+  const [editingBankAccount, setEditingBankAccount] = useState(null);
+  const [expBankAccountId, setExpBankAccountId] = useState("");
+
   const [instShop, setInstShop] = useState("");
   const [instAmount, setInstAmount] = useState("");
   const [instDate, setInstDate] = useState("");
@@ -928,6 +937,27 @@ export default function ShubramiSystem() {
     setCategoryAssignmentsDB(data || []);
   };
 
+  // الحسابات البنكية وتخصيصاتها — نفس نمط بنود المصروفات (RLS تُرشّح للموظف حساباته المخصَّصة فقط)
+  const fetchBankAccounts = async () => {
+    const { data, error } = await supabase.from('bank_accounts').select('*').order('created_at');
+    if (error) {
+      console.error("Error fetching bank_accounts:", error);
+      setBankAccountsDB([]);
+      return;
+    }
+    setBankAccountsDB(data || []);
+  };
+
+  const fetchBankAccountAssignments = async () => {
+    const { data, error } = await supabase.from('bank_account_assignments').select('*');
+    if (error) {
+      console.error("Error fetching bank_account_assignments:", error);
+      setBankAccountAssignmentsDB([]);
+      return;
+    }
+    setBankAccountAssignmentsDB(data || []);
+  };
+
   // تُستدعى عند وجود جلسة Auth صالحة (تسجيل دخول جديد أو استرجاع جلسة محفوظة)
   const loadSessionAndData = async (session) => {
     try {
@@ -960,6 +990,7 @@ export default function ShubramiSystem() {
         await fetchUsersList();
         await fetchAuditLogs();
         await fetchExpenseCategoryAssignments();
+        await fetchBankAccountAssignments();
       } else {
         const allowed = userObj.allowedTabs || [];
         setActiveTab(allowed.length > 0 ? allowed[0] : "");
@@ -968,6 +999,7 @@ export default function ShubramiSystem() {
       // بنود المصروفات النشطة/المخصَّصة تُجلب لكل الأدوار — RLS تُرشّحها تلقائياً
       // (المدير يرى الكل، الموظف يرى بنوده فقط)، فلا حاجة لفلترة إضافية هنا.
       await fetchExpenseCategories();
+      await fetchBankAccounts();
 
       await fetchAppData(userObj);
     } catch (err) {
@@ -2019,6 +2051,7 @@ export default function ShubramiSystem() {
     if (isSaving) return;
     if (!expCategoryId) return showToast("الرجاء اختيار بند الصرف", "error");
     if (!expMethod) return showToast("الرجاء اختيار طريقة الصرف", "error");
+    if (expMethod === "تحويل بنكي" && !expBankAccountId) return showToast("الرجاء اختيار الحساب البنكي المحوّل منه", "error");
     const amountNum = Number(expAmount);
     if (!expAmount || amountNum <= 0) return showToast("المبلغ يجب أن يكون أكبر من صفر", "error");
 
@@ -2031,6 +2064,7 @@ export default function ShubramiSystem() {
       created_by: currentUser.id,
       amount: amountNum,
       payment_method: expMethod,
+      bank_account_id: expMethod === "تحويل بنكي" ? expBankAccountId : null,
       notes: expNotes
     };
 
@@ -2039,7 +2073,7 @@ export default function ShubramiSystem() {
     const { error } = await supabase.from('expenses').insert([newExpense]);
     if (!error) {
       setExpensesDB([...expensesDB, newExpense]);
-      setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes(""); setExpMethod("");
+      setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes(""); setExpMethod(""); setExpBankAccountId("");
       showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
     } else {
       showToast(`🚫 فشل تسجيل المصروف: ${error.message}`, "error", true);
@@ -2203,6 +2237,166 @@ export default function ShubramiSystem() {
 
       setEditingCategory(null);
       showToast("تم تحديث تخصيص البند بنجاح.", "success");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddBankAccount = async (e) => {
+    e.preventDefault();
+    if (isSaving) return;
+    const name = newBankName.trim();
+    const bankName = newBankBankName.trim();
+    const accountNumber = newBankNumber.trim();
+    if (!name || !bankName || !accountNumber) return showToast("الرجاء تعبئة اسم الحساب واسم البنك ورقم الحساب", "error");
+    if (newBankUsers.length === 0) return showToast("اختر موظفاً واحداً على الأقل لهذا الحساب", "error");
+
+    setIsSaving(true);
+    try {
+      const { data: accData, error: accErr } = await supabase.from('bank_accounts').insert([{ name, bank_name: bankName, account_number: accountNumber }]).select();
+      if (accErr || !accData?.length) {
+        return showToast(`🚫 فشل إنشاء الحساب: ${accErr?.message || "خطأ غير معروف"}`, "error", true);
+      }
+
+      const newAccount = accData[0];
+      setBankAccountsDB(prev => [...prev, newAccount]);
+
+      const { data: assignData, error: assignErr } = await supabase
+        .from('bank_account_assignments')
+        .insert(newBankUsers.map(uid => ({ account_id: newAccount.id, user_id: uid })))
+        .select();
+
+      const assignedNames = usersDB.filter(u => newBankUsers.includes(u.id)).map(u => u.name);
+
+      if (assignErr) {
+        showToast(`⚠️ تم إنشاء الحساب "${name}" لكن فشل تعيين الموظفين. عدّل التخصيص يدوياً من القائمة.`, "error", true);
+      } else {
+        setBankAccountAssignmentsDB(prev => [...prev, ...(assignData || [])]);
+      }
+
+      await logAction({
+        actionType: "إضافة حساب بنكي",
+        entityType: "حساب بنكي",
+        entityRef: name,
+        summary: `إضافة حساب بنكي "${name}" (${bankName})${assignedNames.length ? ` وتعيينه لـ: ${assignedNames.join('، ')}` : ' (فشل تعيين الموظفين)'}.`,
+        details: { name, bankName, accountNumber, assignedUserIds: newBankUsers }
+      });
+
+      setNewBankName(""); setNewBankBankName(""); setNewBankNumber(""); setNewBankUsers([]);
+      if (!assignErr) showToast(`تم إنشاء حساب "${name}" بنجاح.`, "success");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleToggleBankAccountActive = async (account) => {
+    const { error } = await supabase
+      .from('bank_accounts')
+      .update({ is_active: !account.is_active })
+      .eq('id', account.id);
+
+    if (error) return showToast(`🚫 فشل تحديث حالة الحساب: ${error.message}`, "error", true);
+
+    setBankAccountsDB(prev => prev.map(a => a.id === account.id ? { ...a, is_active: !account.is_active } : a));
+    await logAction({
+      actionType: account.is_active ? "تعطيل حساب بنكي" : "إعادة تفعيل حساب بنكي",
+      entityType: "حساب بنكي",
+      entityRef: account.name,
+      summary: `${account.is_active ? "تعطيل" : "إعادة تفعيل"} حساب بنكي "${account.name}".`
+    });
+    showToast(`${account.is_active ? "تم تعطيل" : "تم تفعيل"} الحساب "${account.name}".`, "success");
+  };
+
+  const handleDeleteBankAccount = async (account) => {
+    const hasExpenses = expensesDB.some(e => e.bank_account_id === account.id);
+    if (hasExpenses) {
+      return showToast(`⚠️ لا يمكن حذف الحساب "${account.name}" لوجود مصروفات مرتبطة به. يمكنك تعطيله بدلاً من ذلك.`, "error", true);
+    }
+    if (!(await showConfirm({ message: `هل أنت متأكد من حذف الحساب البنكي "${account.name}" نهائياً؟` }))) return;
+
+    const { error } = await supabase.from('bank_accounts').delete().eq('id', account.id);
+    if (error) {
+      const msg = error.code === '23503'
+        ? `لا يمكن حذف الحساب "${account.name}" لوجود مصروفات مرتبطة به. يمكنك تعطيله بدلاً من ذلك.`
+        : `فشل حذف الحساب: ${error.message}`;
+      return showToast(`🚫 ${msg}`, "error", true);
+    }
+
+    setBankAccountsDB(prev => prev.filter(a => a.id !== account.id));
+    setBankAccountAssignmentsDB(prev => prev.filter(a => a.account_id !== account.id));
+    await logAction({
+      actionType: "حذف حساب بنكي",
+      entityType: "حساب بنكي",
+      entityRef: account.name,
+      summary: `حذف حساب بنكي "${account.name}".`
+    });
+    showToast(`تم حذف الحساب "${account.name}".`, "success");
+  };
+
+  const openEditBankAssignments = (account) => {
+    const userIds = bankAccountAssignmentsDB.filter(a => a.account_id === account.id).map(a => a.user_id);
+    setEditingBankAccount({ ...account, userIds });
+  };
+
+  const handleToggleEditBankUser = (userId) => {
+    setEditingBankAccount(prev => ({
+      ...prev,
+      userIds: prev.userIds.includes(userId)
+        ? prev.userIds.filter(id => id !== userId)
+        : [...prev.userIds, userId]
+    }));
+  };
+
+  const handleSaveBankAssignments = async () => {
+    if (!editingBankAccount || isSaving) return;
+    if (editingBankAccount.userIds.length === 0) {
+      return showToast("يجب أن يبقى موظف واحد على الأقل مخصّصاً للحساب", "error");
+    }
+
+    const currentUserIds = bankAccountAssignmentsDB.filter(a => a.account_id === editingBankAccount.id).map(a => a.user_id);
+    const toAdd = editingBankAccount.userIds.filter(id => !currentUserIds.includes(id));
+    const toRemove = currentUserIds.filter(id => !editingBankAccount.userIds.includes(id));
+
+    if (toAdd.length === 0 && toRemove.length === 0) {
+      setEditingBankAccount(null);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      if (toAdd.length > 0) {
+        const { data, error } = await supabase
+          .from('bank_account_assignments')
+          .insert(toAdd.map(uid => ({ account_id: editingBankAccount.id, user_id: uid })))
+          .select();
+        if (error) return showToast(`🚫 فشل إضافة الموظفين: ${error.message}`, "error", true);
+        setBankAccountAssignmentsDB(prev => [...prev, ...(data || [])]);
+      }
+
+      if (toRemove.length > 0) {
+        const { error } = await supabase
+          .from('bank_account_assignments')
+          .delete()
+          .eq('account_id', editingBankAccount.id)
+          .in('user_id', toRemove);
+        if (error) return showToast(`🚫 فشل إزالة الموظفين: ${error.message}`, "error", true);
+        setBankAccountAssignmentsDB(prev => prev.filter(a => !(a.account_id === editingBankAccount.id && toRemove.includes(a.user_id))));
+      }
+
+      const addedNames = usersDB.filter(u => toAdd.includes(u.id)).map(u => u.name);
+      const removedNames = usersDB.filter(u => toRemove.includes(u.id)).map(u => u.name);
+      await logAction({
+        actionType: "تعديل تخصيص حساب بنكي",
+        entityType: "حساب بنكي",
+        entityRef: editingBankAccount.name,
+        summary: `تعديل تخصيص حساب "${editingBankAccount.name}"` +
+          (addedNames.length ? ` — أُضيف: ${addedNames.join('، ')}` : '') +
+          (removedNames.length ? ` — أُزيل: ${removedNames.join('، ')}` : '') + '.',
+        details: { accountId: editingBankAccount.id, added: toAdd, removed: toRemove }
+      });
+
+      setEditingBankAccount(null);
+      showToast("تم تحديث تخصيص الحساب بنجاح.", "success");
     } finally {
       setIsSaving(false);
     }
@@ -4742,6 +4936,9 @@ export default function ShubramiSystem() {
                      {currentUser?.role === "مدير" && (
                        <button onClick={() => setExpenseSubTab("categories")} className={`px-3 py-1.5 font-bold transition-colors ${expenseSubTab === "categories" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🗂️ إدارة البنود</button>
                      )}
+                     {currentUser?.role === "مدير" && (
+                       <button onClick={() => setExpenseSubTab("banks")} className={`px-3 py-1.5 font-bold transition-colors ${expenseSubTab === "banks" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🏦 الحسابات البنكية</button>
+                     )}
                    </div>
 
                    {expenseSubTab === "log" && (
@@ -4762,13 +4959,24 @@ export default function ShubramiSystem() {
                        </div>
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الصرف:</label>
-                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expMethod} onChange={(e) => setExpMethod(e.target.value)} required>
+                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expMethod} onChange={(e) => { setExpMethod(e.target.value); if (e.target.value !== "تحويل بنكي") setExpBankAccountId(""); }} required>
                            <option value="">-- اختر --</option>
                            <option value="نقد">نقد</option>
                            <option value="تحويل بنكي">تحويل بنكي</option>
                            <option value="شيك">شيك</option>
                          </select>
                        </div>
+                       {expMethod === "تحويل بنكي" && (
+                         <div className="md:col-span-2">
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحساب البنكي المحوّل منه:</label>
+                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expBankAccountId} onChange={(e) => setExpBankAccountId(e.target.value)} required>
+                             <option value="">-- اختر الحساب --</option>
+                             {bankAccountsDB.filter(b => b.is_active).map(b => (
+                               <option key={b.id} value={b.id}>{b.name} — {b.bank_name} ({b.account_number})</option>
+                             ))}
+                           </select>
+                         </div>
+                       )}
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ:</label>
                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} required />
@@ -4820,7 +5028,12 @@ export default function ShubramiSystem() {
                              <td className="p-3 text-slate-700">{e.date}</td>
                              <td className="p-3 font-semibold text-slate-800">{expenseCategoriesDB.find(c => c.id === e.category_id)?.name || e.category || "-"}</td>
                              <td className="p-3 font-bold text-slate-900">{e.amount.toLocaleString()}</td>
-                             <td className="p-3 text-slate-600">{e.payment_method || "-"}</td>
+                             <td className="p-3 text-slate-600">
+                               {e.payment_method || "-"}
+                               {e.payment_method === "تحويل بنكي" && e.bank_account_id && (
+                                 <span className="block text-[10px] text-slate-400">🏦 {bankAccountsDB.find(b => b.id === e.bank_account_id)?.name || "—"}</span>
+                               )}
+                             </td>
                              <td className="p-3 text-slate-600">{e.notes}</td>
                              {currentUser?.role === "مدير" && (
                                <td className="p-3 text-slate-600">{usersDB.find(u => u.id === e.created_by)?.name || "-"}</td>
@@ -4909,6 +5122,92 @@ export default function ShubramiSystem() {
                        </div>
                      </>
                    )}
+
+                   {expenseSubTab === "banks" && currentUser?.role === "مدير" && (
+                     <>
+                       <form onSubmit={handleAddBankAccount} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                         <div>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم الحساب:</label>
+                           <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newBankName} onChange={(e) => setNewBankName(e.target.value)} required />
+                         </div>
+                         <div>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم البنك:</label>
+                           <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newBankBankName} onChange={(e) => setNewBankBankName(e.target.value)} required />
+                         </div>
+                         <div className="md:col-span-2">
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم الحساب / الآيبان:</label>
+                           <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newBankNumber} onChange={(e) => setNewBankNumber(e.target.value)} required />
+                         </div>
+                         <div className="md:col-span-2">
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تعيين الموظفين (يمكن اختيار أكثر من موظف لحساب مشترك):</label>
+                           <div className="flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-52 overflow-y-auto">
+                             {usersDB.filter(u => u.role === "موظف").map(u => (
+                               <label key={u.id} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                                 <input
+                                   type="checkbox"
+                                   checked={newBankUsers.includes(u.id)}
+                                   onChange={() => setNewBankUsers(prev => prev.includes(u.id) ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                                 />
+                                 {u.name}
+                               </label>
+                             ))}
+                             {usersDB.filter(u => u.role === "موظف").length === 0 && (
+                               <p className="text-xs text-slate-500">لا يوجد موظفون في النظام بعد.</p>
+                             )}
+                           </div>
+                         </div>
+                         <button type="submit" disabled={isSaving} className="md:col-span-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "➕ إضافة الحساب"}</button>
+                       </form>
+
+                       <h3 className="text-base font-bold text-slate-900 mb-4">🏦 الحسابات البنكية الحالية</h3>
+                       <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
+                         <table className="w-full text-right text-slate-800 text-xs">
+                           <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                             <tr>
+                               <th className="p-3.5">الحساب</th>
+                               <th className="p-3.5">البنك</th>
+                               <th className="p-3.5">رقم الحساب</th>
+                               <th className="p-3.5">الموظفون المخصَّصون</th>
+                               <th className="p-3.5">الإجراءات</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {bankAccountsDB.map((acc, i) => {
+                               const assignedNames = bankAccountAssignmentsDB
+                                 .filter(a => a.account_id === acc.id)
+                                 .map(a => usersDB.find(u => u.id === a.user_id)?.name || "؟")
+                                 .join('، ');
+                               return (
+                                 <tr key={acc.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
+                                   <td className="p-3 font-semibold text-slate-800">
+                                     {acc.name}
+                                     {!acc.is_active && (
+                                       <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 border border-slate-300">⛔ معطّل</span>
+                                     )}
+                                   </td>
+                                   <td className="p-3 text-slate-600">{acc.bank_name}</td>
+                                   <td className="p-3 text-slate-600">{acc.account_number}</td>
+                                   <td className="p-3 text-slate-600">{assignedNames || "—"}</td>
+                                   <td className="p-3">
+                                     <div className="flex gap-2 flex-wrap">
+                                       <button onClick={() => openEditBankAssignments(acc)} className="text-[11px] font-bold px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200 transition-colors">✏️ تعديل التخصيص</button>
+                                       <button onClick={() => handleToggleBankAccountActive(acc)} className={`text-[11px] font-bold px-2 py-1 rounded border transition-colors ${acc.is_active ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200" : "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200"}`}>
+                                         {acc.is_active ? "🚫 تعطيل" : "✅ تفعيل"}
+                                       </button>
+                                       <button onClick={() => handleDeleteBankAccount(acc)} className="text-[11px] font-bold px-2 py-1 rounded bg-red-100 text-red-800 border border-red-300 hover:bg-red-200 transition-colors">🗑️ حذف</button>
+                                     </div>
+                                   </td>
+                                 </tr>
+                               );
+                             })}
+                             {bankAccountsDB.length === 0 && (
+                               <tr><td colSpan="5" className="p-5 text-center text-slate-500">لا توجد حسابات بنكية بعد.</td></tr>
+                             )}
+                           </tbody>
+                         </table>
+                       </div>
+                     </>
+                   )}
                  </div>
                )}
 
@@ -4938,6 +5237,37 @@ export default function ShubramiSystem() {
                      <div className="flex gap-3">
                        <button onClick={handleSaveCategoryAssignments} disabled={isSaving} className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "💾 حفظ التخصيص"}</button>
                        <button onClick={() => setEditingCategory(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">إلغاء</button>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
+               {editingBankAccount && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                   <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-md relative">
+                     <button onClick={() => setEditingBankAccount(null)} className="absolute top-4 left-5 text-slate-400 hover:text-red-500 text-2xl font-bold transition-colors">&times;</button>
+                     <h3 className="text-slate-900 font-extrabold mb-2 flex items-center gap-2 text-lg">
+                       <span>✏️</span> تعديل تخصيص: {editingBankAccount.name}
+                     </h3>
+                     <p className="text-xs text-slate-500 mb-5 border-b border-slate-200 pb-3">حدد الموظفين المسموح لهم باستخدام هذا الحساب البنكي عند التحويل.</p>
+
+                     <div className="flex flex-col gap-3 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 max-h-64 overflow-y-auto">
+                       {usersDB.filter(u => u.role === "موظف").map(u => (
+                         <label key={u.id} className="flex items-center gap-3 text-sm text-slate-800 cursor-pointer font-semibold p-2 hover:bg-white rounded transition-colors">
+                           <input
+                             type="checkbox"
+                             checked={editingBankAccount.userIds.includes(u.id)}
+                             onChange={() => handleToggleEditBankUser(u.id)}
+                             className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-600"
+                           />
+                           {u.name}
+                         </label>
+                       ))}
+                     </div>
+
+                     <div className="flex gap-3">
+                       <button onClick={handleSaveBankAssignments} disabled={isSaving} className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "💾 حفظ التخصيص"}</button>
+                       <button onClick={() => setEditingBankAccount(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">إلغاء</button>
                      </div>
                    </div>
                  </div>
