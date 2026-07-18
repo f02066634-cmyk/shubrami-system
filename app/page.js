@@ -2880,11 +2880,13 @@ export default function ShubramiSystem() {
     const total = data.reduce((s, ex) => s + ex.amount, 0);
     const rows = data.map(ex => {
       const catName = expenseCategoriesDB.find(c => c.id === ex.category_id)?.name || ex.category || "-";
+      const bankName = ex.payment_method === "تحويل بنكي" && ex.bank_account_id
+        ? (bankAccountsDB.find(b => b.id === ex.bank_account_id)?.name || "—") : "";
       return `<tr>
         <td>${e(ex.date)}</td>
         <td><b>${e(catName)}</b></td>
         <td class="text-red">${ex.amount.toLocaleString()} ريال</td>
-        <td>${e(ex.payment_method)}</td>
+        <td>${e(ex.payment_method)}${bankName ? `<br><small>🏦 ${e(bankName)}</small>` : ""}</td>
         <td>${e(ex.notes)}</td>
       </tr>`;
     }).join('');
