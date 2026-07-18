@@ -3063,29 +3063,27 @@ export default function ShubramiSystem() {
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
           * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; background: #f8fafc; padding: 40px 20px; color: #1e293b; }
-          .receipt { max-width: 680px; margin: 0 auto; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-          .receipt-head { background: #1e293b; color: #fff; padding: 28px 32px; text-align: center; border-bottom: 4px solid #1d4ed8; }
-          .receipt-head h1 { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
-          .receipt-head p { font-size: 14px; color: #94a3b8; }
-          .receipt-meta { display: flex; justify-content: space-between; padding: 16px 32px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
-          .receipt-meta .meta-item span:first-child { color: #64748b; margin-left: 6px; }
-          .receipt-meta .meta-item span:last-child { font-weight: 800; color: #0f172a; }
-          .receipt-body { padding: 28px 32px; }
-          .field { padding: 14px 0; border-bottom: 1px dashed #e2e8f0; display: flex; align-items: center; gap: 12px; }
-          .field:last-child { border-bottom: none; }
-          .field .lbl { font-size: 14px; color: #64748b; font-weight: 700; white-space: nowrap; }
-          .field .val { font-size: 16px; font-weight: 800; color: #0f172a; }
-          .amount-box { background: #eff6ff; border: 2px solid #1d4ed8; border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0; }
-          .amount-value { font-size: 32px; font-weight: 800; color: #1d4ed8; }
-          .amount-currency { font-size: 14px; color: #3b82f6; margin-top: 4px; font-weight: 700; }
-          .signatures { display: flex; justify-content: space-between; padding: 24px 32px 32px; gap: 16px; }
+          body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; background: #f8fafc; padding: 24px 16px; color: #1e293b; }
+          .receipt { max-width: 520px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-top: 4px solid #1d4ed8; border-radius: 10px; overflow: hidden; }
+          .receipt-head { text-align: center; padding: 16px 24px 12px; border-bottom: 1px solid #e2e8f0; }
+          .receipt-head h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; margin-bottom: 2px; }
+          .receipt-head p { font-size: 12px; color: #64748b; font-weight: 700; }
+          .receipt-body { padding: 16px 24px; }
+          table.info { width: 100%; border-collapse: collapse; font-size: 13px; }
+          table.info thead th { background: #e2e8f0; color: #0f172a; font-weight: 800; text-align: right; padding: 8px 12px; border: 1px solid #cbd5e1; }
+          table.info td { padding: 8px 12px; border: 1px solid #cbd5e1; }
+          table.info td.lbl { color: #64748b; font-weight: 700; width: 40%; background: #f8fafc; }
+          table.info td.val { color: #0f172a; font-weight: 800; }
+          .amount-box { background: #eff6ff; border: 2px solid #1d4ed8; border-radius: 8px; padding: 14px; text-align: center; margin: 16px 0 4px; }
+          .amount-value { font-size: 28px; font-weight: 800; color: #1d4ed8; }
+          .amount-currency { font-size: 12px; color: #3b82f6; margin-top: 2px; font-weight: 700; }
+          .signatures { display: flex; justify-content: space-between; padding: 8px 24px 20px; gap: 12px; }
           .sig-box { flex: 1; text-align: center; }
-          .sig-box .sig-label { font-size: 13px; font-weight: 700; color: #475569; margin-bottom: 48px; }
-          .sig-line { border-bottom: 2px solid #cbd5e1; }
-          .receipt-footer { border-top: 1px solid #e2e8f0; padding: 12px 32px; text-align: center; font-size: 11px; color: #94a3b8; }
-          .btn { display: block; max-width: 680px; width: 100%; margin: 24px auto 0; padding: 16px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 700; font-family: inherit; }
-          @media print { .btn { display: none !important; } body { background: #fff; padding: 0; } .receipt { box-shadow: none; border: 2px solid #1e293b; border-radius: 0; } }
+          .sig-box .sig-label { font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 32px; }
+          .sig-line { border-bottom: 1.5px solid #cbd5e1; }
+          .receipt-footer { border-top: 1px solid #e2e8f0; padding: 10px 24px; text-align: center; font-size: 10px; color: #94a3b8; }
+          .btn { display: block; max-width: 520px; width: 100%; margin: 20px auto 0; padding: 14px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 700; font-family: inherit; }
+          @media print { .btn { display: none !important; } body { background: #fff; padding: 0; } .receipt { border: 1px solid #cbd5e1; border-top: 4px solid #1d4ed8; border-radius: 0; } @page { size: A4; margin: 16mm; } }
         </style>
       </head>
       <body>
@@ -3095,22 +3093,19 @@ export default function ShubramiSystem() {
             <h1>🏢 أسواق الشبرمي</h1>
             <p>سند قبض — إيصال استلام رسمي</p>
           </div>
-          <div class="receipt-meta">
-            <div class="meta-item"><span>رقم السند:</span><span>${e(receipt.id)}</span></div>
-            <div class="meta-item"><span>تاريخ الإغلاق:</span><span>${e(receipt.updateDate)} م</span></div>
-          </div>
           <div class="receipt-body">
-            <div class="field">
-              <span class="lbl">استلمنا من:</span>
-              <span class="val">${e(receipt.tenant)}</span>
-            </div>
+            <table class="info">
+              <thead><tr><th>البيان</th><th>القيمة</th></tr></thead>
+              <tbody>
+                <tr><td class="lbl">رقم السند</td><td class="val">${e(receipt.id)}</td></tr>
+                <tr><td class="lbl">تاريخ الإغلاق</td><td class="val">${e(receipt.updateDate)} م</td></tr>
+                <tr><td class="lbl">استلمنا من</td><td class="val">${e(receipt.tenant)}</td></tr>
+                <tr><td class="lbl">طريقة الدفع</td><td class="val">${e(receipt.method)}</td></tr>
+              </tbody>
+            </table>
             <div class="amount-box">
               <div class="amount-value">${receipt.targetAmount.toLocaleString()}</div>
               <div class="amount-currency">ريال سعودي</div>
-            </div>
-            <div class="field">
-              <span class="lbl">طريقة الدفع:</span>
-              <span class="val">${e(receipt.method)}</span>
             </div>
           </div>
           <div class="signatures">
