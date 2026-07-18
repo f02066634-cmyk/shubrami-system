@@ -2933,11 +2933,13 @@ export default function ShubramiSystem() {
       const reversalTag = ex.reverses_expense_id
         ? ` <small>(↩️ قيد عكسي للمصروف ${e(ex.reverses_expense_id)})</small>`
         : (ex.is_reversed ? ` <small>(🔄 معكوس)</small>` : "");
+      const bankName = ex.payment_method === "تحويل بنكي" && ex.bank_account_id
+        ? (bankAccountsDB.find(b => b.id === ex.bank_account_id)?.name || "—") : "";
       return `<tr>
         <td>${e(ex.date)}</td>
         <td><b>${e(catName)}</b>${reversalTag}</td>
         <td class="text-red">${ex.amount.toLocaleString()} ريال</td>
-        <td>${e(ex.payment_method)}</td>
+        <td>${e(ex.payment_method)}${bankName ? `<br><small>🏦 ${e(bankName)}</small>` : ""}</td>
         <td>${e(ex.notes)}</td>
       </tr>`;
     }).join('');
