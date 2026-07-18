@@ -3055,6 +3055,63 @@ export default function ShubramiSystem() {
     const e = escapeHtml;
     const w = window.open('', '_blank');
     if (!w) return showToast("تعذّر فتح نافذة الطباعة — تأكد من السماح بالنوافذ المنبثقة", "error");
+
+    // تحويل الرقم إلى كلمات عربية (للمبلغ كتابةً) — للطباعة فقط
+    const numToArabicWords = (num) => {
+      let n = Math.floor(Math.abs(num));
+      if (n === 0) return "صفر";
+      const ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر"];
+      const tens = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
+      const hundreds = ["", "مئة", "مئتان", "ثلاثمئة", "أربعمئة", "خمسمئة", "ستمئة", "سبعمئة", "ثمانمئة", "تسعمئة"];
+      const three = (v) => {
+        const parts = [];
+        const h = Math.floor(v / 100);
+        const rem = v % 100;
+        if (h > 0) parts.push(hundreds[h]);
+        if (rem > 0) {
+          if (rem < 20) parts.push(ones[rem]);
+          else {
+            const t = Math.floor(rem / 10);
+            const o = rem % 10;
+            parts.push(o > 0 ? `${ones[o]} و${tens[t]}` : tens[t]);
+          }
+        }
+        return parts.join(" و");
+      };
+      const scales = [
+        null,
+        { one: "ألف", two: "ألفان", plural: "آلاف" },
+        { one: "مليون", two: "مليونان", plural: "ملايين" },
+        { one: "مليار", two: "ملياران", plural: "مليارات" },
+        { one: "تريليون", two: "تريليونان", plural: "تريليونات" },
+      ];
+      const groups = [];
+      while (n > 0) { groups.push(n % 1000); n = Math.floor(n / 1000); }
+      const segs = [];
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const g = groups[i];
+        if (g === 0) continue;
+        if (i === 0) {
+          segs.push(three(g));
+        } else {
+          const sc = scales[i];
+          if (g === 1) segs.push(sc.one);
+          else if (g === 2) segs.push(sc.two);
+          else if (g >= 3 && g <= 10) segs.push(`${three(g)} ${sc.plural}`);
+          else segs.push(`${three(g)} ${sc.one}`);
+        }
+      }
+      return segs.join(" و");
+    };
+
+    const amt = Number(receipt.targetAmount) || 0;
+    const riyals = Math.floor(amt);
+    const halalas = Math.round((amt - riyals) * 100);
+    const amountDigits = halalas > 0
+      ? `${riyals.toLocaleString()}.${String(halalas).padStart(2, '0')}`
+      : riyals.toLocaleString();
+    const amountWords = `فقط ${numToArabicWords(riyals)} ريال سعودي${halalas > 0 ? ` و${numToArabicWords(halalas)} هللة` : ""} لا غير`;
+
     w.document.write(`
       <html dir="rtl" lang="ar">
       <head>
@@ -3064,25 +3121,24 @@ export default function ShubramiSystem() {
           @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; background: #f8fafc; padding: 24px 16px; color: #1e293b; }
-          .receipt { max-width: 520px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-top: 4px solid #1d4ed8; border-radius: 10px; overflow: hidden; }
-          .receipt-head { text-align: center; padding: 16px 24px 12px; border-bottom: 1px solid #e2e8f0; }
-          .receipt-head h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; margin-bottom: 2px; }
+          .receipt { max-width: 720px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-top: 4px solid #1d4ed8; border-radius: 10px; overflow: hidden; }
+          .receipt-head { text-align: center; padding: 16px 28px 12px; border-bottom: 1px solid #e2e8f0; }
+          .receipt-head h1 { font-size: 21px; font-weight: 800; color: #1d4ed8; margin-bottom: 2px; }
           .receipt-head p { font-size: 12px; color: #64748b; font-weight: 700; }
-          .receipt-body { padding: 16px 24px; }
-          table.info { width: 100%; border-collapse: collapse; font-size: 13px; }
-          table.info thead th { background: #e2e8f0; color: #0f172a; font-weight: 800; text-align: right; padding: 8px 12px; border: 1px solid #cbd5e1; }
-          table.info td { padding: 8px 12px; border: 1px solid #cbd5e1; }
-          table.info td.lbl { color: #64748b; font-weight: 700; width: 40%; background: #f8fafc; }
-          table.info td.val { color: #0f172a; font-weight: 800; }
-          .amount-box { background: #eff6ff; border: 2px solid #1d4ed8; border-radius: 8px; padding: 14px; text-align: center; margin: 16px 0 4px; }
-          .amount-value { font-size: 28px; font-weight: 800; color: #1d4ed8; }
-          .amount-currency { font-size: 12px; color: #3b82f6; margin-top: 2px; font-weight: 700; }
-          .signatures { display: flex; justify-content: space-between; padding: 8px 24px 20px; gap: 12px; }
+          .receipt-body { padding: 18px 28px; }
+          .meta-row { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+          .field { padding: 9px 0; font-size: 14px; }
+          .field .lbl { color: #64748b; font-weight: 700; }
+          .field .val { color: #0f172a; font-weight: 800; }
+          .field.amount { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-top: 6px; padding: 11px 0; }
+          .field.amount .digits { color: #1d4ed8; font-weight: 800; }
+          .field.amount .words { color: #334155; font-weight: 700; }
+          .signatures { display: flex; justify-content: space-between; padding: 12px 28px 22px; gap: 16px; }
           .sig-box { flex: 1; text-align: center; }
-          .sig-box .sig-label { font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 32px; }
+          .sig-box .sig-label { font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 34px; }
           .sig-line { border-bottom: 1.5px solid #cbd5e1; }
-          .receipt-footer { border-top: 1px solid #e2e8f0; padding: 10px 24px; text-align: center; font-size: 10px; color: #94a3b8; }
-          .btn { display: block; max-width: 520px; width: 100%; margin: 20px auto 0; padding: 14px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 700; font-family: inherit; }
+          .receipt-footer { border-top: 1px solid #e2e8f0; padding: 10px 28px; text-align: center; font-size: 10px; color: #94a3b8; }
+          .btn { display: block; max-width: 720px; width: 100%; margin: 20px auto 0; padding: 14px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 700; font-family: inherit; }
           @media print { .btn { display: none !important; } body { background: #fff; padding: 0; } .receipt { border: 1px solid #cbd5e1; border-top: 4px solid #1d4ed8; border-radius: 0; } @page { size: A4; margin: 16mm; } }
         </style>
       </head>
@@ -3094,19 +3150,15 @@ export default function ShubramiSystem() {
             <p>سند قبض — إيصال استلام رسمي</p>
           </div>
           <div class="receipt-body">
-            <table class="info">
-              <thead><tr><th>البيان</th><th>القيمة</th></tr></thead>
-              <tbody>
-                <tr><td class="lbl">رقم السند</td><td class="val">${e(receipt.id)}</td></tr>
-                <tr><td class="lbl">تاريخ الإغلاق</td><td class="val">${e(receipt.updateDate)} م</td></tr>
-                <tr><td class="lbl">استلمنا من</td><td class="val">${e(receipt.tenant)}</td></tr>
-                <tr><td class="lbl">طريقة الدفع</td><td class="val">${e(receipt.method)}</td></tr>
-              </tbody>
-            </table>
-            <div class="amount-box">
-              <div class="amount-value">${receipt.targetAmount.toLocaleString()}</div>
-              <div class="amount-currency">ريال سعودي</div>
+            <div class="meta-row">
+              <span><span class="lbl">رقم السند:</span> <span class="val">${e(receipt.id)}</span></span>
+              <span><span class="lbl">تاريخ الإغلاق:</span> <span class="val">${e(receipt.updateDate)} م</span></span>
             </div>
+            <div class="field"><span class="lbl">استلمنا من:</span> <span class="val">${e(receipt.tenant)}</span></div>
+            <div class="field amount">
+              <span class="lbl">المبلغ:</span> <span class="digits">${amountDigits} ريال سعودي</span> <span class="words">— ${e(amountWords)}</span>
+            </div>
+            <div class="field"><span class="lbl">طريقة الدفع:</span> <span class="val">${e(receipt.method)}</span></div>
           </div>
           <div class="signatures">
             <div class="sig-box"><div class="sig-label">المحاسب العام</div><div class="sig-line"></div></div>
