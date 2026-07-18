@@ -798,6 +798,8 @@ export default function ShubramiSystem() {
   const [newBankUsers, setNewBankUsers] = useState([]);
   const [editingBankAccount, setEditingBankAccount] = useState(null);
   const [expBankAccountId, setExpBankAccountId] = useState("");
+  const [reversingExpense, setReversingExpense] = useState(null);
+  const [reversalReasonInput, setReversalReasonInput] = useState("");
 
   const [instShop, setInstShop] = useState("");
   const [instAmount, setInstAmount] = useState("");
@@ -2402,6 +2404,54 @@ export default function ShubramiSystem() {
     }
   };
 
+  const handleReverseExpense = async () => {
+    if (!reversingExpense || isSaving) return;
+    const orig = reversingExpense;
+    const reason = reversalReasonInput.trim();
+    if (!reason) return showToast("سبب العكس إلزامي", "error");
+
+    setIsSaving(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const reversalRow = {
+        id: `E-REV-${Date.now()}`,
+        date: orig.date,
+        category: orig.category,
+        category_id: orig.category_id,
+        created_by: currentUser.id,
+        amount: -orig.amount,
+        payment_method: orig.payment_method,
+        bank_account_id: orig.bank_account_id ?? null,
+        notes: `قيد عكسي للمصروف ${orig.id} — السبب: ${reason}`,
+        reverses_expense_id: orig.id
+      };
+
+      const { error: insErr } = await supabase.from('expenses').insert([reversalRow]);
+      if (insErr) return showToast(`🚫 فشل إنشاء القيد العكسي: ${insErr.message}`, "error", true);
+
+      const origUpdate = { is_reversed: true, reversed_by: currentUser.id, reversed_at: nowIso, reversal_reason: reason };
+      const { error: updErr } = await supabase.from('expenses').update(origUpdate).eq('id', orig.id);
+      if (updErr) {
+        return showToast(`⚠️ تم إنشاء القيد العكسي ${reversalRow.id} لكن فشل تعليم المصروف الأصلي كمعكوس. يُرجى المراجعة اليدوية.`, "error", true);
+      }
+
+      setExpensesDB(prev => [...prev.map(x => x.id === orig.id ? { ...x, ...origUpdate } : x), reversalRow]);
+
+      await logAction({
+        actionType: "عكس قيد مصروف",
+        entityType: "مصروف",
+        entityRef: orig.id,
+        summary: `عكس قيد المصروف ${orig.id} (${orig.category || "-"} بقيمة ${orig.amount} ريال، تاريخ ${orig.date}) — السبب: ${reason}.`,
+        details: { originalId: orig.id, reversalId: reversalRow.id, amount: orig.amount, reason }
+      });
+
+      setReversingExpense(null); setReversalReasonInput("");
+      showToast(`تم عكس قيد المصروف ${orig.id} بنجاح.`, "success");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleNewInstallment = async (e) => {
     e.preventDefault();
     if (isSaving) return;
@@ -2880,9 +2930,12 @@ export default function ShubramiSystem() {
     const total = data.reduce((s, ex) => s + ex.amount, 0);
     const rows = data.map(ex => {
       const catName = expenseCategoriesDB.find(c => c.id === ex.category_id)?.name || ex.category || "-";
+      const reversalTag = ex.reverses_expense_id
+        ? ` <small>(↩️ قيد عكسي للمصروف ${e(ex.reverses_expense_id)})</small>`
+        : (ex.is_reversed ? ` <small>(🔄 معكوس)</small>` : "");
       return `<tr>
         <td>${e(ex.date)}</td>
-        <td><b>${e(catName)}</b></td>
+        <td><b>${e(catName)}</b>${reversalTag}</td>
         <td class="text-red">${ex.amount.toLocaleString()} ريال</td>
         <td>${e(ex.payment_method)}</td>
         <td>${e(ex.notes)}</td>
@@ -5020,14 +5073,25 @@ export default function ShubramiSystem() {
                            <th className="p-3.5">طريقة الصرف</th>
                            <th className="p-3.5">ملاحظات</th>
                            {currentUser?.role === "مدير" && (<th className="p-3.5">الموظف المنفّذ</th>)}
+                           {currentUser?.role === "مدير" && (<th className="p-3.5">الإجراءات</th>)}
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredExpenses.map((e, i) => (
-                           <tr key={i} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
+                         {filteredExpenses.map((e, i) => {
+                           const isReversalRow = !!e.reverses_expense_id;
+                           return (
+                           <tr key={i} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""} ${isReversalRow ? "bg-red-50/40" : ""}`}>
                              <td className="p-3 text-slate-700">{e.date}</td>
-                             <td className="p-3 font-semibold text-slate-800">{expenseCategoriesDB.find(c => c.id === e.category_id)?.name || e.category || "-"}</td>
-                             <td className="p-3 font-bold text-slate-900">{e.amount.toLocaleString()}</td>
+                             <td className="p-3 font-semibold text-slate-800">
+                               {expenseCategoriesDB.find(c => c.id === e.category_id)?.name || e.category || "-"}
+                               {e.is_reversed && (
+                                 <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 border border-slate-300">🔄 معكوس</span>
+                               )}
+                               {isReversalRow && (
+                                 <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">↩️ قيد عكسي للمصروف {e.reverses_expense_id}</span>
+                               )}
+                             </td>
+                             <td className={`p-3 font-bold ${isReversalRow ? "text-red-700" : e.is_reversed ? "text-slate-400 line-through" : "text-slate-900"}`}>{e.amount.toLocaleString()}</td>
                              <td className="p-3 text-slate-600">
                                {e.payment_method || "-"}
                                {e.payment_method === "تحويل بنكي" && e.bank_account_id && (
@@ -5038,10 +5102,18 @@ export default function ShubramiSystem() {
                              {currentUser?.role === "مدير" && (
                                <td className="p-3 text-slate-600">{usersDB.find(u => u.id === e.created_by)?.name || "-"}</td>
                              )}
+                             {currentUser?.role === "مدير" && (
+                               <td className="p-3">
+                                 {!e.is_reversed && !isReversalRow && (
+                                   <button onClick={() => { setReversingExpense(e); setReversalReasonInput(""); }} className="text-[11px] font-bold px-2 py-1 rounded bg-red-100 text-red-800 border border-red-300 hover:bg-red-200 transition-colors">🔄 عكس القيد</button>
+                                 )}
+                               </td>
+                             )}
                            </tr>
-                         ))}
+                           );
+                         })}
                          {filteredExpenses.length === 0 && (
-                            <tr><td colSpan={currentUser?.role === "مدير" ? 6 : 5} className="p-5 text-center text-slate-500">لا توجد مصروفات مسجلة.</td></tr>
+                            <tr><td colSpan={currentUser?.role === "مدير" ? 7 : 5} className="p-5 text-center text-slate-500">لا توجد مصروفات مسجلة.</td></tr>
                          )}
                        </tbody>
                      </table>
@@ -5268,6 +5340,31 @@ export default function ShubramiSystem() {
                      <div className="flex gap-3">
                        <button onClick={handleSaveBankAssignments} disabled={isSaving} className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "💾 حفظ التخصيص"}</button>
                        <button onClick={() => setEditingBankAccount(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">إلغاء</button>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
+               {reversingExpense && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                   <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-md relative">
+                     <button onClick={() => { setReversingExpense(null); setReversalReasonInput(""); }} className="absolute top-4 left-5 text-slate-400 hover:text-red-500 text-2xl font-bold transition-colors">&times;</button>
+                     <h3 className="text-slate-900 font-extrabold mb-2 flex items-center gap-2 text-lg">
+                       <span>🔄</span> عكس قيد مصروف
+                     </h3>
+                     <div className="text-xs text-slate-600 mb-4 border-b border-slate-200 pb-3 space-y-1">
+                       <p>البند: <b className="text-slate-800">{expenseCategoriesDB.find(c => c.id === reversingExpense.category_id)?.name || reversingExpense.category || "-"}</b></p>
+                       <p>المبلغ: <b className="text-red-700">{reversingExpense.amount.toLocaleString()} ريال</b></p>
+                       <p>التاريخ: <b className="text-slate-800">{reversingExpense.date}</b></p>
+                     </div>
+                     <div className="p-3 bg-amber-50 rounded-lg border border-amber-300 mb-4">
+                       <p className="text-[11px] text-amber-700 font-bold">⚠️ سيبقى المصروف الأصلي كما هو ويُعلَّم "معكوس"، ويُنشأ قيد عكسي بالسالب بنفس التاريخ — فيصبح صافي أثرهما صفراً. لا يمكن التراجع عن هذا الإجراء.</p>
+                     </div>
+                     <label className="block mb-1.5 font-semibold text-slate-800 text-xs">سبب العكس (إلزامي):</label>
+                     <textarea className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors mb-5" value={reversalReasonInput} onChange={(e) => setReversalReasonInput(e.target.value)} placeholder="اكتب سبب عكس القيد" required />
+                     <div className="flex gap-3">
+                       <button onClick={handleReverseExpense} disabled={isSaving} className="flex-1 bg-red-700 hover:bg-red-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ العكس..." : "🔄 تأكيد عكس القيد"}</button>
+                       <button onClick={() => { setReversingExpense(null); setReversalReasonInput(""); }} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">إلغاء</button>
                      </div>
                    </div>
                  </div>
