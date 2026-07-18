@@ -3122,7 +3122,7 @@ export default function ShubramiSystem() {
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { font-family: 'Tajawal', Tahoma, Arial, sans-serif; direction: rtl; background: #f8fafc; padding: 24px 16px; color: #1e293b; }
           .receipt { max-width: 720px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-top: 4px solid #1d4ed8; border-radius: 10px; overflow: hidden; }
-          .receipt-head { text-align: center; padding: 16px 28px 12px; border-bottom: 1px solid #e2e8f0; }
+          .receipt-head { text-align: right; padding: 16px 28px 12px; border-bottom: 1px solid #e2e8f0; }
           .receipt-head h1 { font-size: 21px; font-weight: 800; color: #1d4ed8; margin-bottom: 2px; }
           .receipt-head p { font-size: 12px; color: #64748b; font-weight: 700; }
           .receipt-body { padding: 18px 28px; }
