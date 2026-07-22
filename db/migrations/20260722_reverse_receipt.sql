@@ -119,6 +119,11 @@ declare
   v_rev           public.transactions%rowtype;
   v_new_collected numeric := null;
   v_new_debt_amt  numeric := null;
+  v_year          integer;
+  v_year_txt      text;
+  v_seq           integer;
+  v_id            text;
+  v_lock          bigint;
 begin
   -- صلاحية المدير
   if not is_admin() then
@@ -146,28 +151,43 @@ begin
     raise exception 'لا يوجد هدف رصيد لعكسه (يجب تمرير محل أو مديونية).';
   end if;
 
-  -- إنشاء الصف العكسي بالترقيم الذرّي (rpc_next_receipt بلا تعديل) — مبلغ سالب
-  select * into v_rev from public.rpc_next_receipt(
-    v_orig.type,
-    v_orig."startDate",
-    to_char(current_date, 'YYYY-MM-DD'),
-    v_orig.shop,
-    v_orig.tenant,
-    -v_orig."paidAmount",
-    -v_orig."paidAmount",
-    0,
-    v_orig.method,
-    'قيد عكسي',
-    null,
-    v_orig."isDebtReceipt",
-    v_orig.is_external,
-    v_orig.entity_id
-  );
+  -- سنة الأصل: العمود year، أو مقطع السنة من الـ id احتياطاً (للصفوف القديمة)
+  -- ⚠️ يرث الصف العكسي فترة الأصل (startDate/updateDate + سنة/id الأصل) كي يتصافى
+  --    الصافي في نفس فترة الأصل على كل المحدِّدات: اللوحة/التقارير عبر updateDate،
+  --    والأرشيف/الكشف عبر مقطع السنة في الـ id.
+  v_year := v_orig.year;
+  if v_year is null then
+    v_year_txt := split_part(v_orig.id, '-', 2);
+    if v_year_txt !~ '^\d{4}$' then
+      raise exception 'تعذّر تحديد سنة السند الأصلي % (العمود year فارغ والـ id غير قابل للتحليل) — راجع السند يدوياً قبل العكس.', v_orig.id;
+    end if;
+    v_year := v_year_txt::integer;
+  end if;
 
-  -- ربط الصف العكسي بالأصل (مسموح: الصف بعدُ غير مجمَّد)
-  update public.transactions
-     set reverses_transaction_id = v_orig.id
-   where id = v_rev.id
+  -- ترقيم ذرّي ضمن سنة الأصل (نفس نمط rpc_next_receipt وبنفس قفله لمنع التسابق)
+  v_lock := ('x' || substr(md5('rpc_next_receipt_' || v_orig.type), 1, 16))::bit(64)::bigint;
+  perform pg_advisory_xact_lock(v_lock);
+  select coalesce(max(seq), 0) + 1 into v_seq
+    from public.transactions where year = v_year and type = v_orig.type;
+  if v_orig.type = 'إيجار' then
+    v_id := 'SH-' || v_year || '-' || lpad(v_seq::text, 4, '0');
+  else
+    v_id := 'SH-' || v_year || '-D' || lpad(v_seq::text, 3, '0');
+  end if;
+
+  -- إدراج الصف العكسي مباشرةً (يمرّ عبر guard_transaction_insert للتحقق):
+  -- مبلغ سالب + وراثة تاريخ الأصل + سنة الأصل + رابط العكس
+  insert into public.transactions (
+    id, "startDate", "updateDate", shop, tenant,
+    "targetAmount", "paidAmount", "remainingAmount", method, status,
+    "referenceId", "isDebtReceipt", year, seq, type, is_external, entity_id,
+    reverses_transaction_id
+  ) values (
+    v_id, v_orig."startDate", v_orig."updateDate", v_orig.shop, v_orig.tenant,
+    -v_orig."paidAmount", -v_orig."paidAmount", 0, v_orig.method, 'قيد عكسي',
+    null, v_orig."isDebtReceipt", v_year, v_seq, v_orig.type, v_orig.is_external, v_orig.entity_id,
+    v_orig.id
+  )
   returning * into v_rev;
 
   -- عكس أثر الرصيد ذرّياً
