@@ -17,20 +17,29 @@ CREATE TRIGGER trg_guard_expense_insert
   FOR EACH ROW
   EXECUTE FUNCTION guard_expense_insert();
 
+-- حارس الإدراج: يتحقّق من صحّة الصف العكسي عند إدراج سند قبض.
+CREATE TRIGGER trg_guard_transaction_insert
+  BEFORE INSERT ON public.transactions
+  FOR EACH ROW
+  EXECUTE FUNCTION guard_transaction_insert();
+
+-- حارس التحديث: يجمّد الحقول المالية للسندات المعكوسة/العكسية فقط
+-- (السندات العادية المفتوحة تبقى قابلة للتعديل عبر rpc_amend_receipt).
+CREATE TRIGGER trg_guard_transaction_immutable_columns
+  BEFORE UPDATE ON public.transactions
+  FOR EACH ROW
+  EXECUTE FUNCTION guard_transaction_immutable_columns();
+
 -- =============================================================================
--- ⚠️ فجوة موثّقة — مشغّل auth.users غير مُلتقَط في نواتج الاستخراج
+-- مشغّل على auth.users (سكيمة auth المُدارة من Supabase)
 -- =============================================================================
--- الدالة handle_new_user() (في functions.sql) تُنشئ صفّ profiles تلقائياً عند
--- تسجيل مستخدم جديد. هي مُشغَّلة عبر trigger على الجدول auth.users (سكيمة auth
--- المُدارة من Supabase)، والذي لا يظهر في استخراج triggers الخاص بسكيمة public.
+-- يُنشئ صفّ profiles تلقائياً عند تسجيل مستخدم جديد، عبر handle_new_user()
+-- (في functions.sql). التعريف أدناه مستخرَج حرفياً من القاعدة الحيّة.
 --
--- الشكل المتعارف عليه في Supabase (للتوثيق فقط — تحقّق من الاسم الفعلي في لوحة
--- Supabase قبل الاعتماد عليه في استعادة كاملة):
---
---   CREATE TRIGGER on_auth_user_created
---     AFTER INSERT ON auth.users
---     FOR EACH ROW
---     EXECUTE FUNCTION public.handle_new_user();
---
--- إجراء مطلوب: استخرج التعريف الفعلي من auth.users ووثّقه هنا صراحةً. انظر
--- README.md (قسم الفجوات).
+-- التبعية: يتطلب وجود سكيمة auth وجدول auth.users (تُنشئهما Supabase)، والدالة
+-- handle_new_user() (functions.sql). في استعادة كاملة خارج Supabase، تأكّد من
+-- وجود auth.users أولاً.
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_new_user();

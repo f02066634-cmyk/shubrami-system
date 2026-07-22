@@ -150,8 +150,15 @@ CREATE TABLE public.transactions (
   type              text,
   is_external       boolean NOT NULL DEFAULT false,
   entity_id         uuid,
+  is_reversed             boolean NOT NULL DEFAULT false,
+  reversed_by             uuid,
+  reversed_at             timestamptz,
+  reversal_reason         text,
+  reverses_transaction_id text,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
-  CONSTRAINT transactions_year_seq_type_unique UNIQUE (year, seq, type)
+  CONSTRAINT transactions_year_seq_type_unique UNIQUE (year, seq, type),
+  CONSTRAINT transactions_reversed_by_fkey FOREIGN KEY (reversed_by) REFERENCES profiles(id),
+  CONSTRAINT transactions_reverses_transaction_id_fkey FOREIGN KEY (reverses_transaction_id) REFERENCES transactions(id)
 );
 
 -- -----------------------------------------------------------------------------
