@@ -373,7 +373,7 @@ const FinancialCollection = ({
   searchReceipt, setSearchReceipt, filterReceiptStatus, setFilterReceiptStatus, filterReceiptYear, setFilterReceiptYear, receiptYears,
   filteredTransactions, filteredTxTargetSum, filteredTxPaidSum, filteredTxRemainingSum,
   printReceipt, printTablePDF, exportToCSV, printInstallmentsPDF,
-  isSaving
+  isSaving, currentUser, onReverseReceipt
 }) => {
   const {
     pageItems: pagedTransactions,
@@ -581,6 +581,8 @@ const FinancialCollection = ({
             <option value="سداد جزئي (مديونية)">سداد جزئي</option>
             <option value="مغلق (مكتمل)">مغلق (مكتمل)</option>
             <option value="مغلق (سداد مديونية)">مغلق (سداد مديونية)</option>
+            <option value="معكوس">معكوس</option>
+            <option value="قيد عكسي">قيد عكسي</option>
           </select>
         </div>
         
@@ -611,9 +613,16 @@ const FinancialCollection = ({
           <tbody>
             {filteredTransactions.length > 0 ? (
               <>
-                {pagedTransactions.map((t, i) => (
+                {pagedTransactions.map((t, i) => {
+                  const isReversed = !!t.is_reversed;
+                  const isReversal = !!t.reverses_transaction_id;
+                  return (
                   <tr key={t.id} className={`border-b border-slate-200 hover:bg-slate-100 ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
-                    <td className="p-3 font-bold text-slate-900">{t.id}</td>
+                    <td className="p-3 font-bold text-slate-900">
+                      <span className={isReversed ? "line-through text-slate-400" : ""}>{t.id}</span>
+                      {isReversed && <span className="mr-1.5 inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 border border-slate-300 align-middle">🔄 معكوس</span>}
+                      {isReversal && <span className="mr-1.5 inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200 align-middle">↩️ قيد عكسي للسند {t.reverses_transaction_id}</span>}
+                    </td>
                     <td className="p-3 text-slate-600">{t.updateDate}</td>
                     <td className="p-3 text-slate-600 max-w-[160px]" title={t.tenant + (t.shop && t.shop !== 'مديونية سابقة' ? ` - محل ${t.shop}` : '')}>
                       <div className="truncate">{t.tenant}</div>
@@ -622,16 +631,25 @@ const FinancialCollection = ({
                       )}
                     </td>
                     <td className="p-3">{t.targetAmount.toLocaleString()}</td>
-                    <td className="p-3 font-bold text-teal-700">{t.paidAmount.toLocaleString()}</td>
+                    <td className={`p-3 font-bold ${isReversal ? "text-red-700" : "text-teal-700"}`}>{t.paidAmount.toLocaleString()}</td>
                     <td className="p-3 font-bold text-red-600">{t.remainingAmount.toLocaleString()}</td>
                     <td className="p-3">
-                      <span className={`px-2 py-1 rounded text-[10px] font-bold ${t.status.includes('مغلق') ? 'bg-teal-100 text-teal-800 border border-teal-300' : 'bg-red-100 text-red-700 border border-red-300'}`}>{t.status}</span>
+                      <span className={`px-2 py-1 rounded text-[10px] font-bold border ${
+                        isReversed ? 'bg-slate-200 text-slate-600 border-slate-300' :
+                        isReversal ? 'bg-red-100 text-red-700 border-red-200' :
+                        t.status.includes('مغلق') ? 'bg-teal-100 text-teal-800 border-teal-300' :
+                        'bg-red-100 text-red-700 border-red-300'
+                      }`}>{t.status}</span>
                     </td>
-                    <td className="p-3 text-center">
+                    <td className="p-3 text-center whitespace-nowrap">
                       {t.status.includes('مغلق') && <button onClick={() => printReceipt(t)} className="bg-blue-100 text-blue-800 border border-blue-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-blue-700 hover:text-white transition-all shadow-sm">طباعة</button>}
+                      {currentUser?.role === "مدير" && !isReversed && !isReversal && (
+                        <button onClick={() => onReverseReceipt(t)} className="mr-1 bg-red-100 text-red-800 border border-red-300 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-200 transition-colors">🔄 عكس</button>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900">
                     <td className="p-3" colSpan="3">المجموع للفرز الحالي</td>
                     <td className="p-3">{filteredTxTargetSum.toLocaleString()}</td>
@@ -799,6 +817,7 @@ export default function ShubramiSystem() {
   const [editingBankAccount, setEditingBankAccount] = useState(null);
   const [expBankAccountId, setExpBankAccountId] = useState("");
   const [reversingExpense, setReversingExpense] = useState(null);
+  const [reversingReceipt, setReversingReceipt] = useState(null);
   const [reversalReasonInput, setReversalReasonInput] = useState("");
 
   const [instShop, setInstShop] = useState("");
@@ -1959,7 +1978,7 @@ export default function ShubramiSystem() {
     const payAmt = Number(payDebtAmount);
     if (payAmt > targetDebt.amount) return showToast("خطأ: المبلغ المدفوع أكبر من المديونية!", "error");
 
-    const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true);
+    const existingTxIndex = transactionsDB.findIndex(t => t.referenceId === targetDebt.id && t.isDebtReceipt === true && !t.is_reversed && !t.reverses_transaction_id);
     const balanceShopId = targetDebt.isShopDebt ? targetDebt.id : null;
     const balanceDebtId = targetDebt.isShopDebt ? null : targetDebt.id;
 
@@ -2432,6 +2451,73 @@ export default function ShubramiSystem() {
 
       setReversingExpense(null); setReversalReasonInput("");
       showToast(`تم عكس قيد المصروف ${orig.id} بنجاح.`, "success");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleReverseReceipt = async () => {
+    if (!reversingReceipt || isSaving) return;
+    const orig = reversingReceipt;
+    const reason = reversalReasonInput.trim();
+    if (!reason) return showToast("سبب العكس إلزامي", "error");
+
+    // إعادة بناء هدف الرصيد من isDebtReceipt/referenceId/shop
+    let pBalanceShopId = null;
+    let pBalanceDebtId = null;
+    if (orig.isDebtReceipt) {
+      const refId = orig.referenceId;
+      if (shopsDB.some(s => s.id === refId)) pBalanceShopId = refId;
+      else if (debtsDB.some(d => d.id === refId)) pBalanceDebtId = refId;
+      if (!pBalanceShopId && !pBalanceDebtId) {
+        return showToast("تعذّر تحديد المديونية/المحل المرتبط بهذا السند لعكس الرصيد — راجع الحالة يدوياً.", "error", true);
+      }
+    } else {
+      const activeShop = shopsDB.find(s => s.shopNumber === orig.shop && !s.status.includes("أرشيف"));
+      if (!activeShop) {
+        return showToast(`تعذّر إيجاد العقد النشط للمحل ${orig.shop} لعكس الرصيد — قد يكون العقد مؤرشفاً. راجع حالة العقد أولاً.`, "error", true);
+      }
+      pBalanceShopId = activeShop.id;
+    }
+
+    setIsSaving(true);
+    try {
+      const { data: result, error: rpcErr } = await supabase.rpc('rpc_reverse_receipt', {
+        p_receipt_id:      orig.id,
+        p_reason:          reason,
+        p_balance_shop_id: pBalanceShopId,
+        p_balance_debt_id: pBalanceDebtId,
+      });
+
+      if (rpcErr || !result?.reversal) {
+        return showToast(`🚫 فشل عكس السند — لم يُسجَّل أي شيء. ${rpcErr?.message || ""}`, "error", true);
+      }
+
+      const reversalRow = result.reversal;
+      const nowIso = new Date().toISOString();
+      setTransactionsDB(prev => [
+        ...prev.map(t => t.id === orig.id
+          ? { ...t, is_reversed: true, reversed_by: currentUser.id, reversed_at: nowIso, reversal_reason: reason, status: "معكوس" }
+          : t),
+        reversalRow
+      ]);
+
+      if (pBalanceShopId != null && result.shop_collected != null) {
+        setShopsDB(prev => prev.map(s => s.id === pBalanceShopId ? { ...s, collected: result.shop_collected } : s));
+      } else if (pBalanceDebtId != null && result.debt_amount != null) {
+        setDebtsDB(prev => prev.map(d => d.id === pBalanceDebtId ? { ...d, amount: result.debt_amount } : d));
+      }
+
+      await logAction({
+        actionType: "عكس سند قبض",
+        entityType: "سند",
+        entityRef: orig.id,
+        summary: `عكس سند القبض ${orig.id} (${orig.shop || "-"} — ${orig.tenant || "-"} بقيمة ${orig.paidAmount} ريال) بالقيد العكسي ${reversalRow.id} — السبب: ${reason}.`,
+        details: { originalId: orig.id, reversalId: reversalRow.id, amount: orig.paidAmount, balanceShopId: pBalanceShopId, balanceDebtId: pBalanceDebtId, reason }
+      });
+
+      setReversingReceipt(null); setReversalReasonInput("");
+      showToast(`تم عكس سند القبض ${orig.id} بنجاح (القيد العكسي ${reversalRow.id}). أي استحقاق سبق إسقاطه لم يُعَد — أعِد جدولته يدوياً إن لزم.`, "success");
     } finally {
       setIsSaving(false);
     }
@@ -2991,8 +3077,12 @@ export default function ShubramiSystem() {
     const sumPaid = data.reduce((s, t) => s + t.paidAmount, 0);
     const sumRemaining = data.reduce((s, t) => s + t.remainingAmount, 0);
     const e = escapeHtml;
-    const rows = data.map(t => `<tr>
-      <td><b>${e(t.id)}</b></td>
+    const rows = data.map(t => {
+      const revTag = t.reverses_transaction_id
+        ? ` <small>(↩️ قيد عكسي للسند ${e(t.reverses_transaction_id)})</small>`
+        : (t.is_reversed ? ` <small>(🔄 معكوس)</small>` : "");
+      return `<tr>
+      <td><b>${e(t.id)}</b>${revTag}</td>
       <td>${e(t.updateDate)} م</td>
       <td>${e(t.tenant)}</td>
       <td>${t.targetAmount.toLocaleString()} ريال</td>
@@ -3000,7 +3090,8 @@ export default function ShubramiSystem() {
       <td class="text-red">${t.remainingAmount.toLocaleString()} ريال</td>
       <td>${e(t.method)}</td>
       <td><span class="${t.status.includes('مغلق') ? 'badge-closed' : 'badge-open'}">${e(t.status)}</span></td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     const content = `
       <div class="section">
         <table>
@@ -3207,15 +3298,20 @@ export default function ShubramiSystem() {
 
     const txRows = stmtTransactions.length === 0
       ? `<tr><td colspan="7" class="no-data">لا توجد سندات في هذه الفترة.</td></tr>`
-      : stmtTransactions.map(t => `<tr>
-          <td><b>${e(t.id)}</b></td>
+      : stmtTransactions.map(t => {
+          const revTag = t.reverses_transaction_id
+            ? ` <small>(↩️ قيد عكسي للسند ${e(t.reverses_transaction_id)})</small>`
+            : (t.is_reversed ? ` <small>(🔄 معكوس)</small>` : "");
+          return `<tr>
+          <td><b>${e(t.id)}</b>${revTag}</td>
           <td>${e(String(t.shop || "-"))}</td>
           <td>${e(t.startDate || "-")}</td>
           <td>${(t.targetAmount || 0).toLocaleString()} ريال</td>
           <td class="text-teal">${(t.paidAmount || 0).toLocaleString()} ريال</td>
           <td class="${(t.remainingAmount || 0) > 0 ? "text-red" : "text-gray"}">${(t.remainingAmount || 0).toLocaleString()} ريال</td>
           <td>${e(t.method || "-")}</td>
-        </tr>`).join('');
+        </tr>`;
+        }).join('');
 
     const legacySection = stmtLegacyTx.length === 0 ? '' : `
       <div class="legacy-note">
@@ -4337,11 +4433,15 @@ export default function ShubramiSystem() {
                                  <tr><td colSpan="8" className="p-5 text-center text-slate-400">لا توجد سندات قبض مسجّلة.</td></tr>
                                ) : stmtTransactions.map((t, i) => (
                                  <tr key={t.id} className={`border-b border-slate-200 hover:bg-slate-50 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
-                                   <td className="p-3 font-bold text-slate-900">{t.id}</td>
+                                   <td className="p-3 font-bold text-slate-900">
+                                     <span className={t.is_reversed ? "line-through text-slate-400" : ""}>{t.id}</span>
+                                     {t.is_reversed && <span className="mr-1 inline-block text-[9px] font-bold px-1 py-0.5 rounded bg-slate-200 text-slate-600 border border-slate-300 align-middle">🔄 معكوس</span>}
+                                     {t.reverses_transaction_id && <span className="mr-1 inline-block text-[9px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-700 border border-red-200 align-middle">↩️ قيد عكسي</span>}
+                                   </td>
                                    <td className="p-3">{t.shop || "-"}</td>
                                    <td className="p-3 whitespace-nowrap">{t.startDate || "-"}</td>
                                    <td className="p-3">{(t.targetAmount || 0).toLocaleString()}</td>
-                                   <td className="p-3 text-teal-700 font-bold">{(t.paidAmount || 0).toLocaleString()}</td>
+                                   <td className={`p-3 font-bold ${t.reverses_transaction_id ? "text-red-700" : "text-teal-700"}`}>{(t.paidAmount || 0).toLocaleString()}</td>
                                    <td className={`p-3 font-bold ${(t.remainingAmount || 0) > 0 ? "text-red-700" : "text-slate-400"}`}>{(t.remainingAmount || 0).toLocaleString()}</td>
                                    <td className="p-3">{t.method || "-"}</td>
                                    <td className="p-3">
@@ -4836,6 +4936,8 @@ export default function ShubramiSystem() {
                         exportToCSV={exportToCSV}
                         printInstallmentsPDF={printInstallmentsPDF}
                         isSaving={isSaving}
+                        currentUser={currentUser}
+                        onReverseReceipt={(t) => { setReversingReceipt(t); setReversalReasonInput(""); }}
                     />
                  </div>
                )}
@@ -5399,6 +5501,31 @@ export default function ShubramiSystem() {
                      <div className="flex gap-3">
                        <button onClick={handleReverseExpense} disabled={isSaving} className="flex-1 bg-red-700 hover:bg-red-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ العكس..." : "🔄 تأكيد عكس القيد"}</button>
                        <button onClick={() => { setReversingExpense(null); setReversalReasonInput(""); }} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">إلغاء</button>
+                     </div>
+                   </div>
+                 </div>
+               )}
+
+               {reversingReceipt && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                   <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-md relative">
+                     <button onClick={() => { setReversingReceipt(null); setReversalReasonInput(""); }} className="absolute top-4 left-5 text-slate-400 hover:text-red-500 text-2xl font-bold transition-colors">&times;</button>
+                     <h3 className="text-slate-900 font-extrabold mb-2 flex items-center gap-2 text-lg">
+                       <span>🔄</span> عكس سند قبض
+                     </h3>
+                     <div className="text-xs text-slate-600 mb-4 border-b border-slate-200 pb-3 space-y-1">
+                       <p>السند: <b className="text-slate-800">{reversingReceipt.id}</b></p>
+                       <p>المستأجر: <b className="text-slate-800">{reversingReceipt.tenant || "-"}</b>{reversingReceipt.shop && reversingReceipt.shop !== 'مديونية سابقة' ? <> — محل <b className="text-slate-800">{reversingReceipt.shop}</b></> : null}</p>
+                       <p>المبلغ المدفوع: <b className="text-teal-700">{(reversingReceipt.paidAmount || 0).toLocaleString()} ريال</b></p>
+                     </div>
+                     <div className="p-3 bg-amber-50 rounded-lg border border-amber-300 mb-4">
+                       <p className="text-[11px] text-amber-700 font-bold">⚠️ سيبقى السند الأصلي ويُعلَّم "معكوس"، ويُنشأ قيد عكسي بالسالب يُصفّي أثره في كل التقارير، ويُصحَّح رصيد المحل/المديونية آلياً. أي استحقاق مجدول سبق إسقاطه عند التحصيل <b>لن يُعاد</b> — أعِد جدولته يدوياً إن لزم. لا يمكن التراجع عن هذا الإجراء.</p>
+                     </div>
+                     <label className="block mb-1.5 font-semibold text-slate-800 text-xs">سبب العكس (إلزامي):</label>
+                     <textarea className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors mb-5" value={reversalReasonInput} onChange={(e) => setReversalReasonInput(e.target.value)} placeholder="اكتب سبب عكس السند" required />
+                     <div className="flex gap-3">
+                       <button onClick={handleReverseReceipt} disabled={isSaving} className="flex-1 bg-red-700 hover:bg-red-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ العكس..." : "🔄 تأكيد عكس السند"}</button>
+                       <button onClick={() => { setReversingReceipt(null); setReversalReasonInput(""); }} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">إلغاء</button>
                      </div>
                    </div>
                  </div>
