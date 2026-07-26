@@ -34,8 +34,10 @@ CREATE TABLE public.bank_accounts (
   bank_name       text    NOT NULL,
   account_number  text    NOT NULL,
   is_active       boolean NOT NULL DEFAULT true,
+  account_type    text    NOT NULL DEFAULT 'رئيسي',  -- رئيسي (مصدر المال) | فرعي (يُصرف منه بعد تحويل)
   created_at      timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT bank_accounts_pkey PRIMARY KEY (id)
+  CONSTRAINT bank_accounts_pkey PRIMARY KEY (id),
+  CONSTRAINT bank_accounts_account_type_chk CHECK (account_type IN ('رئيسي', 'فرعي'))
 );
 
 -- -----------------------------------------------------------------------------
@@ -55,6 +57,10 @@ CREATE TABLE public.expense_categories (
 -- -----------------------------------------------------------------------------
 -- 4) expenses — FK → expense_categories, bank_accounts, profiles، ونفسها
 --    القيد expenses_amount_sign_chk: الصف العادي amount>0، والعكسي amount<0.
+--    مسار الحساب البنكي (للصفوف البنكية):
+--      source_main_account_id = الحساب الرئيسي مصدر المال.
+--      spent_from_account_id  = الحساب الفرعي المصروف منه؛ NULL = صرف مباشر.
+--    (bank_account_id يبقى للصفوف القديمة — عرض احتياطي.)
 -- -----------------------------------------------------------------------------
 CREATE TABLE public.expenses (
   id                  text    NOT NULL,
@@ -66,6 +72,8 @@ CREATE TABLE public.expenses (
   created_by          uuid    DEFAULT auth.uid(),
   payment_method      text,
   bank_account_id     uuid,
+  source_main_account_id uuid,
+  spent_from_account_id  uuid,
   is_reversed         boolean NOT NULL DEFAULT false,
   reversed_by         uuid,
   reversed_at         timestamptz,
@@ -75,6 +83,8 @@ CREATE TABLE public.expenses (
   CONSTRAINT expenses_amount_sign_chk       CHECK ((((reverses_expense_id IS NULL) AND (amount > (0)::numeric)) OR ((reverses_expense_id IS NOT NULL) AND (amount < (0)::numeric)))),
   CONSTRAINT expenses_category_id_fkey      FOREIGN KEY (category_id) REFERENCES expense_categories(id),
   CONSTRAINT expenses_bank_account_id_fkey  FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
+  CONSTRAINT expenses_source_main_account_id_fkey FOREIGN KEY (source_main_account_id) REFERENCES bank_accounts(id),
+  CONSTRAINT expenses_spent_from_account_id_fkey  FOREIGN KEY (spent_from_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT expenses_created_by_fkey       FOREIGN KEY (created_by) REFERENCES profiles(id),
   CONSTRAINT expenses_reversed_by_fkey      FOREIGN KEY (reversed_by) REFERENCES profiles(id),
   CONSTRAINT expenses_reverses_expense_id_fkey FOREIGN KEY (reverses_expense_id) REFERENCES expenses(id)
