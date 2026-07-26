@@ -73,15 +73,17 @@ CREATE OR REPLACE FUNCTION public.guard_expense_immutable_columns()
  SET search_path TO 'public'
 AS $function$
 begin
-  if NEW.id                  is distinct from OLD.id
-     or NEW.amount              is distinct from OLD.amount
-     or NEW.category            is distinct from OLD.category
-     or NEW.category_id         is distinct from OLD.category_id
-     or NEW.date                is distinct from OLD.date
-     or NEW.payment_method      is distinct from OLD.payment_method
-     or NEW.bank_account_id     is distinct from OLD.bank_account_id
-     or NEW.created_by          is distinct from OLD.created_by
-     or NEW.reverses_expense_id is distinct from OLD.reverses_expense_id
+  if NEW.id                     is distinct from OLD.id
+     or NEW.amount                 is distinct from OLD.amount
+     or NEW.category               is distinct from OLD.category
+     or NEW.category_id            is distinct from OLD.category_id
+     or NEW.date                   is distinct from OLD.date
+     or NEW.payment_method         is distinct from OLD.payment_method
+     or NEW.bank_account_id        is distinct from OLD.bank_account_id
+     or NEW.source_main_account_id is distinct from OLD.source_main_account_id
+     or NEW.spent_from_account_id  is distinct from OLD.spent_from_account_id
+     or NEW.created_by             is distinct from OLD.created_by
+     or NEW.reverses_expense_id    is distinct from OLD.reverses_expense_id
   then
     raise exception 'لا يمكن تعديل الحقول المالية لمصروف مسجَّل — استخدم القيد العكسي بدلاً من ذلك.';
   end if;
@@ -106,8 +108,28 @@ AS $function$
 declare
   v_orig public.expenses%rowtype;
 begin
-  -- صف عادي: القيد CHECK يضمن amount > 0، لا فحوص إضافية
+  -- صف عادي: القيد CHECK يضمن amount > 0؛ نفحص مسار الحساب فقط.
   if NEW.reverses_expense_id is null then
+    if NEW.source_main_account_id is not null then
+      -- المصدر يجب أن يكون حساباً رئيسياً.
+      if (select account_type from public.bank_accounts
+            where id = NEW.source_main_account_id) is distinct from 'رئيسي' then
+        raise exception 'حساب المصدر يجب أن يكون حساباً رئيسياً.';
+      end if;
+      -- حساب الصرف الفرعي (إن وُجد): فرعي ومختلف عن المصدر — قاعدة الخطوة الواحدة.
+      if NEW.spent_from_account_id is not null then
+        if NEW.spent_from_account_id = NEW.source_main_account_id then
+          raise exception 'حساب الصرف الفرعي يجب أن يختلف عن الحساب الرئيسي المصدر.';
+        end if;
+        if (select account_type from public.bank_accounts
+              where id = NEW.spent_from_account_id) is distinct from 'فرعي' then
+          raise exception 'حساب الصرف يجب أن يكون حساباً فرعياً.';
+        end if;
+      end if;
+    elsif NEW.spent_from_account_id is not null then
+      -- لا يجوز تحديد حساب صرف فرعي بلا حساب رئيسي مصدر.
+      raise exception 'لا يمكن تحديد حساب صرف فرعي بدون حساب رئيسي مصدر.';
+    end if;
     return NEW;
   end if;
 

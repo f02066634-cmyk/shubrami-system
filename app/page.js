@@ -813,9 +813,14 @@ export default function ShubramiSystem() {
   const [newBankName, setNewBankName] = useState("");
   const [newBankBankName, setNewBankBankName] = useState("");
   const [newBankNumber, setNewBankNumber] = useState("");
+  const [newBankType, setNewBankType] = useState("رئيسي");
   const [newBankUsers, setNewBankUsers] = useState([]);
   const [editingBankAccount, setEditingBankAccount] = useState(null);
   const [expBankAccountId, setExpBankAccountId] = useState("");
+  // مسار صرف المصروف البنكي: "direct" (صرف مباشر من رئيسي) | "transfer" (رئيسي→فرعي ثم صرف)
+  const [expAccountPath, setExpAccountPath] = useState("");
+  const [expSourceMainId, setExpSourceMainId] = useState("");
+  const [expSpentFromId, setExpSpentFromId] = useState("");
   const [reversingExpense, setReversingExpense] = useState(null);
   const [reversingReceipt, setReversingReceipt] = useState(null);
   const [reversalReasonInput, setReversalReasonInput] = useState("");
@@ -2052,12 +2057,55 @@ export default function ShubramiSystem() {
     }
   };
 
+  // اسم الحساب مع اسم البنك للعرض — بنمطين حسب السياق:
+  //   • شرطة  → "الحساب — البنك"   (للصرف المباشر والصفوف القديمة)
+  //   • قوس   → "الحساب (البنك)"   (لطرفَي مسار التحويل)
+  // إن كان bank_name فارغاً، يُعرض اسم الحساب فقط بلا شرطة/قوس فارغ.
+  const bankAcctDash = (id) => {
+    const a = bankAccountsDB.find(b => b.id === id);
+    if (!a) return "—";
+    return a.bank_name ? `${a.name} — ${a.bank_name}` : a.name;
+  };
+  const bankAcctParen = (id) => {
+    const a = bankAccountsDB.find(b => b.id === id);
+    if (!a) return "—";
+    return a.bank_name ? `${a.name} (${a.bank_name})` : a.name;
+  };
+
+  // نصّ مسار الحساب لمصروف — موحّد بين السجل والطباعة:
+  //   • مباشر (source_main فقط)      → "🏦 مباشر: {الحساب} — {البنك}"
+  //   • عبر تحويل (source_main+spent) → "🏦 رئيسي: {الحساب} ({البنك}) ← فرعي: {الحساب} ({البنك})"
+  //   • قديم (bank_account_id فقط)    → "🏦 {الحساب} — {البنك}"
+  //   • نقد / بلا حساب                → null
+  const expenseAccountLabel = (ex) => {
+    if (ex.source_main_account_id) {
+      return ex.spent_from_account_id
+        ? `🏦 رئيسي: ${bankAcctParen(ex.source_main_account_id)} ← فرعي: ${bankAcctParen(ex.spent_from_account_id)}`
+        : `🏦 مباشر: ${bankAcctDash(ex.source_main_account_id)}`;
+    }
+    if (ex.bank_account_id) return `🏦 ${bankAcctDash(ex.bank_account_id)}`;
+    return null;
+  };
+
   const handleExpense = async (e) => {
     e.preventDefault();
     if (isSaving) return;
     if (!expCategoryId) return showToast("الرجاء اختيار بند الصرف", "error");
     if (!expMethod) return showToast("الرجاء اختيار طريقة الصرف", "error");
-    if (expMethod === "تحويل بنكي" && !expBankAccountId) return showToast("الرجاء اختيار الحساب البنكي المحوّل منه", "error");
+
+    let source_main_account_id = null;
+    let spent_from_account_id = null;
+    if (expMethod === "تحويل بنكي") {
+      if (!expAccountPath) return showToast("الرجاء اختيار مسار الحساب", "error");
+      if (!expSourceMainId) return showToast("الرجاء اختيار الحساب الرئيسي المصدر", "error");
+      source_main_account_id = expSourceMainId;
+      if (expAccountPath === "transfer") {
+        if (!expSpentFromId) return showToast("الرجاء اختيار الحساب الفرعي المصروف منه", "error");
+        if (expSpentFromId === expSourceMainId) return showToast("الحساب الفرعي يجب أن يختلف عن الحساب الرئيسي المصدر", "error");
+        spent_from_account_id = expSpentFromId;
+      }
+    }
+
     const amountNum = Number(expAmount);
     if (!expAmount || amountNum <= 0) return showToast("المبلغ يجب أن يكون أكبر من صفر", "error");
 
@@ -2070,7 +2118,9 @@ export default function ShubramiSystem() {
       created_by: currentUser.id,
       amount: amountNum,
       payment_method: expMethod,
-      bank_account_id: expMethod === "تحويل بنكي" ? expBankAccountId : null,
+      bank_account_id: null,
+      source_main_account_id,
+      spent_from_account_id,
       notes: expNotes
     };
 
@@ -2079,7 +2129,8 @@ export default function ShubramiSystem() {
     const { error } = await supabase.from('expenses').insert([newExpense]);
     if (!error) {
       setExpensesDB([...expensesDB, newExpense]);
-      setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes(""); setExpMethod(""); setExpBankAccountId("");
+      setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes(""); setExpMethod("");
+      setExpBankAccountId(""); setExpAccountPath(""); setExpSourceMainId(""); setExpSpentFromId("");
       showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
     } else {
       showToast(`🚫 فشل تسجيل المصروف: ${error.message}`, "error", true);
@@ -2259,7 +2310,7 @@ export default function ShubramiSystem() {
 
     setIsSaving(true);
     try {
-      const { data: accData, error: accErr } = await supabase.from('bank_accounts').insert([{ name, bank_name: bankName, account_number: accountNumber }]).select();
+      const { data: accData, error: accErr } = await supabase.from('bank_accounts').insert([{ name, bank_name: bankName, account_number: accountNumber, account_type: newBankType }]).select();
       if (accErr || !accData?.length) {
         return showToast(`🚫 فشل إنشاء الحساب: ${accErr?.message || "خطأ غير معروف"}`, "error", true);
       }
@@ -2284,11 +2335,11 @@ export default function ShubramiSystem() {
         actionType: "إضافة حساب بنكي",
         entityType: "حساب بنكي",
         entityRef: name,
-        summary: `إضافة حساب بنكي "${name}" (${bankName})${assignedNames.length ? ` وتعيينه لـ: ${assignedNames.join('، ')}` : ' (فشل تعيين الموظفين)'}.`,
-        details: { name, bankName, accountNumber, assignedUserIds: newBankUsers }
+        summary: `إضافة حساب بنكي "${name}" (${bankName}) — النوع: ${newBankType}${assignedNames.length ? ` وتعيينه لـ: ${assignedNames.join('، ')}` : ' (فشل تعيين الموظفين)'}.`,
+        details: { name, bankName, accountNumber, accountType: newBankType, assignedUserIds: newBankUsers }
       });
 
-      setNewBankName(""); setNewBankBankName(""); setNewBankNumber(""); setNewBankUsers([]);
+      setNewBankName(""); setNewBankBankName(""); setNewBankNumber(""); setNewBankType("رئيسي"); setNewBankUsers([]);
       if (!assignErr) showToast(`تم إنشاء حساب "${name}" بنجاح.`, "success");
     } finally {
       setIsSaving(false);
@@ -2313,8 +2364,32 @@ export default function ShubramiSystem() {
     showToast(`${account.is_active ? "تم تعطيل" : "تم تفعيل"} الحساب "${account.name}".`, "success");
   };
 
+  const handleChangeBankAccountType = async (account) => {
+    const newType = account.account_type === "رئيسي" ? "فرعي" : "رئيسي";
+    const { error } = await supabase
+      .from('bank_accounts')
+      .update({ account_type: newType })
+      .eq('id', account.id);
+
+    if (error) return showToast(`🚫 فشل تغيير نوع الحساب: ${error.message}`, "error", true);
+
+    setBankAccountsDB(prev => prev.map(a => a.id === account.id ? { ...a, account_type: newType } : a));
+    await logAction({
+      actionType: "تغيير نوع حساب بنكي",
+      entityType: "حساب بنكي",
+      entityRef: account.name,
+      summary: `تغيير نوع الحساب البنكي "${account.name}" من ${account.account_type} إلى ${newType}.`,
+      details: { accountId: account.id, from: account.account_type, to: newType }
+    });
+    showToast(`تم تصنيف الحساب "${account.name}" كـ${newType}.`, "success");
+  };
+
   const handleDeleteBankAccount = async (account) => {
-    const hasExpenses = expensesDB.some(e => e.bank_account_id === account.id);
+    const hasExpenses = expensesDB.some(e =>
+      e.bank_account_id === account.id ||
+      e.source_main_account_id === account.id ||
+      e.spent_from_account_id === account.id
+    );
     if (hasExpenses) {
       return showToast(`⚠️ لا يمكن حذف الحساب "${account.name}" لوجود مصروفات مرتبطة به. يمكنك تعطيله بدلاً من ذلك.`, "error", true);
     }
@@ -2426,6 +2501,8 @@ export default function ShubramiSystem() {
         amount: -orig.amount,
         payment_method: orig.payment_method,
         bank_account_id: orig.bank_account_id ?? null,
+        source_main_account_id: orig.source_main_account_id ?? null,
+        spent_from_account_id: orig.spent_from_account_id ?? null,
         notes: `قيد عكسي للمصروف ${orig.id} — السبب: ${reason}`,
         reverses_expense_id: orig.id
       };
@@ -3004,13 +3081,12 @@ export default function ShubramiSystem() {
       const reversalTag = ex.reverses_expense_id
         ? ` <small>(↩️ قيد عكسي للمصروف ${e(ex.reverses_expense_id)})</small>`
         : (ex.is_reversed ? ` <small>(🔄 معكوس)</small>` : "");
-      const bankName = ex.payment_method === "تحويل بنكي" && ex.bank_account_id
-        ? (bankAccountsDB.find(b => b.id === ex.bank_account_id)?.name || "—") : "";
+      const accLabel = expenseAccountLabel(ex);
       return `<tr>
         <td>${e(ex.date)}</td>
         <td><b>${e(catName)}</b>${reversalTag}</td>
         <td class="text-red">${ex.amount.toLocaleString()} ريال</td>
-        <td>${e(ex.payment_method)}${bankName ? `<br><small>🏦 ${e(bankName)}</small>` : ""}</td>
+        <td>${e(ex.payment_method)}${accLabel ? `<br><small>${e(accLabel)}</small>` : ""}</td>
         <td>${e(ex.notes)}</td>
       </tr>`;
     }).join('');
@@ -5148,22 +5224,44 @@ export default function ShubramiSystem() {
                        </div>
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الصرف:</label>
-                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expMethod} onChange={(e) => { setExpMethod(e.target.value); if (e.target.value !== "تحويل بنكي") setExpBankAccountId(""); }} required>
+                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expMethod} onChange={(e) => { setExpMethod(e.target.value); if (e.target.value !== "تحويل بنكي") { setExpAccountPath(""); setExpSourceMainId(""); setExpSpentFromId(""); } }} required>
                            <option value="">-- اختر --</option>
                            <option value="نقد">نقد</option>
                            <option value="تحويل بنكي">تحويل بنكي</option>
-                           <option value="شيك">شيك</option>
                          </select>
                        </div>
                        {expMethod === "تحويل بنكي" && (
-                         <div className="md:col-span-2">
-                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحساب البنكي المحوّل منه:</label>
-                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expBankAccountId} onChange={(e) => setExpBankAccountId(e.target.value)} required>
-                             <option value="">-- اختر الحساب --</option>
-                             {bankAccountsDB.filter(b => b.is_active).map(b => (
-                               <option key={b.id} value={b.id}>{b.name} — {b.bank_name} ({b.account_number})</option>
-                             ))}
-                           </select>
+                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 bg-blue-50/50 p-4 rounded-lg border border-blue-200">
+                           <div className="md:col-span-2">
+                             <label className="block mb-1.5 font-semibold text-slate-800 text-xs">مسار الحساب:</label>
+                             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expAccountPath} onChange={(e) => { setExpAccountPath(e.target.value); setExpSpentFromId(""); }} required>
+                               <option value="">-- اختر مسار الحساب --</option>
+                               <option value="direct">صرف مباشر من حساب رئيسي</option>
+                               <option value="transfer">تحويل إلى حساب فرعي ثم صرف</option>
+                             </select>
+                           </div>
+                           {expAccountPath && (
+                             <div className={expAccountPath === "transfer" ? "" : "md:col-span-2"}>
+                               <label className="block mb-1.5 font-semibold text-slate-800 text-xs">{expAccountPath === "transfer" ? "الحساب الرئيسي (المصدر):" : "الحساب الرئيسي:"}</label>
+                               <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expSourceMainId} onChange={(e) => setExpSourceMainId(e.target.value)} required>
+                                 <option value="">-- اختر الحساب الرئيسي --</option>
+                                 {bankAccountsDB.filter(b => b.is_active && b.account_type === "رئيسي").map(b => (
+                                   <option key={b.id} value={b.id}>{b.name} — {b.bank_name} ({b.account_number})</option>
+                                 ))}
+                               </select>
+                             </div>
+                           )}
+                           {expAccountPath === "transfer" && (
+                             <div>
+                               <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحساب الفرعي (المصروف منه):</label>
+                               <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expSpentFromId} onChange={(e) => setExpSpentFromId(e.target.value)} required>
+                                 <option value="">-- اختر الحساب الفرعي --</option>
+                                 {bankAccountsDB.filter(b => b.is_active && b.account_type === "فرعي").map(b => (
+                                   <option key={b.id} value={b.id}>{b.name} — {b.bank_name} ({b.account_number})</option>
+                                 ))}
+                               </select>
+                             </div>
+                           )}
                          </div>
                        )}
                        <div>
@@ -5230,8 +5328,8 @@ export default function ShubramiSystem() {
                              <td className={`p-3 font-bold ${isReversalRow ? "text-red-700" : e.is_reversed ? "text-slate-400 line-through" : "text-slate-900"}`}>{e.amount.toLocaleString()}</td>
                              <td className="p-3 text-slate-600">
                                {e.payment_method || "-"}
-                               {e.payment_method === "تحويل بنكي" && e.bank_account_id && (
-                                 <span className="block text-[10px] text-slate-400">🏦 {bankAccountsDB.find(b => b.id === e.bank_account_id)?.name || "—"}</span>
+                               {expenseAccountLabel(e) && (
+                                 <span className="block text-[10px] text-slate-400">{expenseAccountLabel(e)}</span>
                                )}
                              </td>
                              <td className="p-3 text-slate-600">{e.notes}</td>
@@ -5342,9 +5440,16 @@ export default function ShubramiSystem() {
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">اسم البنك:</label>
                            <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newBankBankName} onChange={(e) => setNewBankBankName(e.target.value)} required />
                          </div>
-                         <div className="md:col-span-2">
+                         <div>
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">رقم الحساب / الآيبان:</label>
                            <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newBankNumber} onChange={(e) => setNewBankNumber(e.target.value)} required />
+                         </div>
+                         <div>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">نوع الحساب:</label>
+                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newBankType} onChange={(e) => setNewBankType(e.target.value)} required>
+                             <option value="رئيسي">رئيسي (مصدر المال)</option>
+                             <option value="فرعي">فرعي (يُصرف منه بعد تحويل)</option>
+                           </select>
                          </div>
                          <div className="md:col-span-2">
                            <label className="block mb-1.5 font-semibold text-slate-800 text-xs">تعيين الموظفين (يمكن اختيار أكثر من موظف لحساب مشترك):</label>
@@ -5373,6 +5478,7 @@ export default function ShubramiSystem() {
                            <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
                              <tr>
                                <th className="p-3.5">الحساب</th>
+                               <th className="p-3.5">النوع</th>
                                <th className="p-3.5">البنك</th>
                                <th className="p-3.5">رقم الحساب</th>
                                <th className="p-3.5">الموظفون المخصَّصون</th>
@@ -5393,12 +5499,18 @@ export default function ShubramiSystem() {
                                        <span className="mr-2 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 border border-slate-300">⛔ معطّل</span>
                                      )}
                                    </td>
+                                   <td className="p-3">
+                                     <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded border ${(acc.account_type || "رئيسي") === "رئيسي" ? "bg-indigo-100 text-indigo-800 border-indigo-300" : "bg-purple-100 text-purple-800 border-purple-300"}`}>
+                                       {(acc.account_type || "رئيسي") === "رئيسي" ? "🏛️ رئيسي" : "🔀 فرعي"}
+                                     </span>
+                                   </td>
                                    <td className="p-3 text-slate-600">{acc.bank_name}</td>
                                    <td className="p-3 text-slate-600">{acc.account_number}</td>
                                    <td className="p-3 text-slate-600">{assignedNames || "—"}</td>
                                    <td className="p-3">
                                      <div className="flex gap-2 flex-wrap">
                                        <button onClick={() => openEditBankAssignments(acc)} className="text-[11px] font-bold px-2 py-1 rounded bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200 transition-colors">✏️ تعديل التخصيص</button>
+                                       <button onClick={() => handleChangeBankAccountType(acc)} className="text-[11px] font-bold px-2 py-1 rounded bg-violet-100 text-violet-800 border border-violet-300 hover:bg-violet-200 transition-colors">↔️ {(acc.account_type || "رئيسي") === "رئيسي" ? "جعله فرعياً" : "جعله رئيسياً"}</button>
                                        <button onClick={() => handleToggleBankAccountActive(acc)} className={`text-[11px] font-bold px-2 py-1 rounded border transition-colors ${acc.is_active ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200" : "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200"}`}>
                                          {acc.is_active ? "🚫 تعطيل" : "✅ تفعيل"}
                                        </button>
@@ -5409,7 +5521,7 @@ export default function ShubramiSystem() {
                                );
                              })}
                              {bankAccountsDB.length === 0 && (
-                               <tr><td colSpan="5" className="p-5 text-center text-slate-500">لا توجد حسابات بنكية بعد.</td></tr>
+                               <tr><td colSpan="6" className="p-5 text-center text-slate-500">لا توجد حسابات بنكية بعد.</td></tr>
                              )}
                            </tbody>
                          </table>
