@@ -2057,21 +2057,33 @@ export default function ShubramiSystem() {
     }
   };
 
-  // اسم حساب من معرّفه (للعرض)
-  const bankAccountName = (id) => bankAccountsDB.find(b => b.id === id)?.name || "—";
+  // اسم الحساب مع اسم البنك للعرض — بنمطين حسب السياق:
+  //   • شرطة  → "الحساب — البنك"   (للصرف المباشر والصفوف القديمة)
+  //   • قوس   → "الحساب (البنك)"   (لطرفَي مسار التحويل)
+  // إن كان bank_name فارغاً، يُعرض اسم الحساب فقط بلا شرطة/قوس فارغ.
+  const bankAcctDash = (id) => {
+    const a = bankAccountsDB.find(b => b.id === id);
+    if (!a) return "—";
+    return a.bank_name ? `${a.name} — ${a.bank_name}` : a.name;
+  };
+  const bankAcctParen = (id) => {
+    const a = bankAccountsDB.find(b => b.id === id);
+    if (!a) return "—";
+    return a.bank_name ? `${a.name} (${a.bank_name})` : a.name;
+  };
 
   // نصّ مسار الحساب لمصروف — موحّد بين السجل والطباعة:
-  //   • مباشر (source_main فقط)      → "🏦 مباشر: {الرئيسي}"
-  //   • عبر تحويل (source_main+spent) → "🏦 رئيسي: {الأهلي} ← فرعي: {الراجحي}"
-  //   • قديم (bank_account_id فقط)    → "🏦 {الاسم}"
+  //   • مباشر (source_main فقط)      → "🏦 مباشر: {الحساب} — {البنك}"
+  //   • عبر تحويل (source_main+spent) → "🏦 رئيسي: {الحساب} ({البنك}) ← فرعي: {الحساب} ({البنك})"
+  //   • قديم (bank_account_id فقط)    → "🏦 {الحساب} — {البنك}"
   //   • نقد / بلا حساب                → null
   const expenseAccountLabel = (ex) => {
     if (ex.source_main_account_id) {
       return ex.spent_from_account_id
-        ? `🏦 رئيسي: ${bankAccountName(ex.source_main_account_id)} ← فرعي: ${bankAccountName(ex.spent_from_account_id)}`
-        : `🏦 مباشر: ${bankAccountName(ex.source_main_account_id)}`;
+        ? `🏦 رئيسي: ${bankAcctParen(ex.source_main_account_id)} ← فرعي: ${bankAcctParen(ex.spent_from_account_id)}`
+        : `🏦 مباشر: ${bankAcctDash(ex.source_main_account_id)}`;
     }
-    if (ex.bank_account_id) return `🏦 ${bankAccountName(ex.bank_account_id)}`;
+    if (ex.bank_account_id) return `🏦 ${bankAcctDash(ex.bank_account_id)}`;
     return null;
   };
 
