@@ -55,11 +55,44 @@ CREATE TABLE public.expense_categories (
 );
 
 -- -----------------------------------------------------------------------------
--- 4) expenses — FK → expense_categories, bank_accounts, profiles، ونفسها
+-- 3.5) transfers — FK → bank_accounts (رئيسي المصدر / فرعي الوجهة), profiles
+--    التحويل الداخلي (رئيسي → فرعي) ككيان مستقل تُصرف منه البنود على دفعات.
+--      amount           = المبلغ المحوَّل، remaining_amount = المتبقّي (يبدأ = amount).
+--      status           = 'مفتوح' حتى يبلغ المتبقّي صفراً → 'مكتمل' (مشتقّة من المتبقّي).
+--    تحويل مفتوح واحد فقط لكل فرعي (uq_open_transfer_per_sub).
+--    (يجب أن يسبق expenses لأن expenses.transfer_id يرجع إليه.)
+-- -----------------------------------------------------------------------------
+CREATE TABLE public.transfers (
+  id                     text        NOT NULL,
+  source_main_account_id uuid        NOT NULL,
+  dest_sub_account_id    uuid        NOT NULL,
+  amount                 numeric     NOT NULL,
+  remaining_amount       numeric     NOT NULL,
+  status                 text        NOT NULL DEFAULT 'مفتوح',
+  date                   text,
+  notes                  text,
+  created_by             uuid        DEFAULT auth.uid(),
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT transfers_pkey PRIMARY KEY (id),
+  CONSTRAINT transfers_amount_chk           CHECK (amount > (0)::numeric),
+  CONSTRAINT transfers_remaining_range_chk  CHECK (remaining_amount >= (0)::numeric AND remaining_amount <= amount),
+  CONSTRAINT transfers_status_chk           CHECK (status IN ('مفتوح', 'مكتمل')),
+  CONSTRAINT transfers_status_remaining_chk CHECK ((status = 'مكتمل') = (remaining_amount = (0)::numeric)),
+  CONSTRAINT transfers_source_main_fkey FOREIGN KEY (source_main_account_id) REFERENCES bank_accounts(id),
+  CONSTRAINT transfers_dest_sub_fkey    FOREIGN KEY (dest_sub_account_id)    REFERENCES bank_accounts(id),
+  CONSTRAINT transfers_created_by_fkey  FOREIGN KEY (created_by)             REFERENCES profiles(id)
+);
+-- تحويل مفتوح واحد لكل حساب فرعي (الضمان الصلب للقاعدة)
+CREATE UNIQUE INDEX uq_open_transfer_per_sub
+  ON public.transfers (dest_sub_account_id) WHERE status = 'مفتوح';
+
+-- -----------------------------------------------------------------------------
+-- 4) expenses — FK → expense_categories, bank_accounts, profiles, transfers، ونفسها
 --    القيد expenses_amount_sign_chk: الصف العادي amount>0، والعكسي amount<0.
 --    مسار الحساب البنكي (للصفوف البنكية):
 --      source_main_account_id = الحساب الرئيسي مصدر المال.
 --      spent_from_account_id  = الحساب الفرعي المصروف منه؛ NULL = صرف مباشر.
+--      transfer_id            = التحويل الموزّع المصروف منه؛ NULL = مباشر/مضمّن قديم (#65).
 --    (bank_account_id يبقى للصفوف القديمة — عرض احتياطي.)
 -- -----------------------------------------------------------------------------
 CREATE TABLE public.expenses (
@@ -74,6 +107,7 @@ CREATE TABLE public.expenses (
   bank_account_id     uuid,
   source_main_account_id uuid,
   spent_from_account_id  uuid,
+  transfer_id         text,
   is_reversed         boolean NOT NULL DEFAULT false,
   reversed_by         uuid,
   reversed_at         timestamptz,
@@ -85,6 +119,7 @@ CREATE TABLE public.expenses (
   CONSTRAINT expenses_bank_account_id_fkey  FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT expenses_source_main_account_id_fkey FOREIGN KEY (source_main_account_id) REFERENCES bank_accounts(id),
   CONSTRAINT expenses_spent_from_account_id_fkey  FOREIGN KEY (spent_from_account_id) REFERENCES bank_accounts(id),
+  CONSTRAINT expenses_transfer_id_fkey      FOREIGN KEY (transfer_id) REFERENCES transfers(id),
   CONSTRAINT expenses_created_by_fkey       FOREIGN KEY (created_by) REFERENCES profiles(id),
   CONSTRAINT expenses_reversed_by_fkey      FOREIGN KEY (reversed_by) REFERENCES profiles(id),
   CONSTRAINT expenses_reverses_expense_id_fkey FOREIGN KEY (reverses_expense_id) REFERENCES expenses(id)
@@ -230,6 +265,7 @@ CREATE INDEX idx_transactions_entity_id ON public.transactions USING btree (enti
 ALTER TABLE public.profiles                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bank_accounts                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expense_categories           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transfers                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expenses                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bank_account_assignments     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expense_category_assignments ENABLE ROW LEVEL SECURITY;

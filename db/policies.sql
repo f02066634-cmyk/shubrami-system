@@ -53,6 +53,46 @@ CREATE POLICY "bank_accounts_update" ON public.bank_accounts
   USING (is_admin())
   WITH CHECK (is_admin());
 
+-- ------------------------------- transfers ----------------------------------
+-- الموظف يرى/يُنشئ/يُحدّث تحويلات حساباته المخصّصة (رئيسي + فرعي معاً)؛ المدير يرى الكل.
+-- الحذف للمدير فقط (وتمنعه FK إن كان للتحويل بنود).
+CREATE POLICY "transfers_select" ON public.transfers
+  FOR SELECT TO public
+  USING (is_admin() OR ((EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.source_main_account_id) AND (a.user_id = auth.uid()))))
+   AND (EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.dest_sub_account_id) AND (a.user_id = auth.uid()))))));
+
+CREATE POLICY "transfers_insert" ON public.transfers
+  FOR INSERT TO public
+  WITH CHECK (is_admin() OR ((created_by = auth.uid()) AND (EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.source_main_account_id) AND (a.user_id = auth.uid()))))
+   AND (EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.dest_sub_account_id) AND (a.user_id = auth.uid()))))));
+
+CREATE POLICY "transfers_update" ON public.transfers
+  FOR UPDATE TO public
+  USING (is_admin() OR ((EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.source_main_account_id) AND (a.user_id = auth.uid()))))
+   AND (EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.dest_sub_account_id) AND (a.user_id = auth.uid()))))))
+  WITH CHECK (is_admin() OR ((EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.source_main_account_id) AND (a.user_id = auth.uid()))))
+   AND (EXISTS ( SELECT 1
+     FROM bank_account_assignments a
+    WHERE ((a.account_id = transfers.dest_sub_account_id) AND (a.user_id = auth.uid()))))));
+
+CREATE POLICY "transfers_delete" ON public.transfers
+  FOR DELETE TO public
+  USING (is_admin());
+
 -- -------------------------------- debts -------------------------------------
 CREATE POLICY "debts insert" ON public.debts
   FOR INSERT TO public

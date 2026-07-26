@@ -82,6 +82,7 @@ begin
      or NEW.bank_account_id        is distinct from OLD.bank_account_id
      or NEW.source_main_account_id is distinct from OLD.source_main_account_id
      or NEW.spent_from_account_id  is distinct from OLD.spent_from_account_id
+     or NEW.transfer_id            is distinct from OLD.transfer_id
      or NEW.created_by             is distinct from OLD.created_by
      or NEW.reverses_expense_id    is distinct from OLD.reverses_expense_id
   then
@@ -107,7 +108,23 @@ CREATE OR REPLACE FUNCTION public.guard_expense_insert()
 AS $function$
 declare
   v_orig public.expenses%rowtype;
+  v_transfer public.transfers%rowtype;
 begin
+  -- المصروفات المرتبطة بتحويل تُسجَّل حصراً عبر دوال التحويل (علم GUC يمنع التحايل).
+  if NEW.transfer_id is not null then
+    if coalesce(current_setting('app.transfer_rpc', true), '') <> '1' then
+      raise exception 'المصروفات المرتبطة بتحويل تُسجَّل حصراً عبر دوال التحويل — لا يُسمح بالإدراج المباشر.';
+    end if;
+    select * into v_transfer from public.transfers where id = NEW.transfer_id;
+    if not found then
+      raise exception 'المصروف يشير إلى تحويل غير موجود (%).', NEW.transfer_id;
+    end if;
+    if NEW.source_main_account_id is distinct from v_transfer.source_main_account_id
+       or NEW.spent_from_account_id is distinct from v_transfer.dest_sub_account_id then
+      raise exception 'حسابات المصروف يجب أن تطابق حسابات التحويل المرجعي.';
+    end if;
+  end if;
+
   -- صف عادي: القيد CHECK يضمن amount > 0؛ نفحص مسار الحساب فقط.
   if NEW.reverses_expense_id is null then
     if NEW.source_main_account_id is not null then
@@ -157,6 +174,67 @@ begin
   -- يجب أن يساوي مبلغ القيد العكسي سالب مبلغ الأصلي بالضبط
   if NEW.amount <> -v_orig.amount then
     raise exception 'مبلغ القيد العكسي (%) يجب أن يساوي سالب مبلغ المصروف الأصلي (%).', NEW.amount, v_orig.amount;
+  end if;
+
+  return NEW;
+end;
+$function$;
+
+-- ---------------------------------------------------------------------------
+-- guard_transfer_insert() — يتحقّق من نوعَي الحسابين والاتساق الابتدائي للتحويل
+-- (trigger BEFORE INSERT على transfers)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.guard_transfer_insert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+begin
+  if (select account_type from public.bank_accounts where id = NEW.source_main_account_id) is distinct from 'رئيسي' then
+    raise exception 'حساب المصدر يجب أن يكون حساباً رئيسياً.';
+  end if;
+  if (select account_type from public.bank_accounts where id = NEW.dest_sub_account_id) is distinct from 'فرعي' then
+    raise exception 'حساب الوجهة يجب أن يكون حساباً فرعياً.';
+  end if;
+  if NEW.dest_sub_account_id = NEW.source_main_account_id then
+    raise exception 'حساب الوجهة يجب أن يختلف عن حساب المصدر.';
+  end if;
+  if NEW.remaining_amount is distinct from NEW.amount then
+    raise exception 'المتبقّي عند إنشاء التحويل يجب أن يساوي المبلغ المحوَّل.';
+  end if;
+  if NEW.status is distinct from 'مفتوح' then
+    raise exception 'التحويل يُنشأ بحالة "مفتوح".';
+  end if;
+  return NEW;
+end;
+$function$;
+
+-- ---------------------------------------------------------------------------
+-- guard_transfer_immutable_columns() — يجمّد الحقول الأساسية للتحويل؛
+-- المتبقّي/الحالة يتغيّران حصراً عبر دوال التوزيع/العكس (علم GUC app.transfer_rpc)
+-- (trigger BEFORE UPDATE على transfers)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.guard_transfer_immutable_columns()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+begin
+  if NEW.id                     is distinct from OLD.id
+     or NEW.amount                 is distinct from OLD.amount
+     or NEW.source_main_account_id is distinct from OLD.source_main_account_id
+     or NEW.dest_sub_account_id    is distinct from OLD.dest_sub_account_id
+     or NEW.created_by             is distinct from OLD.created_by
+     or NEW.date                   is distinct from OLD.date
+  then
+    raise exception 'لا يمكن تعديل الحقول الأساسية للتحويل (المبلغ/الحسابات/المُنشئ/التاريخ).';
+  end if;
+
+  if (NEW.remaining_amount is distinct from OLD.remaining_amount
+      or NEW.status is distinct from OLD.status)
+     and coalesce(current_setting('app.transfer_rpc', true), '') <> '1'
+  then
+    raise exception 'رصيد/حالة التحويل يتغيّران حصراً عبر دوال التوزيع/العكس.';
   end if;
 
   return NEW;
@@ -965,5 +1043,131 @@ begin
     'deleted_installment_ids',  v_deleted_ids,
     'cancelled_installments',   v_cancelled
   );
+end;
+$function$;
+
+-- ---------------------------------------------------------------------------
+-- rpc_distribute_transfer_expense(...) — صرف بند من تحويل ذرّياً:
+-- قفل التحويل + تحقّق مفتوح/عدم تجاوز + إدراج المصروف (بنسخ حسابات التحويل)
+-- + إنقاص المتبقّي + تحديث الحالة عند الصفر. علم GUC يسمح لحُرّاس المصروف/التحويل.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.rpc_distribute_transfer_expense(p_expense_id text, p_transfer_id text, p_category_id uuid, p_amount numeric, p_date text, p_notes text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_transfer public.transfers%rowtype;
+  v_category text;
+  v_expense  public.expenses%rowtype;
+begin
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'مبلغ الصرف يجب أن يكون أكبر من صفر.';
+  end if;
+
+  -- قفل صف التحويل لتسلسل التزامن.
+  select * into v_transfer from public.transfers where id = p_transfer_id for update;
+  if not found then
+    raise exception 'التحويل بالمعرّف % غير موجود.', p_transfer_id;
+  end if;
+  if v_transfer.status <> 'مفتوح' then
+    raise exception 'التحويل % مكتمل — لا يمكن الصرف منه.', p_transfer_id;
+  end if;
+  if p_amount > v_transfer.remaining_amount then
+    raise exception 'مبلغ الصرف (%) يتجاوز المتبقّي في التحويل (%).', p_amount, v_transfer.remaining_amount;
+  end if;
+
+  select name into v_category from public.expense_categories where id = p_category_id;
+
+  perform set_config('app.transfer_rpc', '1', true);
+
+  insert into public.expenses (
+    id, date, category, category_id, created_by, amount, payment_method,
+    bank_account_id, source_main_account_id, spent_from_account_id, transfer_id, notes
+  ) values (
+    p_expense_id, p_date, v_category, p_category_id, auth.uid(), p_amount, 'تحويل بنكي',
+    null, v_transfer.source_main_account_id, v_transfer.dest_sub_account_id, p_transfer_id, p_notes
+  ) returning * into v_expense;
+
+  update public.transfers
+     set remaining_amount = remaining_amount - p_amount,
+         status = case when remaining_amount - p_amount = 0 then 'مكتمل' else 'مفتوح' end
+   where id = p_transfer_id
+  returning * into v_transfer;
+
+  return jsonb_build_object('expense', to_jsonb(v_expense), 'transfer', to_jsonb(v_transfer));
+end;
+$function$;
+
+-- ---------------------------------------------------------------------------
+-- rpc_reverse_transfer_expense(...) — عكس بند مصروف من تحويل ذرّياً:
+-- صف عكسي سالب (مدير) + تعليم الأصل معكوساً + إرجاع المبلغ لمتبقّي التحويل
+-- + إعادة الفتح، مع رفض واضح عند تعارض الفهرس الفريد (فرعي له تحويل مفتوح آخر).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.rpc_reverse_transfer_expense(p_expense_id text, p_reversal_id text, p_reason text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_orig     public.expenses%rowtype;
+  v_transfer public.transfers%rowtype;
+  v_rev      public.expenses%rowtype;
+begin
+  if not is_admin() then
+    raise exception 'القيد العكسي للمصروفات متاح لمدير النظام فقط.';
+  end if;
+  if p_reason is null or btrim(p_reason) = '' then
+    raise exception 'سبب العكس إلزامي.';
+  end if;
+
+  select * into v_orig from public.expenses where id = p_expense_id;
+  if not found then
+    raise exception 'المصروف بالمعرّف % غير موجود.', p_expense_id;
+  end if;
+  if v_orig.transfer_id is null then
+    raise exception 'هذا المصروف غير مرتبط بتحويل — استخدم مسار العكس العادي.';
+  end if;
+  if v_orig.reverses_expense_id is not null then
+    raise exception 'لا يمكن عكس قيد عكسي.';
+  end if;
+  if v_orig.is_reversed then
+    raise exception 'هذا المصروف (%) سبق عكسه.', v_orig.id;
+  end if;
+
+  -- قفل التحويل.
+  select * into v_transfer from public.transfers where id = v_orig.transfer_id for update;
+
+  -- تعارض إعادة الفتح: تحويل مكتمل + وجود تحويل مفتوح آخر لنفس الفرعي → رفض مؤقت.
+  if v_transfer.status = 'مكتمل'
+     and exists (select 1 from public.transfers t
+                  where t.dest_sub_account_id = v_transfer.dest_sub_account_id
+                    and t.status = 'مفتوح' and t.id <> v_transfer.id) then
+    raise exception 'يوجد تحويل مفتوح آخر لنفس الحساب الفرعي — أكمِل توزيعه أولاً قبل عكس هذا البند.';
+  end if;
+
+  perform set_config('app.transfer_rpc', '1', true);
+
+  insert into public.expenses (
+    id, date, category, category_id, created_by, amount, payment_method,
+    bank_account_id, source_main_account_id, spent_from_account_id, transfer_id,
+    notes, reverses_expense_id
+  ) values (
+    p_reversal_id, v_orig.date, v_orig.category, v_orig.category_id, auth.uid(), -v_orig.amount, v_orig.payment_method,
+    v_orig.bank_account_id, v_orig.source_main_account_id, v_orig.spent_from_account_id, v_orig.transfer_id,
+    'قيد عكسي للمصروف ' || v_orig.id || ' — السبب: ' || p_reason, v_orig.id
+  ) returning * into v_rev;
+
+  update public.expenses
+     set is_reversed = true, reversed_by = auth.uid(), reversed_at = now(), reversal_reason = p_reason
+   where id = v_orig.id;
+
+  update public.transfers
+     set remaining_amount = remaining_amount + v_orig.amount,
+         status = 'مفتوح'
+   where id = v_transfer.id
+  returning * into v_transfer;
+
+  return jsonb_build_object('reversal', to_jsonb(v_rev), 'transfer', to_jsonb(v_transfer));
 end;
 $function$;
