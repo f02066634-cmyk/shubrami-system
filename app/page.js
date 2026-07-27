@@ -817,10 +817,19 @@ export default function ShubramiSystem() {
   const [newBankUsers, setNewBankUsers] = useState([]);
   const [editingBankAccount, setEditingBankAccount] = useState(null);
   const [expBankAccountId, setExpBankAccountId] = useState("");
-  // مسار صرف المصروف البنكي: "direct" (صرف مباشر من رئيسي) | "transfer" (رئيسي→فرعي ثم صرف)
+  // مسار صرف المصروف البنكي: "direct" (صرف مباشر من رئيسي) | "transfer" (صرف من تحويل مفتوح لفرعي)
   const [expAccountPath, setExpAccountPath] = useState("");
   const [expSourceMainId, setExpSourceMainId] = useState("");
   const [expSpentFromId, setExpSpentFromId] = useState("");
+  const [expTransferSubId, setExpTransferSubId] = useState("");
+  const [expTransferId, setExpTransferId] = useState("");
+  // التحويلات الموزّعة (رئيسي → فرعي → توزيع على بنود)
+  const [transfersDB, setTransfersDB] = useState([]);
+  const [newTransferSourceId, setNewTransferSourceId] = useState("");
+  const [newTransferDestId, setNewTransferDestId] = useState("");
+  const [newTransferAmount, setNewTransferAmount] = useState("");
+  const [newTransferDate, setNewTransferDate] = useState("");
+  const [newTransferNotes, setNewTransferNotes] = useState("");
   const [reversingExpense, setReversingExpense] = useState(null);
   const [reversingReceipt, setReversingReceipt] = useState(null);
   const [reversalReasonInput, setReversalReasonInput] = useState("");
@@ -904,6 +913,9 @@ export default function ShubramiSystem() {
 
     const { data: exps } = await supabase.from('expenses').select('*');
     setExpensesDB(exps || []);
+
+    const { data: trs } = await supabase.from('transfers').select('*').order('created_at', { ascending: false });
+    setTransfersDB(trs || []);
 
     try {
       const { data: insts } = await supabase.from('installments').select('*');
@@ -1058,6 +1070,7 @@ export default function ShubramiSystem() {
         setTransactionsDB([]);
         setDebtsDB([]);
         setExpensesDB([]);
+        setTransfersDB([]);
         setInstallmentsDB([]);
       }
     });
@@ -2061,6 +2074,7 @@ export default function ShubramiSystem() {
   //   • شرطة  → "الحساب — البنك"   (للصرف المباشر والصفوف القديمة)
   //   • قوس   → "الحساب (البنك)"   (لطرفَي مسار التحويل)
   // إن كان bank_name فارغاً، يُعرض اسم الحساب فقط بلا شرطة/قوس فارغ.
+  const bankAccountName = (id) => bankAccountsDB.find(b => b.id === id)?.name || "—";
   const bankAcctDash = (id) => {
     const a = bankAccountsDB.find(b => b.id === id);
     if (!a) return "—";
@@ -2087,23 +2101,59 @@ export default function ShubramiSystem() {
     return null;
   };
 
+  // سطر سياق التحويل للبند الموزّع (↪ من تحويل …) — للسجل والطباعة.
+  const expenseTransferNote = (ex) => {
+    if (!ex.transfer_id) return null;
+    const t = transfersDB.find(x => x.id === ex.transfer_id);
+    return t ? `↪ من تحويل ${t.id}${t.date ? ` (${t.date})` : ""}` : `↪ من تحويل ${ex.transfer_id}`;
+  };
+
   const handleExpense = async (e) => {
     e.preventDefault();
     if (isSaving) return;
     if (!expCategoryId) return showToast("الرجاء اختيار بند الصرف", "error");
     if (!expMethod) return showToast("الرجاء اختيار طريقة الصرف", "error");
 
+    // مسار "صرف من تحويل": عملية ذرّية عبر rpc_distribute_transfer_expense.
+    if (expMethod === "تحويل بنكي" && expAccountPath === "transfer") {
+      if (!expTransferId) return showToast("الرجاء اختيار التحويل المفتوح", "error");
+      const t = transfersDB.find(x => x.id === expTransferId);
+      if (!t) return showToast("التحويل المختار غير موجود", "error");
+      const amt = Number(expAmount);
+      if (!expAmount || amt <= 0) return showToast("المبلغ يجب أن يكون أكبر من صفر", "error");
+      if (amt > Number(t.remaining_amount)) {
+        return showToast(`المبلغ (${amt.toLocaleString()}) يتجاوز المتبقّي في التحويل (${Number(t.remaining_amount).toLocaleString()})`, "error");
+      }
+      setIsSaving(true);
+      try {
+        const expId = `E-${Date.now()}`;
+        const { data, error } = await supabase.rpc('rpc_distribute_transfer_expense', {
+          p_expense_id: expId, p_transfer_id: expTransferId, p_category_id: expCategoryId,
+          p_amount: amt, p_date: expDate, p_notes: expNotes
+        });
+        if (error) return showToast(`🚫 فشل الصرف من التحويل: ${error.message}`, "error", true);
+        if (data?.expense)  setExpensesDB(prev => [...prev, data.expense]);
+        if (data?.transfer) setTransfersDB(prev => prev.map(x => x.id === data.transfer.id ? data.transfer : x));
+        setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes(""); setExpMethod("");
+        setExpAccountPath(""); setExpSourceMainId(""); setExpSpentFromId(""); setExpTransferSubId(""); setExpTransferId("");
+        await logAction({
+          actionType: "صرف من تحويل", entityType: "مصروف", entityRef: expId,
+          summary: `صرف ${amt.toLocaleString()} ريال من التحويل ${expTransferId} (بند ${expenseCategoriesDB.find(c => c.id === expCategoryId)?.name || "-"}).`,
+          details: { transferId: expTransferId, amount: amt }
+        });
+        showToast("تم تسجيل الصرف من التحويل سحابياً.", "success");
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
+    // نقد أو صرف مباشر من حساب رئيسي (#65).
     let source_main_account_id = null;
-    let spent_from_account_id = null;
     if (expMethod === "تحويل بنكي") {
       if (!expAccountPath) return showToast("الرجاء اختيار مسار الحساب", "error");
-      if (!expSourceMainId) return showToast("الرجاء اختيار الحساب الرئيسي المصدر", "error");
+      if (!expSourceMainId) return showToast("الرجاء اختيار الحساب الرئيسي", "error");
       source_main_account_id = expSourceMainId;
-      if (expAccountPath === "transfer") {
-        if (!expSpentFromId) return showToast("الرجاء اختيار الحساب الفرعي المصروف منه", "error");
-        if (expSpentFromId === expSourceMainId) return showToast("الحساب الفرعي يجب أن يختلف عن الحساب الرئيسي المصدر", "error");
-        spent_from_account_id = expSpentFromId;
-      }
     }
 
     const amountNum = Number(expAmount);
@@ -2120,7 +2170,7 @@ export default function ShubramiSystem() {
       payment_method: expMethod,
       bank_account_id: null,
       source_main_account_id,
-      spent_from_account_id,
+      spent_from_account_id: null,
       notes: expNotes
     };
 
@@ -2135,6 +2185,43 @@ export default function ShubramiSystem() {
     } else {
       showToast(`🚫 فشل تسجيل المصروف: ${error.message}`, "error", true);
     }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddTransfer = async (e) => {
+    e.preventDefault();
+    if (isSaving) return;
+    if (!newTransferSourceId) return showToast("الرجاء اختيار الحساب الرئيسي المصدر", "error");
+    if (!newTransferDestId) return showToast("الرجاء اختيار الحساب الفرعي الوجهة", "error");
+    const amt = Number(newTransferAmount);
+    if (!newTransferAmount || amt <= 0) return showToast("مبلغ التحويل يجب أن يكون أكبر من صفر", "error");
+
+    setIsSaving(true);
+    try {
+      const id = `TRF-${Date.now()}`;
+      const row = {
+        id, source_main_account_id: newTransferSourceId, dest_sub_account_id: newTransferDestId,
+        amount: amt, remaining_amount: amt, status: "مفتوح",
+        date: newTransferDate, notes: newTransferNotes, created_by: currentUser.id
+      };
+      const { data, error } = await supabase.from('transfers').insert([row]).select();
+      if (error) {
+        const msg = error.code === "23505"
+          ? "يوجد تحويل مفتوح بالفعل لهذا الحساب الفرعي — أكمِل توزيعه أولاً قبل فتح تحويل جديد."
+          : error.message;
+        return showToast(`🚫 ${msg}`, "error", true);
+      }
+      const created = data?.[0] || row;
+      setTransfersDB(prev => [created, ...prev]);
+      await logAction({
+        actionType: "تسجيل تحويل", entityType: "تحويل", entityRef: id,
+        summary: `تسجيل تحويل ${amt.toLocaleString()} ريال من "${bankAccountName(newTransferSourceId)}" إلى "${bankAccountName(newTransferDestId)}".`,
+        details: { transferId: id, amount: amt, source: newTransferSourceId, dest: newTransferDestId }
+      });
+      setNewTransferSourceId(""); setNewTransferDestId(""); setNewTransferAmount(""); setNewTransferDate(""); setNewTransferNotes("");
+      showToast("تم تسجيل التحويل بنجاح.", "success");
     } finally {
       setIsSaving(false);
     }
@@ -2390,8 +2477,12 @@ export default function ShubramiSystem() {
       e.source_main_account_id === account.id ||
       e.spent_from_account_id === account.id
     );
-    if (hasExpenses) {
-      return showToast(`⚠️ لا يمكن حذف الحساب "${account.name}" لوجود مصروفات مرتبطة به. يمكنك تعطيله بدلاً من ذلك.`, "error", true);
+    const hasTransfers = transfersDB.some(t =>
+      t.source_main_account_id === account.id ||
+      t.dest_sub_account_id === account.id
+    );
+    if (hasExpenses || hasTransfers) {
+      return showToast(`⚠️ لا يمكن حذف الحساب "${account.name}" لوجود مصروفات أو تحويلات مرتبطة به. يمكنك تعطيله بدلاً من ذلك.`, "error", true);
     }
     if (!(await showConfirm({ message: `هل أنت متأكد من حذف الحساب البنكي "${account.name}" نهائياً؟` }))) return;
 
@@ -2488,6 +2579,35 @@ export default function ShubramiSystem() {
     const orig = reversingExpense;
     const reason = reversalReasonInput.trim();
     if (!reason) return showToast("سبب العكس إلزامي", "error");
+
+    // بند مرتبط بتحويل → عكس ذرّي عبر RPC (يُرجع المبلغ لمتبقّي التحويل ويعيد فتحه).
+    if (orig.transfer_id) {
+      setIsSaving(true);
+      try {
+        const revId = `E-REV-${Date.now()}`;
+        const { data, error } = await supabase.rpc('rpc_reverse_transfer_expense', {
+          p_expense_id: orig.id, p_reversal_id: revId, p_reason: reason
+        });
+        if (error) return showToast(`🚫 فشل عكس القيد: ${error.message}`, "error", true);
+        if (data?.reversal) {
+          setExpensesDB(prev => [
+            ...prev.map(x => x.id === orig.id ? { ...x, is_reversed: true, reversed_by: currentUser.id, reversal_reason: reason } : x),
+            data.reversal
+          ]);
+        }
+        if (data?.transfer) setTransfersDB(prev => prev.map(x => x.id === data.transfer.id ? data.transfer : x));
+        await logAction({
+          actionType: "عكس قيد مصروف (تحويل)", entityType: "مصروف", entityRef: orig.id,
+          summary: `عكس قيد المصروف ${orig.id} المرتبط بالتحويل ${orig.transfer_id} (${orig.amount} ريال) — إرجاع المبلغ للتحويل. السبب: ${reason}.`,
+          details: { originalId: orig.id, reversalId: revId, transferId: orig.transfer_id, amount: orig.amount, reason }
+        });
+        setReversingExpense(null); setReversalReasonInput("");
+        showToast(`تم عكس قيد المصروف ${orig.id} وإرجاع المبلغ للتحويل.`, "success");
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -3082,11 +3202,12 @@ export default function ShubramiSystem() {
         ? ` <small>(↩️ قيد عكسي للمصروف ${e(ex.reverses_expense_id)})</small>`
         : (ex.is_reversed ? ` <small>(🔄 معكوس)</small>` : "");
       const accLabel = expenseAccountLabel(ex);
+      const trNote = expenseTransferNote(ex);
       return `<tr>
         <td>${e(ex.date)}</td>
         <td><b>${e(catName)}</b>${reversalTag}</td>
         <td class="text-red">${ex.amount.toLocaleString()} ريال</td>
-        <td>${e(ex.payment_method)}${accLabel ? `<br><small>${e(accLabel)}</small>` : ""}</td>
+        <td>${e(ex.payment_method)}${accLabel ? `<br><small>${e(accLabel)}</small>` : ""}${trNote ? `<br><small>${e(trNote)}</small>` : ""}</td>
         <td>${e(ex.notes)}</td>
       </tr>`;
     }).join('');
@@ -5204,6 +5325,7 @@ export default function ShubramiSystem() {
                      {currentUser?.role === "مدير" && (
                        <button onClick={() => setExpenseSubTab("banks")} className={`px-3 py-1.5 font-bold transition-colors ${expenseSubTab === "banks" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🏦 الحسابات البنكية</button>
                      )}
+                     <button onClick={() => setExpenseSubTab("transfers")} className={`px-3 py-1.5 font-bold transition-colors ${expenseSubTab === "transfers" ? "text-blue-700 border-b-2 border-blue-700" : "text-slate-600 hover:text-blue-700"}`}>🔀 التحويلات</button>
                    </div>
 
                    {expenseSubTab === "log" && (
@@ -5224,25 +5346,28 @@ export default function ShubramiSystem() {
                        </div>
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">طريقة الصرف:</label>
-                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expMethod} onChange={(e) => { setExpMethod(e.target.value); if (e.target.value !== "تحويل بنكي") { setExpAccountPath(""); setExpSourceMainId(""); setExpSpentFromId(""); } }} required>
+                         <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expMethod} onChange={(e) => { setExpMethod(e.target.value); if (e.target.value !== "تحويل بنكي") { setExpAccountPath(""); setExpSourceMainId(""); setExpSpentFromId(""); setExpTransferSubId(""); setExpTransferId(""); } }} required>
                            <option value="">-- اختر --</option>
                            <option value="نقد">نقد</option>
                            <option value="تحويل بنكي">تحويل بنكي</option>
                          </select>
                        </div>
-                       {expMethod === "تحويل بنكي" && (
+                       {expMethod === "تحويل بنكي" && (() => {
+                         const openTransfersForSub = transfersDB.filter(t => t.status === "مفتوح" && t.dest_sub_account_id === expTransferSubId);
+                         const selectedTransfer = transfersDB.find(t => t.id === expTransferId);
+                         return (
                          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 bg-blue-50/50 p-4 rounded-lg border border-blue-200">
                            <div className="md:col-span-2">
                              <label className="block mb-1.5 font-semibold text-slate-800 text-xs">مسار الحساب:</label>
-                             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expAccountPath} onChange={(e) => { setExpAccountPath(e.target.value); setExpSpentFromId(""); }} required>
+                             <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expAccountPath} onChange={(e) => { setExpAccountPath(e.target.value); setExpSourceMainId(""); setExpTransferSubId(""); setExpTransferId(""); }} required>
                                <option value="">-- اختر مسار الحساب --</option>
                                <option value="direct">صرف مباشر من حساب رئيسي</option>
-                               <option value="transfer">تحويل إلى حساب فرعي ثم صرف</option>
+                               <option value="transfer">صرف من تحويل (حساب فرعي)</option>
                              </select>
                            </div>
-                           {expAccountPath && (
-                             <div className={expAccountPath === "transfer" ? "" : "md:col-span-2"}>
-                               <label className="block mb-1.5 font-semibold text-slate-800 text-xs">{expAccountPath === "transfer" ? "الحساب الرئيسي (المصدر):" : "الحساب الرئيسي:"}</label>
+                           {expAccountPath === "direct" && (
+                             <div className="md:col-span-2">
+                               <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحساب الرئيسي:</label>
                                <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expSourceMainId} onChange={(e) => setExpSourceMainId(e.target.value)} required>
                                  <option value="">-- اختر الحساب الرئيسي --</option>
                                  {bankAccountsDB.filter(b => b.is_active && b.account_type === "رئيسي").map(b => (
@@ -5252,18 +5377,36 @@ export default function ShubramiSystem() {
                              </div>
                            )}
                            {expAccountPath === "transfer" && (
-                             <div>
-                               <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحساب الفرعي (المصروف منه):</label>
-                               <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expSpentFromId} onChange={(e) => setExpSpentFromId(e.target.value)} required>
-                                 <option value="">-- اختر الحساب الفرعي --</option>
-                                 {bankAccountsDB.filter(b => b.is_active && b.account_type === "فرعي").map(b => (
-                                   <option key={b.id} value={b.id}>{b.name} — {b.bank_name} ({b.account_number})</option>
-                                 ))}
-                               </select>
-                             </div>
+                             <>
+                               <div>
+                                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">الحساب الفرعي:</label>
+                                 <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expTransferSubId} onChange={(e) => { setExpTransferSubId(e.target.value); setExpTransferId(""); }} required>
+                                   <option value="">-- اختر الحساب الفرعي --</option>
+                                   {bankAccountsDB.filter(b => b.is_active && b.account_type === "فرعي").map(b => (
+                                     <option key={b.id} value={b.id}>{b.name} — {b.bank_name}</option>
+                                   ))}
+                                 </select>
+                               </div>
+                               <div>
+                                 <label className="block mb-1.5 font-semibold text-slate-800 text-xs">التحويل المفتوح:</label>
+                                 <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors disabled:bg-slate-100" value={expTransferId} onChange={(e) => setExpTransferId(e.target.value)} required disabled={!expTransferSubId}>
+                                   <option value="">-- اختر التحويل المفتوح --</option>
+                                   {openTransfersForSub.map(t => (
+                                     <option key={t.id} value={t.id}>{t.id} — متبقّي {Number(t.remaining_amount).toLocaleString()} من {Number(t.amount).toLocaleString()}</option>
+                                   ))}
+                                 </select>
+                                 {expTransferSubId && openTransfersForSub.length === 0 && (
+                                   <p className="text-[10px] text-amber-600 mt-1 font-semibold">لا يوجد تحويل مفتوح لهذا الفرعي — سجّله من تبويب «التحويلات».</p>
+                                 )}
+                                 {selectedTransfer && (
+                                   <p className="text-[10px] text-emerald-700 mt-1 font-semibold">المتبقّي المتاح: {Number(selectedTransfer.remaining_amount).toLocaleString()} ريال</p>
+                                 )}
+                               </div>
+                             </>
                            )}
                          </div>
-                       )}
+                         );
+                       })()}
                        <div>
                          <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ:</label>
                          <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} required />
@@ -5330,6 +5473,9 @@ export default function ShubramiSystem() {
                                {e.payment_method || "-"}
                                {expenseAccountLabel(e) && (
                                  <span className="block text-[10px] text-slate-400">{expenseAccountLabel(e)}</span>
+                               )}
+                               {expenseTransferNote(e) && (
+                                 <span className="block text-[10px] text-blue-400">{expenseTransferNote(e)}</span>
                                )}
                              </td>
                              <td className="p-3 text-slate-600">{e.notes}</td>
@@ -5528,6 +5674,85 @@ export default function ShubramiSystem() {
                        </div>
                      </>
                    )}
+
+                   {expenseSubTab === "transfers" && (
+                     <>
+                       <form onSubmit={handleAddTransfer} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                         <div>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">من حساب رئيسي (المصدر):</label>
+                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newTransferSourceId} onChange={(e) => setNewTransferSourceId(e.target.value)} required>
+                             <option value="">-- اختر الحساب الرئيسي --</option>
+                             {bankAccountsDB.filter(b => b.is_active && b.account_type === "رئيسي").map(b => (
+                               <option key={b.id} value={b.id}>{b.name} — {b.bank_name} ({b.account_number})</option>
+                             ))}
+                           </select>
+                         </div>
+                         <div>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">إلى حساب فرعي (الوجهة):</label>
+                           <select className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newTransferDestId} onChange={(e) => setNewTransferDestId(e.target.value)} required>
+                             <option value="">-- اختر الحساب الفرعي --</option>
+                             {bankAccountsDB.filter(b => b.is_active && b.account_type === "فرعي").map(b => (
+                               <option key={b.id} value={b.id}>{b.name} — {b.bank_name} ({b.account_number})</option>
+                             ))}
+                           </select>
+                         </div>
+                         <div>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">المبلغ المحوَّل:</label>
+                           <input type="number" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newTransferAmount} onChange={(e) => setNewTransferAmount(e.target.value)} required />
+                         </div>
+                         <div>
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">التاريخ:</label>
+                           <input type="date" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newTransferDate} onChange={(e) => setNewTransferDate(e.target.value)} required />
+                         </div>
+                         <div className="md:col-span-2">
+                           <label className="block mb-1.5 font-semibold text-slate-800 text-xs">ملاحظات:</label>
+                           <input type="text" className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors" value={newTransferNotes} onChange={(e) => setNewTransferNotes(e.target.value)} />
+                         </div>
+                         <button type="submit" disabled={isSaving} className="md:col-span-2 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isSaving ? "جارٍ الحفظ..." : "🔀 تسجيل التحويل"}</button>
+                       </form>
+
+                       <h3 className="text-base font-bold text-slate-900 mb-4">🔀 التحويلات (رئيسي → فرعي)</h3>
+                       <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm bg-white">
+                         <table className="w-full text-right text-slate-800 text-xs">
+                           <thead className="bg-slate-200 text-slate-900 border-b border-slate-300">
+                             <tr>
+                               <th className="p-3.5">التحويل</th>
+                               <th className="p-3.5">المسار</th>
+                               <th className="p-3.5">المبلغ</th>
+                               <th className="p-3.5">المتبقّي</th>
+                               <th className="p-3.5">الحالة</th>
+                               <th className="p-3.5">التاريخ</th>
+                               <th className="p-3.5">البنود</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {transfersDB.map((t, i) => {
+                               const items = expensesDB.filter(x => x.transfer_id === t.id && !x.reverses_expense_id);
+                               const isOpen = t.status === "مفتوح";
+                               return (
+                                 <tr key={t.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
+                                   <td className="p-3 font-mono text-[11px] text-slate-700">{t.id}</td>
+                                   <td className="p-3 text-slate-700">{bankAcctParen(t.source_main_account_id)} ← {bankAcctParen(t.dest_sub_account_id)}</td>
+                                   <td className="p-3 font-bold text-slate-900">{Number(t.amount).toLocaleString()}</td>
+                                   <td className={`p-3 font-bold ${Number(t.remaining_amount) > 0 ? "text-emerald-700" : "text-slate-400"}`}>{Number(t.remaining_amount).toLocaleString()}</td>
+                                   <td className="p-3">
+                                     <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded border ${isOpen ? "bg-amber-100 text-amber-800 border-amber-300" : "bg-emerald-100 text-emerald-800 border-emerald-300"}`}>
+                                       {isOpen ? "🟡 مفتوح" : "✅ مكتمل"}
+                                     </span>
+                                   </td>
+                                   <td className="p-3 text-slate-600">{t.date || "—"}</td>
+                                   <td className="p-3 text-slate-600">{items.length} بند{items.length ? ` — ${items.reduce((s, x) => s + Number(x.amount), 0).toLocaleString()} ريال` : ""}</td>
+                                 </tr>
+                               );
+                             })}
+                             {transfersDB.length === 0 && (
+                               <tr><td colSpan="7" className="p-5 text-center text-slate-500">لا توجد تحويلات بعد.</td></tr>
+                             )}
+                           </tbody>
+                         </table>
+                       </div>
+                     </>
+                   )}
                  </div>
                )}
 
@@ -5607,6 +5832,9 @@ export default function ShubramiSystem() {
                      </div>
                      <div className="p-3 bg-amber-50 rounded-lg border border-amber-300 mb-4">
                        <p className="text-[11px] text-amber-700 font-bold">⚠️ سيبقى المصروف الأصلي كما هو ويُعلَّم "معكوس"، ويُنشأ قيد عكسي بالسالب بنفس التاريخ — فيصبح صافي أثرهما صفراً. لا يمكن التراجع عن هذا الإجراء.</p>
+                       {reversingExpense.transfer_id && (
+                         <p className="text-[11px] text-blue-700 font-bold mt-2">🔀 هذا البند مصروف من تحويل — سيُعاد مبلغه إلى متبقّي التحويل {reversingExpense.transfer_id} ويُعاد فتحه إن كان مكتملاً. (متاح للمدير فقط.)</p>
+                       )}
                      </div>
                      <label className="block mb-1.5 font-semibold text-slate-800 text-xs">سبب العكس (إلزامي):</label>
                      <textarea className="w-full rounded-lg border border-slate-400 p-2 bg-white text-slate-900 outline-none focus:border-blue-700 transition-colors mb-5" value={reversalReasonInput} onChange={(e) => setReversalReasonInput(e.target.value)} placeholder="اكتب سبب عكس القيد" required />
