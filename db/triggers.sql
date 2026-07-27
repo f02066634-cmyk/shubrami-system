@@ -17,6 +17,18 @@ CREATE TRIGGER trg_guard_expense_insert
   FOR EACH ROW
   EXECUTE FUNCTION guard_expense_insert();
 
+-- حارس إدراج التحويل: يتحقّق من نوعَي الحسابين والاتساق الابتدائي.
+CREATE TRIGGER trg_guard_transfer_insert
+  BEFORE INSERT ON public.transfers
+  FOR EACH ROW
+  EXECUTE FUNCTION guard_transfer_insert();
+
+-- حارس تعديل التحويل: يجمّد الحقول الأساسية؛ المتبقّي/الحالة عبر دوال الـRPC فقط.
+CREATE TRIGGER trg_guard_transfer_immutable_columns
+  BEFORE UPDATE ON public.transfers
+  FOR EACH ROW
+  EXECUTE FUNCTION guard_transfer_immutable_columns();
+
 -- حارس الإدراج: يتحقّق من صحّة الصف العكسي عند إدراج سند قبض.
 CREATE TRIGGER trg_guard_transaction_insert
   BEFORE INSERT ON public.transactions

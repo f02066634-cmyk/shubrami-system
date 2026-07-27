@@ -28,10 +28,10 @@ trigger…): حدِّث الملف المقابل في هذا المجلد **ف�
 
 | الملف | المحتوى |
 |------|---------|
-| `schema.sql`    | الجداول (11) + القيود (PK/FK/UNIQUE/CHECK) + الفهارس + تفعيل RLS |
-| `functions.sql` | الدوال (15): المساعِدة + حُرّاس المصروفات + حُرّاس السندات + دوال RPC |
-| `policies.sql`  | سياسات RLS (33 سياسة، للدور `public`) |
-| `triggers.sql`  | مشغّلات المصروفات (2) + مشغّلات السندات (2) + مشغّل `auth.users` (`on_auth_user_created`) |
+| `schema.sql`    | الجداول (12) + القيود (PK/FK/UNIQUE/CHECK) + الفهارس + تفعيل RLS |
+| `functions.sql` | الدوال (19): المساعِدة + حُرّاس المصروفات/التحويلات + حُرّاس السندات + دوال RPC |
+| `policies.sql`  | سياسات RLS (37 سياسة، للدور `public`) |
+| `triggers.sql`  | مشغّلات المصروفات (2) + مشغّلات التحويلات (2) + مشغّلات السندات (2) + مشغّل `auth.users` (`on_auth_user_created`) |
 | `migrations/`   | ملفات الهجرة التدريجية من الآن فصاعداً (انظر README بداخله) |
 
 ---
@@ -51,9 +51,10 @@ trigger…): حدِّث الملف المقابل في هذا المجلد **ف�
 
 - **الجداول أولاً**: القيود المرجعية (FK) تحتاج الجدول المرجوع إليه موجوداً.
   الجداول داخل `schema.sql` نفسها مرتّبة بالتبعية:
-  `profiles → bank_accounts → expense_categories → expenses →
+  `profiles → bank_accounts → expense_categories → transfers → expenses →
   bank_account_assignments → expense_category_assignments → shops →
-  transactions → debts → installments → audit_log`.
+  transactions → debts → installments → audit_log`
+  (`transfers` قبل `expenses` لأن `expenses.transfer_id` يرجع إليه).
 - **الدوال قبل السياسات**: كل سياسات RLS تقريباً تستدعي `is_admin()` أو
   `has_tab(text)` — يجب أن تكون الدالتان موجودتين أولاً.
 - **الدوال قبل المشغّلات**: المشغّلان `trg_guard_expense_*` ينفّذان
