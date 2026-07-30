@@ -2818,6 +2818,7 @@ export default function ShubramiSystem() {
   const totalRentSum = filteredRentedShops.filter(s => s.status === "مؤجر").reduce((sum, s) => sum + s.annualRent, 0);
   const totalCollectedSum = filteredRentedShops.filter(s => s.status === "مؤجر").reduce((sum, s) => sum + s.collected, 0);
   const totalRemainingSum = totalRentSum - totalCollectedSum;
+  const rentedActiveShops = filteredRentedShops.filter(s => s.status === "مؤجر");
 
   const archivedShops = shopsDB.filter(s => s.status.includes("أرشيف"));
 
@@ -2899,6 +2900,14 @@ export default function ShubramiSystem() {
   const filteredTxTargetSum = filteredTransactions.reduce((sum, t) => sum + t.targetAmount, 0);
   const filteredTxPaidSum = filteredTransactions.reduce((sum, t) => sum + t.paidAmount, 0);
   const filteredTxRemainingSum = filteredTransactions.reduce((sum, t) => sum + t.remainingAmount, 0);
+
+  // ترقيم صفحي موحّد للجداول (نفس نمط أرشيف السندات) — التصفية تسبق التقطيع،
+  // فالصفحات تنطبق على النتائج المفلترة، والمجاميع تبقى محسوبة على كامل المفلتر.
+  const rentalsPg  = usePagination(rentedActiveShops, [filterContractStatus, filterContractYear, searchContract]);
+  const debtsPg    = usePagination(allOutstandingDebts, []);
+  const expensesPg = usePagination(filteredExpenses, [expYearFilter, expCategoryFilter]);
+  const archivePg  = usePagination(filteredArchive, [archiveActionFilter, archiveTenantFilter, archiveYearFilter, archiveSearch]);
+  const auditPg    = usePagination(filteredAuditLogs, [auditSearch, auditUserFilter, auditActionFilter, auditYearFilter]);
 
   // ==========================================
   // كشف حساب المستأجر ─ بيانات مشتقة
@@ -4281,7 +4290,7 @@ export default function ShubramiSystem() {
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredRentedShops.filter(s => s.status === "مؤجر").map((s, i) => {
+                         {rentalsPg.pageItems.map((s, i) => {
                            const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
                            return (
                            <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
@@ -4305,7 +4314,7 @@ export default function ShubramiSystem() {
                              </td>
                            </tr>
                          )})}
-                         {filteredRentedShops.filter(s => s.status === "مؤجر").length > 0 ? (
+                         {rentedActiveShops.length > 0 ? (
                            <tr className="bg-slate-200 font-bold border-t-2 border-slate-400 text-slate-900">
                              <td className="p-3" colSpan="2">إجمالي العقود النشطة بالفرز الحالي</td>
                              <td className="p-3">{totalRentSum.toLocaleString()}</td>
@@ -4320,6 +4329,12 @@ export default function ShubramiSystem() {
                        </tbody>
                      </table>
                    </div>
+                   {rentedActiveShops.length > 0 && (
+                     <PaginationControls
+                       page={rentalsPg.page} totalPages={rentalsPg.totalPages} onPageChange={rentalsPg.setPage}
+                       pageSize={rentalsPg.pageSize} onPageSizeChange={rentalsPg.setPageSize} totalItems={rentalsPg.totalItems}
+                     />
+                   )}
                  </div>
                )}
 
@@ -4368,7 +4383,7 @@ export default function ShubramiSystem() {
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredArchive.map((s, i) => (
+                         {archivePg.pageItems.map((s, i) => (
                            <tr key={s.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                              <td className="p-3 font-bold text-slate-900">{s.shopNumber}</td>
                              <td className="p-3 font-bold text-slate-900">{s.tenant}</td>
@@ -4390,6 +4405,12 @@ export default function ShubramiSystem() {
                        </tbody>
                      </table>
                    </div>
+                   {filteredArchive.length > 0 && (
+                     <PaginationControls
+                       page={archivePg.page} totalPages={archivePg.totalPages} onPageChange={archivePg.setPage}
+                       pageSize={archivePg.pageSize} onPageSizeChange={archivePg.setPageSize} totalItems={archivePg.totalItems}
+                     />
+                   )}
                  </div>
                )}
 
@@ -5066,7 +5087,7 @@ export default function ShubramiSystem() {
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredAuditLogs.map((log, i) => (
+                         {auditPg.pageItems.map((log, i) => (
                            <tr key={log.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                              <td className="p-3 whitespace-nowrap"><span dir="ltr" className="inline-block">{formatAuditDateTime(log.created_at)}</span></td>
                              <td className="p-3 font-bold text-slate-900">{log.user_name || "-"}</td>
@@ -5092,6 +5113,12 @@ export default function ShubramiSystem() {
                        </tbody>
                      </table>
                    </div>
+                   {filteredAuditLogs.length > 0 && (
+                     <PaginationControls
+                       page={auditPg.page} totalPages={auditPg.totalPages} onPageChange={auditPg.setPage}
+                       pageSize={auditPg.pageSize} onPageSizeChange={auditPg.setPageSize} totalItems={auditPg.totalItems}
+                     />
+                   )}
                  </div>
                )}
 
@@ -5285,7 +5312,7 @@ export default function ShubramiSystem() {
                          {allOutstandingDebts.length === 0 ? (
                            <tr><td colSpan="7" className="p-5 text-center text-slate-500">لا توجد مديونيات مستحقة.</td></tr>
                          ) : (
-                           allOutstandingDebts.map((d, i) => (
+                           debtsPg.pageItems.map((d, i) => (
                              <tr key={d.id} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
                                <td className="p-3 font-bold text-slate-900">{d.isShopDebt ? d.label : d.id}</td>
                                <td className="p-3 text-slate-700">{d.year}</td>
@@ -5311,6 +5338,12 @@ export default function ShubramiSystem() {
                        </tbody>
                      </table>
                    </div>
+                   {allOutstandingDebts.length > 0 && (
+                     <PaginationControls
+                       page={debtsPg.page} totalPages={debtsPg.totalPages} onPageChange={debtsPg.setPage}
+                       pageSize={debtsPg.pageSize} onPageSizeChange={debtsPg.setPageSize} totalItems={debtsPg.totalItems}
+                     />
+                   )}
                  </div>
                )}
 
@@ -5453,7 +5486,7 @@ export default function ShubramiSystem() {
                          </tr>
                        </thead>
                        <tbody>
-                         {filteredExpenses.map((e, i) => {
+                         {expensesPg.pageItems.map((e, i) => {
                            const isReversalRow = !!e.reverses_expense_id;
                            return (
                            <tr key={i} className={`border-b border-slate-200 hover:bg-slate-100 transition-colors ${i % 2 === 1 ? "bg-slate-50/60" : ""} ${isReversalRow ? "bg-red-50/40" : ""}`}>
@@ -5497,6 +5530,12 @@ export default function ShubramiSystem() {
                        </tbody>
                      </table>
                    </div>
+                   {filteredExpenses.length > 0 && (
+                     <PaginationControls
+                       page={expensesPg.page} totalPages={expensesPg.totalPages} onPageChange={expensesPg.setPage}
+                       pageSize={expensesPg.pageSize} onPageSizeChange={expensesPg.setPageSize} totalItems={expensesPg.totalItems}
+                     />
+                   )}
                      </>
                    )}
 
