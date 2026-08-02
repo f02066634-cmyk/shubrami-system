@@ -1092,9 +1092,8 @@ export default function ShubramiSystem() {
   }, []);
 
   // ==================== الإغلاق التلقائي عند الخمول (30 دقيقة) ====================
-  // ⚠️ مؤقّت للاختبار فقط (30 ثانية تحذير / 60 ثانية إغلاق) — يُعاد إلى 29/30 دقيقة قبل الدمج.
-  const IDLE_WARNING_MS = 30 * 1000;      // تحذير عند 30 ثانية
-  const IDLE_LOGOUT_MS  = 60 * 1000;      // إغلاق فعلي عند 60 ثانية
+  const IDLE_WARNING_MS = 29 * 60 * 1000; // تحذير عند 29 دقيقة
+  const IDLE_LOGOUT_MS  = 30 * 60 * 1000; // إغلاق فعلي عند 30 دقيقة (العدّاد التنازلي 60 ثانية)
 
   const clearIdleTimers = useCallback(() => {
     clearTimeout(idleWarnTimer.current);
