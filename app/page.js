@@ -1068,9 +1068,13 @@ export default function ShubramiSystem() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session) {
         setLoading(true);
+        // لا تُبقِ بيانات الدخول في الذاكرة أثناء الجلسة
+        setLoginUser(""); setLoginPass(""); setAuthError("");
         loadSessionAndData(session);
       } else if (event === "SIGNED_OUT") {
         setCurrentUser(null);
+        // مسح مركزي لحقول الدخول عند أي خروج (يدوي/تلقائي) — لا بيانات باقية
+        setLoginUser(""); setLoginPass(""); setAuthError("");
         setUsersDB([]);
         setShopsDB([]);
         setTransactionsDB([]);
@@ -3866,14 +3870,14 @@ export default function ShubramiSystem() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-5" autoComplete="off">
             <div>
               <label className="block text-slate-800 mb-1.5 font-semibold text-sm">اسم المستخدم</label>
-              <input type="text" mercantile-app="true" required className="w-full bg-slate-50 border border-slate-400 rounded-lg p-2.5 text-slate-900 focus:border-blue-700 focus:bg-white outline-none transition-colors text-sm" value={loginUser} onChange={e => setLoginUser(e.target.value)} />
+              <input type="text" name="shubrami-user" autoComplete="off" required className="w-full bg-slate-50 border border-slate-400 rounded-lg p-2.5 text-slate-900 focus:border-blue-700 focus:bg-white outline-none transition-colors text-sm" value={loginUser} onChange={e => setLoginUser(e.target.value)} />
             </div>
             <div>
               <label className="block text-slate-800 mb-1.5 font-semibold text-sm">كلمة المرور</label>
-              <input type="password" required className="w-full bg-slate-50 border border-slate-400 rounded-lg p-2.5 text-slate-900 focus:border-blue-700 focus:bg-white outline-none transition-colors text-sm" value={loginPass} onChange={e => setLoginPass(e.target.value)} />
+              <input type="password" name="shubrami-pass" autoComplete="new-password" required className="w-full bg-slate-50 border border-slate-400 rounded-lg p-2.5 text-slate-900 focus:border-blue-700 focus:bg-white outline-none transition-colors text-sm" value={loginPass} onChange={e => setLoginPass(e.target.value)} />
             </div>
             <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-lg text-sm shadow-md hover:bg-blue-800 transition-all">
               تسجيل الدخول
