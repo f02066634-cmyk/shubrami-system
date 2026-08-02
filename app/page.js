@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 // استيراد اتصال Supabase
 import { supabase } from '../supabaseClient';
 
@@ -681,7 +681,13 @@ const FinancialCollection = ({
 export default function ShubramiSystem() {
   const [loading, setLoading] = useState(true);
   const [usersDB, setUsersDB] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null); 
+  const [currentUser, setCurrentUser] = useState(null);
+  // الإغلاق التلقائي عند الخمول
+  const [idleWarning, setIdleWarning] = useState(false);
+  const [idleCountdown, setIdleCountdown] = useState(60);
+  const idleWarnTimer = useRef(null);
+  const idleLogoutTimer = useRef(null);
+  const idleCountdownTimer = useRef(null);
   const [loginUser, setLoginUser] = useState("");
   const [loginPass, setLoginPass] = useState("");
   const [authError, setAuthError] = useState("");
@@ -1080,6 +1086,57 @@ export default function ShubramiSystem() {
       listener?.subscription?.unsubscribe();
     };
   }, []);
+
+  // ==================== الإغلاق التلقائي عند الخمول (30 دقيقة) ====================
+  const IDLE_WARNING_MS = 29 * 60 * 1000; // تحذير عند 29 دقيقة
+  const IDLE_LOGOUT_MS  = 30 * 60 * 1000; // إغلاق فعلي عند 30 دقيقة
+
+  const clearIdleTimers = useCallback(() => {
+    clearTimeout(idleWarnTimer.current);
+    clearTimeout(idleLogoutTimer.current);
+    clearInterval(idleCountdownTimer.current);
+  }, []);
+
+  const resetIdleTimer = useCallback(() => {
+    clearIdleTimers();
+    setIdleWarning(false);
+    idleWarnTimer.current = setTimeout(() => {
+      setIdleCountdown(60);
+      setIdleWarning(true);
+      idleCountdownTimer.current = setInterval(() => {
+        setIdleCountdown(c => (c > 0 ? c - 1 : 0));
+      }, 1000);
+    }, IDLE_WARNING_MS);
+    idleLogoutTimer.current = setTimeout(async () => {
+      clearIdleTimers();
+      setIdleWarning(false);
+      await supabase.auth.signOut(); // SIGNED_OUT يتولّى مسح الحالة → شاشة الدخول
+    }, IDLE_LOGOUT_MS);
+  }, [clearIdleTimers, IDLE_WARNING_MS, IDLE_LOGOUT_MS]);
+
+  useEffect(() => {
+    // المؤقّت يعمل فقط بعد تسجيل الدخول (لا في شاشة الدخول ولا أثناء التحميل).
+    if (!currentUser) return;
+    resetIdleTimer();
+
+    // النشاط الفعلي فقط (نقر/لوحة مفاتيح/تمرير/لمس) — بلا mousemove لتفادي الضجيج.
+    const events = ["mousedown", "keydown", "scroll", "touchstart", "click"];
+    let lastReset = Date.now();
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastReset < 1000) return; // throttle للأداء
+      lastReset = now;
+      resetIdleTimer();
+    };
+    events.forEach(ev => window.addEventListener(ev, onActivity, { passive: true }));
+    window.addEventListener("focus", onActivity); // العودة للتبويب بعد الطباعة تُعيد الضبط
+
+    return () => {
+      events.forEach(ev => window.removeEventListener(ev, onActivity));
+      window.removeEventListener("focus", onActivity);
+      clearIdleTimers();
+    };
+  }, [currentUser, resetIdleTimer, clearIdleTimers]);
 
   const allTabs = [
     { id: "dashboard", label: "📊 لوحة المؤشرات" },
@@ -3782,9 +3839,12 @@ export default function ShubramiSystem() {
 
   if (loading) {
     return (
-      <div dir="rtl" className="min-h-screen bg-slate-100 flex flex-col items-center justify-center font-tajawal text-slate-800">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-700 mb-4"></div>
-        <p className="text-base font-bold text-slate-600">جاري جلب ومزامنة البيانات من السحابة...</p>
+      <div dir="rtl" className="min-h-screen bg-slate-100 flex flex-col items-center justify-center font-tajawal px-4 text-center">
+        <div className="text-6xl mb-4 text-blue-700 animate-pulse">🏢</div>
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-wide mb-1">أسواق الشبرمي</h1>
+        <p className="text-slate-500 text-sm mb-8">النظام المالي والإداري</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-slate-200 border-t-blue-700 mb-4"></div>
+        <p className="text-sm font-bold text-slate-600">جارٍ تجهيز النظام...</p>
       </div>
     );
   }
@@ -3833,7 +3893,22 @@ export default function ShubramiSystem() {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
       `}} />
-      
+
+      {idleWarning && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-sm relative text-center">
+            <div className="text-4xl mb-3">⏳</div>
+            <h3 className="text-slate-900 font-extrabold mb-2 text-lg">ستُغلق جلستك قريباً</h3>
+            <p className="text-sm text-slate-600 mb-1">ستُغلق جلستك بعد <span className="font-extrabold text-red-600">{idleCountdown}</span> ثانية لعدم النشاط.</p>
+            <p className="text-xs text-slate-400 mb-5">اضغط «البقاء متصلاً» أو تفاعل مع الصفحة للاستمرار.</p>
+            <div className="flex gap-3">
+              <button onClick={resetIdleTimer} className="flex-1 bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors">✅ البقاء متصلاً</button>
+              <button onClick={() => { clearIdleTimers(); setIdleWarning(false); handleLogout(); }} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2.5 rounded-lg text-sm transition-colors">تسجيل الخروج الآن</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNotifications && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
             <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-2xl w-full max-w-2xl relative">
