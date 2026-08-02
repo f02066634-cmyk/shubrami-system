@@ -1092,8 +1092,12 @@ export default function ShubramiSystem() {
   }, []);
 
   // ==================== الإغلاق التلقائي عند الخمول (30 دقيقة) ====================
-  const IDLE_WARNING_MS = 29 * 60 * 1000; // تحذير عند 29 دقيقة
-  const IDLE_LOGOUT_MS  = 30 * 60 * 1000; // إغلاق فعلي عند 30 دقيقة (العدّاد التنازلي 60 ثانية)
+  // ── إعداد الخمول: المصدر الوحيد — أي تغيير مستقبلي بتعديل هذين الرقمين فقط ──
+  const IDLE_TIMEOUT_MINUTES  = 5;   // مدة الخمول قبل الإغلاق التلقائي (بالدقائق)
+  const WARNING_BEFORE_SECONDS = 60; // يظهر التحذير قبل الإغلاق بهذه المدة (والعدّاد التنازلي)
+  // مشتقّان تلقائياً — لا تعدّلهما مباشرةً:
+  const IDLE_LOGOUT_MS  = IDLE_TIMEOUT_MINUTES * 60 * 1000;
+  const IDLE_WARNING_MS = IDLE_LOGOUT_MS - WARNING_BEFORE_SECONDS * 1000;
 
   const clearIdleTimers = useCallback(() => {
     clearTimeout(idleWarnTimer.current);
@@ -1105,7 +1109,7 @@ export default function ShubramiSystem() {
     clearIdleTimers();
     setIdleWarning(false);
     idleWarnTimer.current = setTimeout(() => {
-      setIdleCountdown(Math.round((IDLE_LOGOUT_MS - IDLE_WARNING_MS) / 1000));
+      setIdleCountdown(WARNING_BEFORE_SECONDS);
       setIdleWarning(true);
       idleCountdownTimer.current = setInterval(() => {
         setIdleCountdown(c => (c > 0 ? c - 1 : 0));
@@ -1116,7 +1120,7 @@ export default function ShubramiSystem() {
       setIdleWarning(false);
       await supabase.auth.signOut(); // SIGNED_OUT يتولّى مسح الحالة → شاشة الدخول
     }, IDLE_LOGOUT_MS);
-  }, [clearIdleTimers, IDLE_WARNING_MS, IDLE_LOGOUT_MS]);
+  }, [clearIdleTimers, IDLE_WARNING_MS, IDLE_LOGOUT_MS, WARNING_BEFORE_SECONDS]);
 
   useEffect(() => {
     // المؤقّت يعمل فقط بعد تسجيل الدخول (لا في شاشة الدخول ولا أثناء التحميل).
