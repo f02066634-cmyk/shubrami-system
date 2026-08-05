@@ -12,6 +12,55 @@ const isContractExpired = (endDate) => {
   return new Date(endDate) < today;
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  المصدر الوحيد لحالة العقد المعروضة (طبقة العرض)
+//  يدمج الحالة المخزّنة (shops.status) + الاشتقاق الزمني (isContractExpired) في
+//  مفردة واحدة تُستخدم في كل شاشة/تقرير/طباعة — فيستحيل التناقض بنيوياً.
+//  رمز موحّد لـ«منتهي» في كل مكان = ⚠️.
+// ═══════════════════════════════════════════════════════════════════════════
+const getContractDisplayStatus = (shop) => {
+  const status = shop?.status || "";
+  switch (status) {
+    case "شاغر":          return { key: "vacant",           label: "شاغر",  icon: "📭", tone: "amber" };
+    case "تحت الصيانة":   return { key: "maintenance",      label: "صيانة", icon: "🔧", tone: "amber" };
+    case "مدمج":          return { key: "merged",           label: "مدمج",  icon: "🔗", tone: "slate" };
+    case "أرشيف - مخلى":  return { key: "archived-vacated", label: "مخلى",  icon: "🚪", tone: "red"   };
+    case "أرشيف - مجدد":  return { key: "archived-renewed", label: "مجدد",  icon: "🔄", tone: "teal"  };
+    case "أرشيف - منتهي": return { key: "archived-expired", label: "منتهي", icon: "⚠️", tone: "amber" };
+    case "مؤجر":
+      return isContractExpired(shop?.endDate)
+        ? { key: "expired", label: "منتهي", icon: "⚠️", tone: "red"  }
+        : { key: "active",  label: "ساري",  icon: "✅", tone: "teal" };
+    default:              return { key: "unknown", label: status || "-", icon: "", tone: "slate" };
+  }
+};
+
+// دوال محمولة (طبقة المنطق — منفصلة عن العرض) تُشتقّ من نفس المصدر (status + التاريخ).
+const isActiveRental        = (shop) => (shop?.status === "مؤجر" || shop?.status === "مدمج") && !isContractExpired(shop?.endDate);
+const isExpiredRental       = (shop) => (shop?.status === "مؤجر" || shop?.status === "مدمج") &&  isContractExpired(shop?.endDate);
+const isRentableSlot        = (shop) => shop?.status === "شاغر" || isExpiredRental(shop);           // متاح للإيجار
+const isActiveForCollection = (shop) => shop?.status === "مؤجر" && !isContractExpired(shop?.endDate); // مسار سند الإيجار
+const canRenew              = (shop) => (shop?.status === "مؤجر" && isContractExpired(shop?.endDate)) || shop?.status === "أرشيف - منتهي";
+const canArchiveAsExpired   = (shop) => shop?.status === "مؤجر" && isContractExpired(shop?.endDate);
+const isInCollectionScope   = (shop) => shop?.status === "مؤجر"; // على دفتر الإيجار (يُحصَّل مباشرةً إن ساري، أو عبر الدين بعد الأرشفة)
+
+const CONTRACT_STATUS_TONES = {
+  teal:  "bg-teal-100 text-teal-700 border-teal-200",
+  red:   "bg-red-100 text-red-700 border-red-200",
+  amber: "bg-amber-100 text-amber-700 border-amber-200",
+  slate: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+// شارة الحالة الموحّدة — تُستخدم في كل مواضع العرض.
+function ContractStatusBadge({ shop }) {
+  const d = getContractDisplayStatus(shop);
+  return (
+    <span className={`inline-block px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap border ${CONTRACT_STATUS_TONES[d.tone] || CONTRACT_STATUS_TONES.slate}`}>
+      {d.icon ? `${d.icon} ` : ""}{d.label}
+    </span>
+  );
+}
+
 // ==================== Pagination موحّد لكل الجداول ====================
 function usePagination(items, resetDeps = [], defaultPageSize = 25) {
   const [page, setPage] = useState(1);
@@ -88,12 +137,11 @@ const DashboardIndicators = ({
   let maintenance = 0;
 
   Object.values(latestShopRecords).forEach(s => {
+     // نفس التصنيف السابق حرفياً — عبر الدوال المحمولة الموحّدة (تكافؤ سلوكي)
      if (s.status === "شاغر") trueVacant++;
      else if (s.status === "تحت الصيانة") maintenance++;
-     else if (s.status === "مؤجر" || s.status === "مدمج") {
-         if (isContractExpired(s.endDate)) expiredRented++;
-         else activeRented++;
-     }
+     else if (isActiveRental(s)) activeRented++;
+     else if (isExpiredRental(s)) expiredRented++;
   });
 
   const availableForRent = trueVacant + expiredRented;
@@ -1426,9 +1474,9 @@ export default function ShubramiSystem() {
 
   // أرشفة عقد منتهٍ (تجاوز تاريخه وحالته «مؤجر») بوسم «أرشيف - منتهي» — نفس منطق
   // الإخلاء (تفريغ المحلات + تحويل المتبقّي مديونية) لكن بوسم منتهٍ. للمدير فقط.
-  const handleArchiveAsExpired = async () => {
+  const handleArchiveAsExpired = async (shopArg) => {
     if (isSaving) return;
-    const originalRow = shopsDB.find(s => s.id === editContractId);
+    const originalRow = shopArg || shopsDB.find(s => s.id === editContractId);
     if (!originalRow) return showToast("الرجاء تحديد الكيان أولاً", "warning");
     if (currentUser?.role !== "مدير") return showToast("🚫 أرشفة العقد المنتهي متاحة لمدير النظام فقط.", "warning");
     if (!isContractExpired(originalRow.endDate) || originalRow.status !== "مؤجر") {
@@ -2944,9 +2992,10 @@ export default function ShubramiSystem() {
   const filteredRentedShops = shopsDB.filter(s => {
     if (s.status === "شاغر" || s.status === "مدمج") return false; 
     
-    const isExpired = isContractExpired(s.endDate);
-    if (filterContractStatus === "ساري" && (isExpired || s.status.includes("أرشيف"))) return false;
-    if (filterContractStatus === "منتهي" && !isExpired && !s.status.includes("أرشيف")) return false;
+    // فلترة على مفتاح الحالة الموحّد (تكافؤ سلوكي مع المنطق السابق)
+    const dispKey = getContractDisplayStatus(s).key;
+    if (filterContractStatus === "ساري"  && (dispKey === "expired" || dispKey.startsWith("archived"))) return false;
+    if (filterContractStatus === "منتهي" && dispKey === "active") return false;
     
     if (filterContractYear !== "الكل") {
       const startY = getYear(s.startDate) || "";
@@ -3186,6 +3235,7 @@ export default function ShubramiSystem() {
         txCount: data.txCount,
         tenant: rec?.tenant || "-",
         status: rec?.status || "-",
+        endDate: rec?.endDate ?? null,
         isDependent,
         mainShopNum: isDependent ? mainShopNum : null,
         groupMembers,
@@ -3404,7 +3454,7 @@ export default function ShubramiSystem() {
         <td>${e(s.endDate)}</td>
         <td class="text-teal">${s.collected.toLocaleString()} ريال</td>
         <td class="text-red">${(s.annualRent - s.collected).toLocaleString()} ريال</td>
-        <td>${isContractExpired(s.endDate) ? '<span class="text-red">⚠️ منتهي</span>' : '<span class="text-green">ساري</span>'}</td>
+        <td>${(() => { const d = getContractDisplayStatus(s); return `<span class="${d.tone === "red" ? "text-red" : d.tone === "teal" ? "text-green" : ""}">${d.icon ? d.icon + " " : ""}${e(d.label)}</span>`; })()}</td>
       </tr>`;
     }).join('');
     const content = `
@@ -3824,8 +3874,7 @@ export default function ShubramiSystem() {
       const totalTx = rptShopRows.reduce((s, r) => s + r.txCount, 0);
 
       const shopRows = rptShopRows.map(row => {
-        const statusMap = { "مؤجر": "مؤجر", "شاغر": "شاغر", "تحت الصيانة": "صيانة", "مدمج": "مدمج", "-": "-" };
-        const statusLabel = statusMap[row.status] ?? e(row.status);
+        const statusLabel = getContractDisplayStatus({ status: row.status, endDate: row.endDate }).label;
         const statusCell = row.status === "شاغر" && row.lastTenant
           ? `${e(statusLabel)}<br><small>🕓 آخر مستأجر: ${e(row.lastTenant)} (${e(row.lastGroupShops.join('، '))})</small>`
           : e(statusLabel);
@@ -4315,7 +4364,7 @@ export default function ShubramiSystem() {
                          }} required>
                            <option value="">-- المحلات المؤجرة المتاحة --</option>
                            {shopsDB.filter(s => s.status === "مؤجر").map(s => {
-                             const isExpired = isContractExpired(s.endDate);
+                             const isExpired = getContractDisplayStatus(s).key === "expired"; // مصدر موحّد
                              const remainingBalance = s.annualRent - s.collected;
                              const displayName = s.isGroupMain ? `${s.tenant} (${(s.groupShops||[]).join('، ')})` : `${s.tenant} (${s.shopNumber})`;
                              const isDebtBlocked = isExpired && remainingBalance > 0;
@@ -4326,7 +4375,7 @@ export default function ShubramiSystem() {
                                    : '⚠️ منتهي ومديون - يجب سداد الدين أولاً (غير متاح للتجديد)')
                                : isExpired
                                  ? '⚠️ منتهي - متاح للتجديد'
-                                 : 'ساري';
+                                 : '✅ ساري';
                              return (
                                <option key={s.id} value={s.id} disabled={isDebtBlocked && !isAdminUser}>
                                  {displayName} ({statusLabel})
@@ -4483,9 +4532,10 @@ export default function ShubramiSystem() {
                                )}
                              </td>
                              <td className="p-3">
-                               {isContractExpired(s.endDate) 
-                                 ? <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⚠️ منتهي</span> 
-                                 : <span className="text-teal-700 font-bold text-xs">ساري</span>}
+                               <ContractStatusBadge shop={s} />
+                               {currentUser?.role === "مدير" && canArchiveAsExpired(s) && (
+                                 <button type="button" onClick={() => handleArchiveAsExpired(s)} disabled={isSaving} className="block mt-1.5 text-[10px] font-bold px-2 py-1 rounded bg-slate-700 hover:bg-slate-800 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">🗄️ أرشفة كمنتهٍ</button>
+                               )}
                              </td>
                            </tr>
                          )})}
@@ -4568,9 +4618,7 @@ export default function ShubramiSystem() {
                              <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
                              <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
                              <td className="p-3">
-                               {s.status === "أرشيف - مجدد" && (<span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🔄 مجدد</span>)}
-                               {s.status === "أرشيف - مخلى" && (<span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🚪 مخلى</span>)}
-                               {s.status === "أرشيف - منتهي" && (<span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>)}
+                               <ContractStatusBadge shop={s} />
                              </td>
                            </tr>
                          ))}
@@ -4704,10 +4752,7 @@ export default function ShubramiSystem() {
                                        </>
                                      )}
                                      <td className="p-3">
-                                       {s.status === "مؤجر" && !expired && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">✅ ساري</span>}
-                                       {s.status === "مؤجر" && expired && <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>}
-                                       {s.status === "مدمج" && <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🔗 مدمج</span>}
-                                       {s.status === "شاغر" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">📭 شاغر</span>}
+                                       <ContractStatusBadge shop={s} />
                                      </td>
                                    </tr>
                                  );
@@ -4752,9 +4797,7 @@ export default function ShubramiSystem() {
                                      <td className="p-3">{(s.annualRent || 0).toLocaleString()}</td>
                                      <td className="p-3 text-teal-700 font-bold">{(s.collected || 0).toLocaleString()}</td>
                                      <td className="p-3">
-                                       {s.status === "أرشيف - مجدد" && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🔄 مجدد</span>}
-                                       {s.status === "أرشيف - مخلى" && <span className="bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">🚪 مخلى</span>}
-                                       {s.status === "أرشيف - منتهي" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap">⏳ منتهي</span>}
+                                       <ContractStatusBadge shop={s} />
                                      </td>
                                    </tr>
                                  ))}
@@ -5084,11 +5127,9 @@ export default function ShubramiSystem() {
                                  <td className="p-3 font-bold text-slate-900">{row.shopNum}</td>
                                  <td className="p-3 text-slate-700">{row.tenant}</td>
                                  <td className="p-3">
-                                   {row.status === "مؤجر" && <span className="bg-teal-100 text-teal-700 border border-teal-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">✅ مؤجر</span>}
-                                   {row.status === "شاغر" && <span className="bg-red-100 text-red-600 border border-red-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">📭 شاغر</span>}
-                                   {row.status === "تحت الصيانة" && <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔧 صيانة</span>}
-                                   {row.status === "مدمج" && <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap">🔗 مدمج</span>}
-                                   {row.status === "-" && <span className="text-slate-400 text-[10px]">-</span>}
+                                   {row.status === "-"
+                                     ? <span className="text-slate-400 text-[10px]">-</span>
+                                     : <ContractStatusBadge shop={{ status: row.status, endDate: row.endDate }} />}
                                    {row.status === "شاغر" && row.lastTenant && (
                                      <div className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">🕓 آخر مستأجر: {row.lastTenant} ({row.lastGroupShops.join('، ')})</div>
                                    )}
