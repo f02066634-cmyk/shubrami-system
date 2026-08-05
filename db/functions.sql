@@ -903,7 +903,7 @@ $function$;
 -- ---------------------------------------------------------------------------
 -- rpc_vacate_contract(...) — إخلاء عقد كيان (مع إنشاء دين المتبقي واستثناء المدير)
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.rpc_vacate_contract(p_shop_ids text[], p_installment_ids text[], p_hard_delete boolean, p_actual_end_date text DEFAULT NULL::text, p_debt_override_amount numeric DEFAULT NULL::numeric)
+CREATE OR REPLACE FUNCTION public.rpc_vacate_contract(p_shop_ids text[], p_installment_ids text[], p_hard_delete boolean, p_actual_end_date text DEFAULT NULL::text, p_debt_override_amount numeric DEFAULT NULL::numeric, p_archive_status text DEFAULT 'أرشيف - مخلى'::text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SET search_path TO 'public'
@@ -925,6 +925,11 @@ declare
 begin
   if p_shop_ids is null or array_length(p_shop_ids, 1) is null then
     raise exception 'لا توجد محلات لمعالجتها';
+  end if;
+
+  -- وسم الأرشفة: إخلاء أو منتهٍ فقط
+  if p_archive_status not in ('أرشيف - مخلى', 'أرشيف - منتهي') then
+    raise exception 'وسم الأرشفة غير صالح (%).', p_archive_status;
   end if;
 
   foreach v_shop_id in array p_shop_ids loop
@@ -985,7 +990,7 @@ begin
     end if;
 
     update public.shops
-       set status = 'أرشيف - مخلى',
+       set status = p_archive_status,
            actual_end_date = coalesce(p_actual_end_date, "endDate")
      where id = v_shop_id
     returning to_jsonb(shops.*) into v_row;
@@ -1170,4 +1175,32 @@ begin
 
   return jsonb_build_object('reversal', to_jsonb(v_rev), 'transfer', to_jsonb(v_transfer));
 end;
+$function$;
+
+-- ---------------------------------------------------------------------------
+-- rpc_dashboard_expense_totals() — إجمالي المصروفات + التجميع بالسنة للوحة
+-- المؤشرات. SECURITY DEFINER: يتجاوز RLS ويُرجع أرقاماً مجمّعة فقط (لا صفوف)،
+-- فتظهر لكل مستخدم لوحةٌ إجماليةٌ موحّدة دون كشف تفاصيل مصروفات غيره.
+-- (الوسم بالسنة مطابق لـ getYear في الواجهة: الجزء قبل أول '-'.)
+-- GRANT EXECUTE TO authenticated — انظر ملف الهجرة.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.rpc_dashboard_expense_totals()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT jsonb_build_object(
+    'total_all', COALESCE((SELECT SUM(amount) FROM public.expenses), 0),
+    'by_year', COALESCE((
+      SELECT jsonb_object_agg(yr, tot)
+      FROM (
+        SELECT split_part(date, '-', 1) AS yr, SUM(amount) AS tot
+        FROM public.expenses
+        WHERE date IS NOT NULL AND date <> '-'
+        GROUP BY split_part(date, '-', 1)
+      ) g
+    ), '{}'::jsonb)
+  );
 $function$;

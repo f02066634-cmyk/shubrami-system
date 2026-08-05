@@ -737,6 +737,9 @@ export default function ShubramiSystem() {
   const [transactionsDB, setTransactionsDB] = useState([]);
   const [debtsDB, setDebtsDB] = useState([]);
   const [expensesDB, setExpensesDB] = useState([]);
+  // إجماليات مصروفات لوحة المؤشرات (من RPC مجمّعة تتجاوز RLS) — أرقام فقط، لا صفوف.
+  // مستقلة تماماً عن expensesDB (الذي يبقى معزولاً بـRLS لعرض تفاصيل السجل).
+  const [expenseTotals, setExpenseTotals] = useState({ total_all: 0, by_year: {} });
   const [expenseCategoriesDB, setExpenseCategoriesDB] = useState([]);
   const [categoryAssignmentsDB, setCategoryAssignmentsDB] = useState([]);
   const [installmentsDB, setInstallmentsDB] = useState([]); 
@@ -923,6 +926,10 @@ export default function ShubramiSystem() {
     const { data: trs } = await supabase.from('transfers').select('*').order('created_at', { ascending: false });
     setTransfersDB(trs || []);
 
+    // إجماليات المصروفات للوحة المؤشرات (RPC مجمّعة موحّدة لكل المستخدمين)
+    const { data: expTotals } = await supabase.rpc('rpc_dashboard_expense_totals');
+    if (expTotals) setExpenseTotals(expTotals);
+
     try {
       const { data: insts } = await supabase.from('installments').select('*');
       setInstallmentsDB(insts || []);
@@ -979,6 +986,12 @@ export default function ShubramiSystem() {
       return;
     }
     setCategoryAssignmentsDB(data || []);
+  };
+
+  // إعادة جلب إجماليات مصروفات لوحة المؤشرات بعد أي عملية تُغيّر المصروفات
+  const refreshExpenseTotals = async () => {
+    const { data } = await supabase.rpc('rpc_dashboard_expense_totals');
+    if (data) setExpenseTotals(data);
   };
 
   // الحسابات البنكية وتخصيصاتها — نفس نمط بنود المصروفات (RLS تُرشّح للموظف حساباته المخصَّصة فقط)
@@ -1324,7 +1337,8 @@ export default function ShubramiSystem() {
 
   const dashYearsSet = new Set();
   transactionsDB.forEach(t => { if(t.updateDate) dashYearsSet.add(getYear(t.updateDate)); });
-  expensesDB.forEach(e => { if(e.date) dashYearsSet.add(getYear(e.date)); });
+  // سنوات المصروفات من الإجماليات المجمّعة (كي لا تُغفل سنة لها مصروفات فقط لدى الموظف)
+  Object.keys(expenseTotals.by_year || {}).forEach(y => { if(y) dashYearsSet.add(y); });
   allOutstandingDebts.forEach(d => { if(d.year) dashYearsSet.add(getYear(d.year)); });
   const dashboardAvailableYears = [...dashYearsSet].filter(Boolean).sort((a, b) => b - a);
 
@@ -1405,6 +1419,69 @@ export default function ShubramiSystem() {
       setNewContractShops([]); setShopInputValue(""); setNewContractTenant(""); setNewContractEjarNumber("");
       setNewContractRent(""); setNewContractStart(""); setNewContractEnd("");
       showToast(`تم حفظ العقد واعتماد الكيان الموحد بنجاح دون المساس بالأرشيف التاريخي!`, "success");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // أرشفة عقد منتهٍ (تجاوز تاريخه وحالته «مؤجر») بوسم «أرشيف - منتهي» — نفس منطق
+  // الإخلاء (تفريغ المحلات + تحويل المتبقّي مديونية) لكن بوسم منتهٍ. للمدير فقط.
+  const handleArchiveAsExpired = async () => {
+    if (isSaving) return;
+    const originalRow = shopsDB.find(s => s.id === editContractId);
+    if (!originalRow) return showToast("الرجاء تحديد الكيان أولاً", "warning");
+    if (currentUser?.role !== "مدير") return showToast("🚫 أرشفة العقد المنتهي متاحة لمدير النظام فقط.", "warning");
+    if (!isContractExpired(originalRow.endDate) || originalRow.status !== "مؤجر") {
+      return showToast("🚫 الأرشفة كمنتهٍ متاحة فقط لعقد منتهٍ (تجاوز تاريخه) وحالته «مؤجر».", "warning");
+    }
+
+    const openTx = transactionsDB.find(t => t.shop === originalRow.shopNumber && t.status === "مفتوح (قيد التحصيل)");
+    if (openTx) return showToast(`🚫 الكيان مرتبط بسند معلق برقم (${openTx.id}). يرجى إغلاقه أولاً.`, "warning");
+    const pendingInst = installmentsDB.find(i => i.shop === originalRow.shopNumber && i.status !== "ملغى");
+    if (pendingInst) return showToast(`🚫 يوجد استحقاق مجدول لهذا الكيان. يرجى تأكيد سداده أو حذفه أولاً.`, "warning");
+
+    const groupToUpdate = originalRow.isGroupMain ? originalRow.groupShops : [originalRow.shopNumber];
+    const groupShopRows = groupToUpdate
+      .map(sNum => shopsDB.find(s => s.shopNumber === sNum && s.tenant === originalRow.tenant && (s.status === "مؤجر" || s.status === "مدمج")))
+      .filter(Boolean);
+    const groupTotalRemaining = groupShopRows.reduce((sum, s) => sum + Math.max(0, (s.annualRent || 0) - (s.collected || 0)), 0);
+
+    const debtNote = groupTotalRemaining > 0
+      ? `\n⚠️ يوجد متبقٍ إجمالي (${groupTotalRemaining} ريال) — سيُحوّل تلقائياً إلى مديونية مستقلة.`
+      : '';
+    const confirmMsg = `🗄️ أرشفة كمنتهٍ:\n\nأنت على وشك أرشفة هذا العقد المنتهي للمستأجر "${originalRow.tenant}".\nسيُنقل العقد إلى الأرشيف بوسم «منتهٍ»، وتُفرَّغ محلاته إلى «شاغر».${debtNote}\n\nهل تريد المتابعة؟`;
+    if (!(await showConfirm({ message: confirmMsg }))) return;
+
+    setIsSaving(true);
+    try {
+      const { data: vacateResult, error: vacateRpcErr } = await supabase.rpc('rpc_vacate_contract', {
+        p_shop_ids:             groupShopRows.map(s => s.id),
+        p_installment_ids:      [],
+        p_hard_delete:          false,
+        p_actual_end_date:      originalRow.endDate,
+        p_debt_override_amount: null,
+        p_archive_status:       'أرشيف - منتهي'
+      });
+      if (vacateRpcErr) return showToast(`🚫 ${vacateRpcErr.message}`, "error", true);
+
+      setShopsDB(prev => [
+        ...prev.map(s => vacateResult.archived_shops.find(a => a.id === s.id) || s),
+        ...vacateResult.vacant_shops
+      ]);
+      if (vacateResult.debts && vacateResult.debts.length > 0) {
+        setDebtsDB(prev => [...prev, ...vacateResult.debts]);
+      }
+      await logAction({
+        actionType: "أرشفة عقد منتهٍ",
+        entityType: "عقد",
+        entityRef: groupToUpdate.join('، '),
+        summary: `أرشفة العقد المنتهي للمستأجر "${originalRow.tenant}" (محلات: ${groupToUpdate.join('، ')}) بوسم «أرشيف - منتهي»${groupTotalRemaining > 0 ? ` — حُوّل المتبقّي (${groupTotalRemaining} ريال) إلى مديونية` : ''}.`,
+        details: { tenant: originalRow.tenant, shopNumbers: groupToUpdate, remaining: groupTotalRemaining }
+      });
+
+      setEditContractId(""); setEditContractShop(""); setEditContractTenant(""); setEditContractEjarNumber("");
+      setEditContractRent(0); setEditContractStart(""); setEditContractEnd(""); setEditContractStatus("مؤجر");
+      showToast("تمت أرشفة العقد المنتهي بنجاح — يظهر الآن في أرشيف العقود بوسم «منتهٍ».", "success");
     } finally {
       setIsSaving(false);
     }
@@ -2206,6 +2283,7 @@ export default function ShubramiSystem() {
           summary: `صرف ${amt.toLocaleString()} ريال من التحويل ${expTransferId} (بند ${expenseCategoriesDB.find(c => c.id === expCategoryId)?.name || "-"}).`,
           details: { transferId: expTransferId, amount: amt }
         });
+        refreshExpenseTotals();
         showToast("تم تسجيل الصرف من التحويل سحابياً.", "success");
       } finally {
         setIsSaving(false);
@@ -2246,6 +2324,7 @@ export default function ShubramiSystem() {
       setExpensesDB([...expensesDB, newExpense]);
       setExpDate(""); setExpCategoryId(""); setExpAmount(""); setExpNotes(""); setExpMethod("");
       setExpBankAccountId(""); setExpAccountPath(""); setExpSourceMainId(""); setExpSpentFromId("");
+      refreshExpenseTotals();
       showToast("تم تسجيل وتوثيق المصروف سحابياً.", "success");
     } else {
       showToast(`🚫 فشل تسجيل المصروف: ${error.message}`, "error", true);
@@ -2667,6 +2746,7 @@ export default function ShubramiSystem() {
           details: { originalId: orig.id, reversalId: revId, transferId: orig.transfer_id, amount: orig.amount, reason }
         });
         setReversingExpense(null); setReversalReasonInput("");
+        refreshExpenseTotals();
         showToast(`تم عكس قيد المصروف ${orig.id} وإرجاع المبلغ للتحويل.`, "success");
       } finally {
         setIsSaving(false);
@@ -2712,6 +2792,7 @@ export default function ShubramiSystem() {
       });
 
       setReversingExpense(null); setReversalReasonInput("");
+      refreshExpenseTotals();
       showToast(`تم عكس قيد المصروف ${orig.id} بنجاح.`, "success");
     } finally {
       setIsSaving(false);
@@ -2838,11 +2919,13 @@ export default function ShubramiSystem() {
     }
   };
   const filteredTxForDash = dashboardYear === "الكل" ? transactionsDB : transactionsDB.filter(t => getYear(t.updateDate) === dashboardYear);
-  const filteredExpForDash = dashboardYear === "الكل" ? expensesDB : expensesDB.filter(e => getYear(e.date) === dashboardYear);
   const filteredDebtsForDash = dashboardYear === "الكل" ? allOutstandingDebts : allOutstandingDebts.filter(d => getYear(d.year) === dashboardYear);
 
   const dashTotalCollected = filteredTxForDash.reduce((sum, t) => sum + t.paidAmount, 0);
-  const dashTotalExpenses = filteredExpForDash.reduce((sum, e) => sum + e.amount, 0);
+  // مؤشّر المصروفات من الإجماليات المجمّعة (موحّد لكل المستخدمين) — لا من expensesDB المعزول بـRLS
+  const dashTotalExpenses = dashboardYear === "الكل"
+    ? Number(expenseTotals.total_all || 0)
+    : Number(expenseTotals.by_year?.[dashboardYear] || 0);
   const dashTotalDebts = filteredDebtsForDash.reduce((sum, d) => sum + d.amount, 0);
   const dashNetIncome = dashTotalCollected - dashTotalExpenses;
 
@@ -4264,6 +4347,15 @@ export default function ShubramiSystem() {
                          <div className="md:col-span-2 p-3 bg-amber-100 text-amber-800 rounded-lg border border-amber-300 text-xs font-bold flex items-center gap-2">
                            <span className="text-lg">⚠️</span>
                            <span>النظام رصد أن هذا العقد منتهي. التجديد الآن سيقوم بإنشاء دورة تعاقدية جديدة منفصلة لحفظ الأرشيف.</span>
+                         </div>
+                       )}
+
+                       {currentUser?.role === "مدير" && editContractId && isContractExpired(shopsDB.find(s=>s.id===editContractId)?.endDate) && shopsDB.find(s=>s.id===editContractId)?.status === "مؤجر" && (
+                         <div className="md:col-span-2">
+                           <button type="button" onClick={handleArchiveAsExpired} disabled={isSaving} className="w-full bg-slate-700 hover:bg-slate-800 text-white font-bold py-2.5 rounded-lg text-sm shadow-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                             {isSaving ? "جارٍ الأرشفة..." : "🗄️ أرشفة كمنتهٍ (دون تجديد)"}
+                           </button>
+                           <p className="text-[11px] text-slate-500 mt-1 text-center">ينقل العقد المنتهي إلى الأرشيف بوسم «منتهٍ» ويُفرّغ محلاته — بديلاً عن التجديد.</p>
                          </div>
                        )}
 
