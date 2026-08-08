@@ -38,6 +38,22 @@ AS $function$
 $function$;
 
 -- ---------------------------------------------------------------------------
+-- has_permission(perm) — صلاحية دقيقة ممنوحة للمستخدم الحالي (المدير فوق الجميع)
+-- (STABLE SECURITY DEFINER — تقرأ user_permissions متجاوزةً RLS كما is_admin)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.has_permission(perm text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT is_admin() OR EXISTS (
+    SELECT 1 FROM public.user_permissions
+    WHERE user_id = auth.uid() AND permission_key = perm
+  );
+$function$;
+
+-- ---------------------------------------------------------------------------
 -- handle_new_user() — يُنشئ صفّ profiles تلقائياً عند تسجيل مستخدم auth جديد
 -- (trigger على auth.users — انظر triggers.sql)
 -- ---------------------------------------------------------------------------
@@ -150,9 +166,11 @@ begin
     return NEW;
   end if;
 
-  -- صف عكسي: يتطلب صلاحية المدير
-  if not is_admin() then
-    raise exception 'القيد العكسي للمصروفات متاح لمدير النظام فقط.';
+  -- صف عكسي: صلاحية reverse_expense — إلا حين يقوده مسار عكس التحويل (علم GUC)،
+  -- فحينها rpc_reverse_transfer_expense هي السلطة عبر صلاحية reverse_transfer_expense.
+  if coalesce(current_setting('app.transfer_rpc', true), '') <> '1'
+     and not has_permission('reverse_expense') then
+    raise exception 'عكس قيد المصروف يتطلب صلاحية reverse_expense.';
   end if;
 
   -- يجب أن يشير إلى مصروف أصلي موجود
@@ -258,9 +276,9 @@ begin
     return NEW;
   end if;
 
-  -- صف عكسي: يتطلب صلاحية المدير
-  if not is_admin() then
-    raise exception 'القيد العكسي لسندات القبض متاح لمدير النظام فقط.';
+  -- صف عكسي: صلاحية reverse_receipt
+  if not has_permission('reverse_receipt') then
+    raise exception 'عكس سند القبض يتطلب صلاحية reverse_receipt.';
   end if;
 
   select * into v_orig from public.transactions where id = NEW.reverses_transaction_id;
@@ -340,8 +358,8 @@ DECLARE
   v_id            text;
   v_full_details  text;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'مدير') THEN
-    RAISE EXCEPTION 'الإدراج اليدوي للمديونية متاح لمدير النظام فقط';
+  IF NOT has_permission('manual_debt') THEN
+    RAISE EXCEPTION 'الإدراج اليدوي للمديونية يتطلب صلاحية manual_debt';
   END IF;
 
   IF p_tenant IS NULL OR trim(p_tenant) = '' THEN
@@ -567,9 +585,9 @@ declare
   v_id            text;
   v_lock          bigint;
 begin
-  -- صلاحية المدير
-  if not is_admin() then
-    raise exception 'عكس سند القبض متاح لمدير النظام فقط.';
+  -- صلاحية reverse_receipt
+  if not has_permission('reverse_receipt') then
+    raise exception 'عكس سند القبض يتطلب صلاحية reverse_receipt.';
   end if;
 
   if p_reason is null or trim(p_reason) = '' then
@@ -793,11 +811,8 @@ begin
 
   -- التحقق من صلاحية المدير مرة واحدة قبل الحلقة (إن طُلب التجاوز)
   if p_admin_override then
-    if not exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role = 'مدير'
-    ) then
-      raise exception 'غير مصرح: التجاوز الاستثنائي متاح لمدير النظام فقط.';
+    if not has_permission('renew_override') then
+      raise exception 'غير مصرح: التجديد الاستثنائي يتطلب صلاحية renew_override.';
     end if;
   end if;
 
@@ -932,6 +947,12 @@ begin
     raise exception 'وسم الأرشفة غير صالح (%).', p_archive_status;
   end if;
 
+  -- سدّ الثغرة: أرشفة العقد كمنتهٍ تتطلب صلاحية archive_expired
+  -- (الإخلاء العادي 'أرشيف - مخلى' يبقى مفروضاً بصلاحية التبويب shops update).
+  if p_archive_status = 'أرشيف - منتهي' and not has_permission('archive_expired') then
+    raise exception 'أرشفة العقد كمنتهٍ تتطلب صلاحية archive_expired.';
+  end if;
+
   foreach v_shop_id in array p_shop_ids loop
     select * into v_shop from public.shops where id = v_shop_id for update;
 
@@ -953,8 +974,8 @@ begin
 
     if v_remaining > 0 then
       if p_debt_override_amount is not null then
-        if not exists (select 1 from public.profiles where id = auth.uid() and role = 'مدير') then
-          raise exception 'غير مصرح: تعديل قيمة الدين عند الإخلاء المبكر متاح لمدير النظام فقط.';
+        if not has_permission('vacate_override') then
+          raise exception 'غير مصرح: الإخلاء المبكر بدين مخفّض يتطلب صلاحية vacate_override.';
         end if;
         if p_debt_override_amount < 0 or p_debt_override_amount > v_remaining then
           raise exception 'قيمة الدين المعتمدة (%) يجب أن تكون بين 0 والمتبقي الفعلي (%) للمحل %',
@@ -1119,8 +1140,8 @@ declare
   v_transfer public.transfers%rowtype;
   v_rev      public.expenses%rowtype;
 begin
-  if not is_admin() then
-    raise exception 'القيد العكسي للمصروفات متاح لمدير النظام فقط.';
+  if not has_permission('reverse_transfer_expense') then
+    raise exception 'عكس بند مصروف من تحويل يتطلب صلاحية reverse_transfer_expense.';
   end if;
   if p_reason is null or btrim(p_reason) = '' then
     raise exception 'سبب العكس إلزامي.';

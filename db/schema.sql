@@ -26,6 +26,25 @@ CREATE TABLE public.profiles (
 );
 
 -- -----------------------------------------------------------------------------
+-- 1.5) user_permissions — صلاحيات دقيقة ممنوحة لكل مستخدم (FK → profiles)
+--    المدير فوق الجميع ضمنياً عبر has_permission؛ هذا الجدول للمنح الصريح للموظفين.
+-- -----------------------------------------------------------------------------
+CREATE TABLE public.user_permissions (
+  user_id        uuid        NOT NULL,
+  permission_key text        NOT NULL,
+  granted_by     uuid,
+  granted_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT user_permissions_pkey PRIMARY KEY (user_id, permission_key),
+  CONSTRAINT user_permissions_key_chk CHECK (permission_key IN (
+    'reverse_expense', 'reverse_transfer_expense', 'reverse_receipt', 'manual_debt',
+    'renew_override', 'vacate_override', 'archive_expired',
+    'manage_expense_categories', 'manage_bank_accounts', 'view_audit_log'
+  )),
+  CONSTRAINT user_permissions_user_fkey    FOREIGN KEY (user_id)    REFERENCES profiles(id) ON DELETE CASCADE,
+  CONSTRAINT user_permissions_granted_fkey FOREIGN KEY (granted_by) REFERENCES profiles(id)
+);
+
+-- -----------------------------------------------------------------------------
 -- 2) bank_accounts — لا تبعيات
 -- -----------------------------------------------------------------------------
 CREATE TABLE public.bank_accounts (
@@ -263,6 +282,7 @@ CREATE INDEX idx_transactions_entity_id ON public.transactions USING btree (enti
 -- تفعيل Row Level Security على كل الجداول (السياسات في policies.sql)
 -- =============================================================================
 ALTER TABLE public.profiles                     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_permissions             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bank_accounts                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expense_categories           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transfers                     ENABLE ROW LEVEL SECURITY;
