@@ -28,9 +28,9 @@ trigger…): حدِّث الملف المقابل في هذا المجلد **ف�
 
 | الملف | المحتوى |
 |------|---------|
-| `schema.sql`    | الجداول (12) + القيود (PK/FK/UNIQUE/CHECK) + الفهارس + تفعيل RLS |
-| `functions.sql` | الدوال (20): المساعِدة + حُرّاس المصروفات/التحويلات + حُرّاس السندات + دوال RPC |
-| `policies.sql`  | سياسات RLS (37 سياسة، للدور `public`) |
+| `schema.sql`    | الجداول (13) + القيود (PK/FK/UNIQUE/CHECK) + الفهارس + تفعيل RLS |
+| `functions.sql` | الدوال (21): المساعِدة (`is_admin`/`has_tab`/`has_permission`) + الحُرّاس + دوال RPC |
+| `policies.sql`  | سياسات RLS (41 سياسة، للدور `public`) |
 | `triggers.sql`  | مشغّلات المصروفات (2) + مشغّلات التحويلات (2) + مشغّلات السندات (2) + مشغّل `auth.users` (`on_auth_user_created`) |
 | `migrations/`   | ملفات الهجرة التدريجية من الآن فصاعداً (انظر README بداخله) |
 

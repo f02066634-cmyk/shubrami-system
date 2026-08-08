@@ -18,40 +18,40 @@ CREATE POLICY "audit insert authenticated" ON public.audit_log
 
 CREATE POLICY "audit select admin" ON public.audit_log
   FOR SELECT TO public
-  USING (is_admin());
+  USING (has_permission('view_audit_log'));
 
 -- ------------------------ bank_account_assignments --------------------------
 CREATE POLICY "bank_account_assignments_delete" ON public.bank_account_assignments
   FOR DELETE TO public
-  USING (is_admin());
+  USING (has_permission('manage_bank_accounts'));
 
 CREATE POLICY "bank_account_assignments_insert" ON public.bank_account_assignments
   FOR INSERT TO public
-  WITH CHECK (is_admin());
+  WITH CHECK (has_permission('manage_bank_accounts'));
 
 CREATE POLICY "bank_account_assignments_select" ON public.bank_account_assignments
   FOR SELECT TO public
-  USING (is_admin() OR (user_id = auth.uid()));
+  USING (has_permission('manage_bank_accounts') OR (user_id = auth.uid()));
 
 -- ----------------------------- bank_accounts --------------------------------
 CREATE POLICY "bank_accounts_delete" ON public.bank_accounts
   FOR DELETE TO public
-  USING (is_admin());
+  USING (has_permission('manage_bank_accounts'));
 
 CREATE POLICY "bank_accounts_insert" ON public.bank_accounts
   FOR INSERT TO public
-  WITH CHECK (is_admin());
+  WITH CHECK (has_permission('manage_bank_accounts'));
 
 CREATE POLICY "bank_accounts_select" ON public.bank_accounts
   FOR SELECT TO public
-  USING (is_admin() OR (EXISTS ( SELECT 1
+  USING (has_permission('manage_bank_accounts') OR (EXISTS ( SELECT 1
      FROM bank_account_assignments a
     WHERE ((a.account_id = bank_accounts.id) AND (a.user_id = auth.uid())))));
 
 CREATE POLICY "bank_accounts_update" ON public.bank_accounts
   FOR UPDATE TO public
-  USING (is_admin())
-  WITH CHECK (is_admin());
+  USING (has_permission('manage_bank_accounts'))
+  WITH CHECK (has_permission('manage_bank_accounts'));
 
 -- ------------------------------- transfers ----------------------------------
 -- الموظف يرى/يُنشئ/يُحدّث تحويلات حساباته المخصّصة (رئيسي + فرعي معاً)؛ المدير يرى الكل.
@@ -91,7 +91,7 @@ CREATE POLICY "transfers_update" ON public.transfers
 
 CREATE POLICY "transfers_delete" ON public.transfers
   FOR DELETE TO public
-  USING (is_admin());
+  USING (has_permission('manage_bank_accounts'));
 
 -- -------------------------------- debts -------------------------------------
 CREATE POLICY "debts insert" ON public.debts
@@ -110,35 +110,35 @@ CREATE POLICY "debts update" ON public.debts
 -- -------------------------- expense_categories ------------------------------
 CREATE POLICY "expense_categories_delete" ON public.expense_categories
   FOR DELETE TO public
-  USING (is_admin());
+  USING (has_permission('manage_expense_categories'));
 
 CREATE POLICY "expense_categories_insert" ON public.expense_categories
   FOR INSERT TO public
-  WITH CHECK (is_admin());
+  WITH CHECK (has_permission('manage_expense_categories'));
 
 CREATE POLICY "expense_categories_select" ON public.expense_categories
   FOR SELECT TO public
-  USING (is_admin() OR (EXISTS ( SELECT 1
+  USING (has_permission('manage_expense_categories') OR (EXISTS ( SELECT 1
      FROM expense_category_assignments a
     WHERE ((a.category_id = expense_categories.id) AND (a.user_id = auth.uid())))));
 
 CREATE POLICY "expense_categories_update" ON public.expense_categories
   FOR UPDATE TO public
-  USING (is_admin())
-  WITH CHECK (is_admin());
+  USING (has_permission('manage_expense_categories'))
+  WITH CHECK (has_permission('manage_expense_categories'));
 
 -- --------------------- expense_category_assignments -------------------------
 CREATE POLICY "expense_category_assignments_delete" ON public.expense_category_assignments
   FOR DELETE TO public
-  USING (is_admin());
+  USING (has_permission('manage_expense_categories'));
 
 CREATE POLICY "expense_category_assignments_insert" ON public.expense_category_assignments
   FOR INSERT TO public
-  WITH CHECK (is_admin());
+  WITH CHECK (has_permission('manage_expense_categories'));
 
 CREATE POLICY "expense_category_assignments_select" ON public.expense_category_assignments
   FOR SELECT TO public
-  USING (is_admin() OR (user_id = auth.uid()));
+  USING (has_permission('manage_expense_categories') OR (user_id = auth.uid()));
 
 -- ------------------------------- expenses -----------------------------------
 CREATE POLICY "expenses_insert" ON public.expenses
@@ -153,10 +153,11 @@ CREATE POLICY "expenses_select" ON public.expenses
      FROM expense_category_assignments a
     WHERE ((a.category_id = expenses.category_id) AND (a.user_id = auth.uid())))));
 
+-- تعليم الأصل معكوساً يقع في مساري عكس المصروف العادي والمرتبط بتحويل معاً.
 CREATE POLICY "expenses_update_admin" ON public.expenses
   FOR UPDATE TO public
-  USING (is_admin())
-  WITH CHECK (is_admin());
+  USING (has_permission('reverse_expense') OR has_permission('reverse_transfer_expense'))
+  WITH CHECK (has_permission('reverse_expense') OR has_permission('reverse_transfer_expense'));
 
 -- ----------------------------- installments ---------------------------------
 CREATE POLICY "installments delete" ON public.installments
@@ -208,3 +209,23 @@ CREATE POLICY "tx update" ON public.transactions
   FOR UPDATE TO public
   USING (has_tab('payments'::text) OR has_tab('debts'::text))
   WITH CHECK (has_tab('payments'::text) OR has_tab('debts'::text));
+
+-- --------------------------- user_permissions -------------------------------
+-- الصلاحيات الدقيقة: المستخدم يقرأ صلاحياته (لإظهار أزراره)، والمدير يقرأ الكل.
+-- المنح/السحب حكرٌ على المدير («صلاحية الصلاحيات» لا تُفوَّض).
+CREATE POLICY "user_permissions_select" ON public.user_permissions
+  FOR SELECT TO public
+  USING (is_admin() OR (user_id = auth.uid()));
+
+CREATE POLICY "user_permissions_insert" ON public.user_permissions
+  FOR INSERT TO public
+  WITH CHECK (is_admin());
+
+CREATE POLICY "user_permissions_update" ON public.user_permissions
+  FOR UPDATE TO public
+  USING (is_admin())
+  WITH CHECK (is_admin());
+
+CREATE POLICY "user_permissions_delete" ON public.user_permissions
+  FOR DELETE TO public
+  USING (is_admin());
